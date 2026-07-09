@@ -9,6 +9,7 @@ services:
       - "${APP_PORT:-8080}:${APP_PORT:-8080}" 
     environment:
       - APP_ENV=${APP_ENV}
+      - APP_PORT=${APP_PORT}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
@@ -65,19 +66,20 @@ services:
     container_name: billing_rabbitmq
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"   
-      - "15672:15672" 
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672" # <-- Fixed: now reads variable from env
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
       RABBITMQ_LOGS: "level=warning"
+      VM_MEMORY_HIGH_WATERMARK: "0.7"              # Prevents early memory threshold alarms
     volumes:
       - billing_rabbitmq_data:/var/lib/rabbitmq
     restart: always
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
-      interval: 5s
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"] # More resilient than raw tcp checks
+      interval: 10s
       timeout: 5s
-      retries: 10 
+      retries: 5 
 
 volumes:
   billing_db_data:
