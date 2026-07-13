@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	sharedEvents "github.com/thec1oud/billing/internal/shared/events"
+	sharedEvents "github.com/thec1oud/billing/internal/substrate/events"
 )
 
 func Reduce(state Invoice, event sharedEvents.Event) (Invoice, error) {

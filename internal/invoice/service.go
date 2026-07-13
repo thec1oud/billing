@@ -9,12 +9,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/thec1oud/billing/internal/eventstore"
-	"github.com/thec1oud/billing/internal/idempotency"
 	"github.com/thec1oud/billing/internal/ppi"
-	"github.com/thec1oud/billing/internal/projection"
-	sharedEvents "github.com/thec1oud/billing/internal/shared/events"
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
+	"github.com/thec1oud/billing/internal/substrate/events"
+	"github.com/thec1oud/billing/internal/substrate/idempotency"
 )
 
 var (
@@ -27,26 +25,26 @@ type PlanLookup interface {
 }
 
 type Service struct {
-	store    *eventstore.EventStore
+	store    *events.EventStore
 	idem     *idempotency.Store
 	plans    PlanLookup
 	accounts AccountLookup
 	ppi      PPI
 }
 
-func NewService(store *eventstore.EventStore, idem *idempotency.Store, plans PlanLookup, accounts AccountLookup, ppi PPI) *Service {
+func NewService(store *events.EventStore, idem *idempotency.Store, plans PlanLookup, accounts AccountLookup, ppi PPI) *Service {
 	return &Service{store: store, idem: idem, plans: plans, accounts: accounts, ppi: ppi}
 }
 
-func (s *Service) currentState(ctx context.Context, invoiceID uuid.UUID) (Invoice, []sharedEvents.Event, error) {
-	stream, err := s.store.ReadStream(ctx, sharedEvents.AggregateInvoice, invoiceID)
+func (s *Service) currentState(ctx context.Context, invoiceID uuid.UUID) (Invoice, []events.Event, error) {
+	stream, err := s.store.ReadStream(ctx, events.AggregateInvoice, invoiceID)
 	if err != nil {
 		return Invoice{}, nil, fmt.Errorf("read invoice stream: %w", err)
 	}
 	if len(stream) == 0 {
 		return Invoice{}, nil, ErrInvoiceNotFound
 	}
-	state, err := projection.Rebuild(Invoice{}, stream, Reduce)
+	state, err := events.Rebuild(Invoice{}, stream, Reduce)
 	if err != nil {
 		return Invoice{}, nil, fmt.Errorf("rebuild invoice state: %w", err)
 	}
@@ -92,11 +90,11 @@ func (s *Service) CreateDraftInvoice(ctx context.Context, subscriptionID uuid.UU
 		Total:          amount,
 	}
 
-	if _, err := s.store.Append(ctx, eventstore.AppendRequest{
-		AggregateType: sharedEvents.AggregateInvoice,
+	if _, err := s.store.Append(ctx, events.AppendRequest{
+		AggregateType: events.AggregateInvoice,
 		AggregateID:   invoiceID,
 		Sequence:      1, // new aggregate — always the first event in its stream
-		EventType:     sharedEvents.InvoiceCreated,
+		EventType:     events.InvoiceCreated,
 		EventVersion:  1,
 		Actor:         "system",
 		Payload:       payload,
@@ -134,16 +132,16 @@ func (s *Service) FinalizeInvoice(ctx context.Context, invoiceID uuid.UUID) (Inv
 
 	nextSequence := int64(len(stream)) + 1
 
-	if _, err := s.store.Append(ctx, eventstore.AppendRequest{
-		AggregateType: sharedEvents.AggregateInvoice,
+	if _, err := s.store.Append(ctx, events.AppendRequest{
+		AggregateType: events.AggregateInvoice,
 		AggregateID:   invoiceID,
 		Sequence:      nextSequence,
-		EventType:     sharedEvents.InvoiceFinalized,
+		EventType:     events.InvoiceFinalized,
 		EventVersion:  1,
 		Actor:         "system",
 		Payload:       FinalizedPayload{},
 	}); err != nil {
-		if errors.Is(err, eventstore.ErrSequenceConflict) {
+		if errors.Is(err, events.ErrSequenceConflict) {
 			return Invoice{}, fmt.Errorf("invoice was modified concurrently, retry: %w", err)
 		}
 		return Invoice{}, fmt.Errorf("append InvoiceFinalized: %w", err)
@@ -187,11 +185,11 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 
 	seq := int64(len(stream)) + 1
 
-	if _, err := s.store.Append(ctx, eventstore.AppendRequest{
-		AggregateType: sharedEvents.AggregateInvoice,
+	if _, err := s.store.Append(ctx, events.AppendRequest{
+		AggregateType: events.AggregateInvoice,
 		AggregateID:   invoiceID,
 		Sequence:      seq,
-		EventType:     sharedEvents.PaymentAttempted,
+		EventType:     events.PaymentAttempted,
 		EventVersion:  1,
 		Actor:         "system",
 		Payload: PaymentAttemptedPayload{
@@ -219,11 +217,11 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 
 	switch chargeResult.Status {
 	case ppi.ChargeStatusSuccess:
-		if _, err := s.store.Append(ctx, eventstore.AppendRequest{
-			AggregateType: sharedEvents.AggregateInvoice,
+		if _, err := s.store.Append(ctx, events.AppendRequest{
+			AggregateType: events.AggregateInvoice,
 			AggregateID:   invoiceID,
 			Sequence:      seq,
-			EventType:     sharedEvents.PaymentSucceeded,
+			EventType:     events.PaymentSucceeded,
 			EventVersion:  1,
 			Actor:         "system",
 			Payload:       PaymentSucceededPayload{ProviderReference: chargeResult.ProviderReference},
@@ -232,11 +230,11 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 		}
 		seq++
 
-		if _, err := s.store.Append(ctx, eventstore.AppendRequest{
-			AggregateType: sharedEvents.AggregateInvoice,
+		if _, err := s.store.Append(ctx, events.AppendRequest{
+			AggregateType: events.AggregateInvoice,
 			AggregateID:   invoiceID,
 			Sequence:      seq,
-			EventType:     sharedEvents.InvoicePaid,
+			EventType:     events.InvoicePaid,
 			EventVersion:  1,
 			Actor:         "system",
 			Payload:       InvoicePaidPayload{},
@@ -246,11 +244,11 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 		inv.Status = StatusPaid
 
 	default: // FAILED and anything else the fake adapter doesn't produce yet
-		if _, err := s.store.Append(ctx, eventstore.AppendRequest{
-			AggregateType: sharedEvents.AggregateInvoice,
+		if _, err := s.store.Append(ctx, events.AppendRequest{
+			AggregateType: events.AggregateInvoice,
 			AggregateID:   invoiceID,
 			Sequence:      seq,
-			EventType:     sharedEvents.PaymentFailed,
+			EventType:     events.PaymentFailed,
 			EventVersion:  1,
 			Actor:         "system",
 			Payload:       PaymentFailedPayload{FailureCode: chargeResult.FailureCode},

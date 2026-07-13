@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/thec1oud/billing/internal/idempotency"
 	"github.com/thec1oud/billing/internal/ppi"
+	"github.com/thec1oud/billing/internal/substrate/idempotency"
 )
 
 type FakeAdapter struct {

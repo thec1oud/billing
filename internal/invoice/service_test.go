@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/thec1oud/billing/internal/eventstore"
-	"github.com/thec1oud/billing/internal/idempotency"
 	"github.com/thec1oud/billing/internal/ppi/adapters"
+	"github.com/thec1oud/billing/internal/substrate/events"
+	"github.com/thec1oud/billing/internal/substrate/idempotency"
 )
 
 type stubPlanLookup struct{}
@@ -29,7 +29,7 @@ func (s stubAccountLookup) DefaultPaymentMethodID(ctx context.Context, accountID
 }
 
 func newTestService(paymentMethodID string) *Service {
-	store := eventstore.New(eventstore.NewMemoryRepository())
+	store := events.NewEventStore(events.NewMemoryRepository())
 	idem := idempotency.NewStore()
 	ppiAdapter := adapters.NewFakeAdapter(idem)
 	accounts := stubAccountLookup{paymentMethodID: paymentMethodID}
