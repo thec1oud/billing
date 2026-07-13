@@ -10,6 +10,7 @@ import (
 
 	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
+	"github.com/thec1oud/billing/internal/substrate/money"
 )
 
 type FakeAdapter struct {
@@ -19,9 +20,8 @@ type FakeAdapter struct {
 func NewFakeAdapter(idem *idempotency.Store) *FakeAdapter {
 	return &FakeAdapter{idem: idem}
 }
-
-func (a *FakeAdapter) ChargePaymentMethod(ctx context.Context, amount int64, currency, paymentMethodID, idempotencyKey string) (ppi.ChargeResult, error) {
-	requestHash := idempotency.HashRequest([]byte(fmt.Sprintf("%d:%s:%s", amount, currency, paymentMethodID)))
+func (a *FakeAdapter) ChargePaymentMethod(ctx context.Context, amount money.Money, paymentMethodID, idempotencyKey string) (ppi.ChargeResult, error) {
+	requestHash := idempotency.HashRequest([]byte(fmt.Sprintf("%d:%s:%s", amount.AmountMinor, amount.Currency, paymentMethodID)))
 
 	decision, err := a.idem.CheckOrReserve(ctx, idempotencyKey, "ppi.charge_payment_method", requestHash)
 	if err != nil {

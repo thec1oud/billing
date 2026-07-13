@@ -11,13 +11,15 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/adapters"
 	"github.com/thec1oud/billing/internal/substrate/events"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
+	"github.com/thec1oud/billing/internal/substrate/money"
 )
 
 type stubPlanLookup struct{}
 
-func (stubPlanLookup) FlatFeeForSubscription(ctx context.Context, subscriptionID uuid.UUID) (uuid.UUID, int64, string, time.Time, time.Time, error) {
+func (stubPlanLookup) FlatFeeForSubscription(ctx context.Context, subscriptionID uuid.UUID) (uuid.UUID, money.Money, time.Time, time.Time, error) {
 	now := time.Now().UTC()
-	return uuid.New(), 2000, "USD", now, now.AddDate(0, 1, 0), nil
+	fee, _ := money.New(2000, "USD")
+	return uuid.New(), fee, now, now.AddDate(0, 1, 0), nil
 }
 
 type stubAccountLookup struct {

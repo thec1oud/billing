@@ -13,6 +13,7 @@ import (
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 	"github.com/thec1oud/billing/internal/substrate/events"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
+	"github.com/thec1oud/billing/internal/substrate/money"
 )
 
 var (
@@ -21,7 +22,7 @@ var (
 )
 
 type PlanLookup interface {
-	FlatFeeForSubscription(ctx context.Context, subscriptionID uuid.UUID) (accountID uuid.UUID, amount int64, currency string, periodStart, periodEnd time.Time, err error)
+	FlatFeeForSubscription(ctx context.Context, subscriptionID uuid.UUID) (accountID uuid.UUID, fee money.Money, periodStart, periodEnd time.Time, err error)
 }
 
 type Service struct {
@@ -66,7 +67,7 @@ func (s *Service) CreateDraftInvoice(ctx context.Context, subscriptionID uuid.UU
 		return cached, nil
 	}
 
-	accountID, amount, currency, periodStart, periodEnd, err := s.plans.FlatFeeForSubscription(ctx, subscriptionID)
+	accountID, fee, periodStart, periodEnd, err := s.plans.FlatFeeForSubscription(ctx, subscriptionID)
 	if err != nil {
 		return Invoice{}, fmt.Errorf("look up plan for subscription %s: %w", subscriptionID, err)
 	}
@@ -77,17 +78,17 @@ func (s *Service) CreateDraftInvoice(ctx context.Context, subscriptionID uuid.UU
 	}
 
 	lineItems := []LineItem{
-		{Description: "Subscription fee", Amount: amount, PeriodStart: periodStart, PeriodEnd: periodEnd},
+		{Description: "Subscription fee", Amount: fee, PeriodStart: periodStart, PeriodEnd: periodEnd},
 	}
 
 	payload := CreatedPayload{
 		AccountID:      accountID,
 		SubscriptionID: subscriptionID,
-		Currency:       currency,
+		Currency:       fee.Currency,
 		PeriodStart:    periodStart,
 		PeriodEnd:      periodEnd,
 		LineItems:      lineItems,
-		Total:          amount,
+		Total:          fee,
 	}
 
 	if _, err := s.store.Append(ctx, events.AppendRequest{
@@ -107,11 +108,11 @@ func (s *Service) CreateDraftInvoice(ctx context.Context, subscriptionID uuid.UU
 		AccountID:      accountID,
 		SubscriptionID: subscriptionID,
 		Status:         StatusDraft,
-		Currency:       currency,
+		Currency:       fee.Currency,
 		PeriodStart:    periodStart,
 		PeriodEnd:      periodEnd,
 		LineItems:      lineItems,
-		Total:          amount,
+		Total:          fee,
 	}
 
 	if err := s.idem.StoreResponse(ctx, *decision.ProceedToken, inv); err != nil {
@@ -152,7 +153,7 @@ func (s *Service) FinalizeInvoice(ctx context.Context, invoiceID uuid.UUID) (Inv
 }
 
 type PPI interface {
-	ChargePaymentMethod(ctx context.Context, amount int64, currency, paymentMethodID, idempotencyKey string) (ppi.ChargeResult, error)
+	ChargePaymentMethod(ctx context.Context, amount money.Money, paymentMethodID, idempotencyKey string) (ppi.ChargeResult, error)
 }
 
 func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idempotencyKey string) (Invoice, error) {
@@ -195,7 +196,6 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 		Payload: PaymentAttemptedPayload{
 			PaymentMethodID: paymentMethodID,
 			Amount:          inv.Total,
-			Currency:        inv.Currency,
 		},
 	}); err != nil {
 		return Invoice{}, fmt.Errorf("append PaymentAttempted: %w", err)
@@ -210,7 +210,7 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 	// guarantee (same input key → same derived key → same cached charge)
 	// while keeping the two reservations independent.
 	chargeIdempotencyKey := idempotencyKey + ":charge"
-	chargeResult, err := s.ppi.ChargePaymentMethod(ctx, inv.Total, inv.Currency, paymentMethodID, chargeIdempotencyKey)
+	chargeResult, err := s.ppi.ChargePaymentMethod(ctx, inv.Total, paymentMethodID, chargeIdempotencyKey)
 	if err != nil {
 		return Invoice{}, fmt.Errorf("charge payment method: %w", err)
 	}

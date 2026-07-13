@@ -1,6 +1,10 @@
 package ppi
 
-import "context"
+import (
+	"context"
+
+	"github.com/thec1oud/billing/internal/substrate/money"
+)
 
 type ChargeStatus string
 
@@ -17,6 +21,7 @@ type ChargeResult struct {
 	ProviderReference string
 	FailureCode       string
 }
+
 type PPI interface {
-	ChargePaymentMethod(ctx context.Context, amount int64, currency, paymentMethodID, idempotencyKey string) (ChargeResult, error)
+	ChargePaymentMethod(ctx context.Context, amount money.Money, paymentMethodID, idempotencyKey string) (ChargeResult, error)
 }

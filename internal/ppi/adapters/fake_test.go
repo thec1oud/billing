@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
+	"github.com/thec1oud/billing/internal/substrate/money"
 )
 
 func newTestAdapter() *FakeAdapter {
@@ -15,13 +16,14 @@ func newTestAdapter() *FakeAdapter {
 func TestChargePaymentMethod_IdempotentOnRetry(t *testing.T) {
 	adapter := newTestAdapter()
 	ctx := context.Background()
+	amount, _ := money.New(1000, "USD")
 
-	first, err := adapter.ChargePaymentMethod(ctx, 1000, "USD", "pm_123", "idem-key-1")
+	first, err := adapter.ChargePaymentMethod(ctx, amount, "pm_123", "idem-key-1")
 	if err != nil {
 		t.Fatalf("unexpected error on first call: %v", err)
 	}
 
-	second, err := adapter.ChargePaymentMethod(ctx, 1000, "USD", "pm_123", "idem-key-1")
+	second, err := adapter.ChargePaymentMethod(ctx, amount, "pm_123", "idem-key-1")
 	if err != nil {
 		t.Fatalf("unexpected error on second call: %v", err)
 	}
@@ -37,9 +39,10 @@ func TestChargePaymentMethod_IdempotentOnRetry(t *testing.T) {
 func TestChargePaymentMethod_DifferentKeysChargeIndependently(t *testing.T) {
 	adapter := newTestAdapter()
 	ctx := context.Background()
+	amount, _ := money.New(1000, "USD")
 
-	first, _ := adapter.ChargePaymentMethod(ctx, 1000, "USD", "pm_123", "idem-key-1")
-	second, _ := adapter.ChargePaymentMethod(ctx, 1000, "USD", "pm_123", "idem-key-2")
+	first, _ := adapter.ChargePaymentMethod(ctx, amount, "pm_123", "idem-key-1")
+	second, _ := adapter.ChargePaymentMethod(ctx, amount, "pm_123", "idem-key-2")
 
 	if first.ProviderReference == second.ProviderReference {
 		t.Errorf("expected distinct provider_reference for distinct idempotency keys, got same %q for both", first.ProviderReference)
@@ -49,8 +52,9 @@ func TestChargePaymentMethod_DifferentKeysChargeIndependently(t *testing.T) {
 func TestChargePaymentMethod_FailPaymentMethodReturnsFailed(t *testing.T) {
 	adapter := newTestAdapter()
 	ctx := context.Background()
+	amount, _ := money.New(1000, "USD")
 
-	result, err := adapter.ChargePaymentMethod(ctx, 1000, "USD", "pm_fail_card", "idem-key-3")
+	result, err := adapter.ChargePaymentMethod(ctx, amount, "pm_fail_card", "idem-key-3")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,11 +70,13 @@ func TestChargePaymentMethod_SameKeyDifferentParamsConflicts(t *testing.T) {
 	adapter := newTestAdapter()
 	ctx := context.Background()
 
-	if _, err := adapter.ChargePaymentMethod(ctx, 1000, "USD", "pm_123", "idem-key-1"); err != nil {
+	first, _ := money.New(1000, "USD")
+	if _, err := adapter.ChargePaymentMethod(ctx, first, "pm_123", "idem-key-1"); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
-	_, err := adapter.ChargePaymentMethod(ctx, 2000, "USD", "pm_123", "idem-key-1")
+	second, _ := money.New(2000, "USD")
+	_, err := adapter.ChargePaymentMethod(ctx, second, "pm_123", "idem-key-1")
 	if !errors.Is(err, idempotency.ErrConflict) {
 		t.Fatalf("expected ErrConflict when reusing key with different amount, got %v", err)
 	}
