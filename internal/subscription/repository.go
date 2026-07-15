@@ -1,0 +1,91 @@
+package subscription
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+
+	"github.com/thec1oud/billing/internal/plan"
+	"github.com/thec1oud/billing/internal/substrate/events"
+)
+
+// Repository is responsible for persisting and rebuilding
+// Subscription aggregates from the event store.
+type Repository struct {
+	store *events.EventStore
+}
+
+// NewRepository creates a new Subscription repository.
+func NewRepository(store *events.EventStore) *Repository {
+	return &Repository{
+		store: store,
+	}
+}
+
+// Append stores a single Subscription event in the event store.
+func (r *Repository) Append(
+	ctx context.Context,
+	req events.AppendRequest,
+) error {
+
+	_, err := r.store.Append(ctx, req)
+	return err
+}
+
+// Get rebuilds a Subscription aggregate by replaying
+// its event stream.
+func (r *Repository) Get(
+	ctx context.Context,
+	subscriptionID uuid.UUID,
+) (*Subscription, error) {
+
+	stream, err := r.store.ReadStream(
+		ctx,
+		events.AggregateSubscription,
+		subscriptionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return Rebuild(stream)
+}
+
+// BillingProjection returns the data required by the
+// Invoice Engine to generate invoice line items.
+func (r *Repository) BillingProjection(
+	ctx context.Context,
+	subscriptionID uuid.UUID,
+	planRepository interface {
+		Get(context.Context, string, int) (plan.Plan, error)
+	},
+) (*BillingProjection, error) {
+
+	subscription, err := r.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	selectedPlan, err := planRepository.Get(
+		ctx,
+		subscription.PlanID,
+		subscription.PlanVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BillingProjection{
+		SubscriptionID: subscription.SubscriptionID.String(),
+		AccountID:      subscription.AccountID.String(),
+
+		PlanID:      selectedPlan.ID,
+		PlanVersion: selectedPlan.Version,
+
+		Amount:   selectedPlan.FlatFeeAmount,
+		Currency: selectedPlan.FlatFeeAmount.Currency,
+
+		PeriodStart: subscription.CurrentPeriodStart,
+		PeriodEnd:   subscription.CurrentPeriodEnd,
+	}, nil
+}
