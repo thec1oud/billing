@@ -6,46 +6,47 @@ run:
   go: '1.20'
 
 linters:
-  disable-all: true
+  default: none
   enable:
-    # --- Correctness, Bugs & Safety ---
     - govet
     - staticcheck
     - errcheck
     - ineffassign
     - unused
-    # --- Style & Idioms ---
-    - lll           # Limits line length
-    - revive        # Strict styling framework
+    - lll
+    - revive
 
-  # In v2, linter settings MUST go here, nested inside "linters"
   settings:
+    lll:
+      line-length: 120
     revive:
       rules:
         - name: receiver-naming
         - name: blank-imports
         - name: error-return
         - name: error-strings
-        # Missing 'exported' rule here explicitly disables it!
+
+  exclusions:
+    paths:
+      - third_party
+      - vendor
 
 formatters:
   enable:
     - gofmt
     - gci
   settings:
-    lll:
-      line-length: 120
     gci:
       sections:
         - standard
         - default
         - prefix(github.com/thec1oud/billing)
       custom-order: true
+  exclusions:
+    paths:
+      - third_party
+      - vendor
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-use-default: false
-  exclude-dirs:
-    - third_party
-    - vendor
