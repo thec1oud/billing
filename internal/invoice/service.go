@@ -32,7 +32,7 @@ type Service struct {
 	idem     *idempotency.Store
 	plans    PlanLookup
 	accounts AccountLookup
-	ppi      PPI
+	ppi      ppi.PPI
 }
 
 func NewService(
