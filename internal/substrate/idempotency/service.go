@@ -28,7 +28,12 @@ func NewStoreWithRepository(repository Repository, retention time.Duration) *Sto
 	if retention < MinimumRetention {
 		retention = MinimumRetention
 	}
-	return &Store{repository: repository, ttl: retention, now: func() time.Time { return time.Now().UTC() }, newID: uuid.NewV7}
+	return &Store{
+		repository: repository,
+		ttl:        retention,
+		now:        func() time.Time { return time.Now().UTC() },
+		newID:      uuid.NewV7,
+	}
 }
 
 func (s *Store) CheckOrReserve(ctx context.Context, key, operationType, requestHash string) (Decision, error) {
@@ -61,7 +66,12 @@ func (s *Store) CheckOrReserve(ctx context.Context, key, operationType, requestH
 		return Decision{}, fmt.Errorf("create idempotency proceed token: %w", err)
 	}
 	token := ProceedToken{key: key, value: id.String()}
-	reserved, err := s.repository.Reserve(ctx, key, record{OperationType: operationType, RequestHash: requestHash, Token: token.value, ExpiresAt: s.now().Add(s.ttl)})
+	reserved, err := s.repository.Reserve(ctx, key, record{
+		OperationType: operationType,
+		RequestHash:   requestHash,
+		Token:         token.value,
+		ExpiresAt:     s.now().Add(s.ttl),
+	})
 	if err != nil {
 		return Decision{}, err
 	}

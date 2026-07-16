@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rabbitmq/amqp091-go"
+
 	"github.com/thec1oud/billing/internal/config"
 )
 

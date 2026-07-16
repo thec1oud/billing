@@ -16,7 +16,10 @@ import (
 
 type stubPlanLookup struct{}
 
-func (stubPlanLookup) FlatFeeForSubscription(ctx context.Context, subscriptionID uuid.UUID) (uuid.UUID, money.Money, time.Time, time.Time, error) {
+func (stubPlanLookup) FlatFeeForSubscription(
+	ctx context.Context,
+	subscriptionID uuid.UUID,
+) (uuid.UUID, money.Money, time.Time, time.Time, error) {
 	now := time.Now().UTC()
 	fee, _ := money.New(2000, "USD")
 	return uuid.New(), fee, now, now.AddDate(0, 1, 0), nil

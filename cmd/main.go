@@ -35,9 +35,9 @@ func main() {
 	}()
 
 	//clean up when the main loop exits
-	defer deps.DB.Close(ctx)
-	defer deps.Redis.Close()
-	defer deps.Rabbit.Close()
+	defer func() { _ = deps.DB.Close(ctx) }()
+	defer func() { _ = deps.Redis.Close() }()
+	defer func() { _ = deps.Rabbit.Close() }()
 
 	slog.Info("All background services wired. Starting application layer...", "port", cfg.AppPort)
 

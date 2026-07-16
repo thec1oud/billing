@@ -5,12 +5,12 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/thec1oud/billing/internal/config"
-	"github.com/thec1oud/billing/internal/infra/storage"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/thec1oud/billing/internal/config"
+	"github.com/thec1oud/billing/internal/infra/storage"
 )
 
 type Dependencies struct {

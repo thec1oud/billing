@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/thec1oud/billing/internal/config"
-
 	"github.com/redis/go-redis/v9"
+
+	"github.com/thec1oud/billing/internal/config"
 )
 
 func NewRedisClient(ctx context.Context, cfg *config.Config) (*redis.Client, error) {

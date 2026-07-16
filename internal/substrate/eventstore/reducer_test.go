@@ -8,7 +8,11 @@ import (
 )
 
 func TestRebuildCounterFromEvents(t *testing.T) {
-	stream := []events.Event{{EventType: "counter.incremented", Payload: json.RawMessage(`{"amount":7}`)}, {EventType: "counter.decremented", Payload: json.RawMessage(`{"amount":2}`)}, {EventType: "counter.incremented", Payload: json.RawMessage(`{"amount":4}`)}}
+	stream := []events.Event{
+		{EventType: "counter.incremented", Payload: json.RawMessage(`{"amount":7}`)},
+		{EventType: "counter.decremented", Payload: json.RawMessage(`{"amount":2}`)},
+		{EventType: "counter.incremented", Payload: json.RawMessage(`{"amount":4}`)},
+	}
 	state, err := events.Rebuild(0, stream, func(current int, event events.Event) (int, error) {
 		var payload struct {
 			Amount int `json:"amount"`

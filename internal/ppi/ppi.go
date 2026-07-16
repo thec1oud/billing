@@ -23,5 +23,9 @@ type ChargeResult struct {
 }
 
 type PPI interface {
-	ChargePaymentMethod(ctx context.Context, amount money.Money, paymentMethodID, idempotencyKey string) (ChargeResult, error)
+	ChargePaymentMethod(
+		ctx context.Context,
+		amount money.Money,
+		paymentMethodID, idempotencyKey string,
+	) (ChargeResult, error)
 }

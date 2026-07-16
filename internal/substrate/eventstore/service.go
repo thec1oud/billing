@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 )
 
@@ -47,6 +48,10 @@ func (s *EventStore) Append(ctx context.Context, req AppendRequest) (uuid.UUID, 
 	return eventID, nil
 }
 
-func (s *EventStore) ReadStream(ctx context.Context, aggregateType AggregateType, aggregateID uuid.UUID) ([]Event, error) {
+func (s *EventStore) ReadStream(
+	ctx context.Context,
+	aggregateType AggregateType,
+	aggregateID uuid.UUID,
+) ([]Event, error) {
 	return s.repository.ReadStream(ctx, aggregateType, aggregateID)
 }

@@ -6,7 +6,12 @@ import (
 	"fmt"
 )
 
-func Execute[T any](ctx context.Context, store *Store, key, operationType, requestHash string, action func() (T, error)) (T, error) {
+func Execute[T any](
+	ctx context.Context,
+	store *Store,
+	key, operationType, requestHash string,
+	action func() (T, error),
+) (T, error) {
 	var zero T
 	decision, err := store.CheckOrReserve(ctx, key, operationType, requestHash)
 	if err != nil {

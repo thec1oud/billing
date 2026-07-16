@@ -41,7 +41,11 @@ func (r *MemoryRepository) Append(_ context.Context, event *Event) error {
 	return nil
 }
 
-func (r *MemoryRepository) ReadStream(_ context.Context, aggregateType AggregateType, aggregateID uuid.UUID) ([]Event, error) {
+func (r *MemoryRepository) ReadStream(
+	_ context.Context,
+	aggregateType AggregateType,
+	aggregateID uuid.UUID,
+) ([]Event, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

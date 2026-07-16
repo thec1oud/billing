@@ -19,15 +19,26 @@ type FakeAdapter struct {
 func NewFakeAdapter(idem *idempotency.Store) *FakeAdapter {
 	return &FakeAdapter{idem: idem}
 }
-func (a *FakeAdapter) ChargePaymentMethod(ctx context.Context, amount money.Money, paymentMethodID, idempotencyKey string) (ppi.ChargeResult, error) {
-	requestHash := idempotency.HashRequest([]byte(fmt.Sprintf("%d:%s:%s", amount.AmountMinor, amount.Currency, paymentMethodID)))
+func (a *FakeAdapter) ChargePaymentMethod(
+	ctx context.Context,
+	amount money.Money,
+	paymentMethodID, idempotencyKey string,
+) (ppi.ChargeResult, error) {
+	payloadStr := fmt.Sprintf("%d:%s:%s", amount.AmountMinor, amount.Currency, paymentMethodID)
+	requestHash := idempotency.HashRequest([]byte(payloadStr))
 
-	return idempotency.Execute(ctx, a.idem, idempotencyKey, "ppi.charge_payment_method", requestHash, func() (ppi.ChargeResult, error) {
-		if strings.Contains(paymentMethodID, "fail") {
-			return ppi.ChargeResult{Status: ppi.ChargeStatusFailed, FailureCode: "CARD_DECLINED"}, nil
-		}
-		return ppi.ChargeResult{Status: ppi.ChargeStatusSuccess, ProviderReference: uuid.NewString()}, nil
-	})
+	return idempotency.Execute(
+		ctx,
+		a.idem,
+		idempotencyKey,
+		"ppi.charge_payment_method",
+		requestHash,
+		func() (ppi.ChargeResult, error) {
+			if strings.Contains(paymentMethodID, "fail") {
+				return ppi.ChargeResult{Status: ppi.ChargeStatusFailed, FailureCode: "CARD_DECLINED"}, nil
+			}
+			return ppi.ChargeResult{Status: ppi.ChargeStatusSuccess, ProviderReference: uuid.NewString()}, nil
+		})
 }
 
 var _ ppi.PPI = (*FakeAdapter)(nil)

@@ -1,23 +1,15 @@
 repos:
-- repo: local
-  hooks:
-  - id: go-fmt
-    name: gofmt
-    entry: gofmt -s -w
-    language: system
-    files: \.(go)$
-  - id: go-imports
-    name: goimports
-    entry: goimports -w
-    language: system
-    files: \.(go)$
-  - id: go-vet
-    name: govet
-    entry: go vet ./...
-    language: system
-    files: \.(go)$
-  - id: golangci-lint
-    name: golangci-lint
-    entry: golangci-lint run
-    language: system
-    files: \.(go)$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.12.2 # Matches your installed v2 version exactly
+    hooks:
+      - id: golangci-lint
+        pass_filenames: false
+        args: ["./..."]

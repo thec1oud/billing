@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 )
 
@@ -19,7 +20,16 @@ func TestAppendAndReadStreamPreservesOrderAndContent(t *testing.T) {
 	store := events.NewEventStore(events.NewMemoryRepository())
 	aggregateID := uuid.New()
 	for i := 1; i <= 5; i++ {
-		_, err := store.Append(context.Background(), events.AppendRequest{AggregateType: events.AggregateAccount, AggregateID: aggregateID, Sequence: int64(i), EventType: events.AccountCreated, EventVersion: 1, Actor: "test-suite", Payload: testPayload{Number: i}})
+		req := events.AppendRequest{
+			AggregateType: events.AggregateAccount,
+			AggregateID:   aggregateID,
+			Sequence:      int64(i),
+			EventType:     events.AccountCreated,
+			EventVersion:  1,
+			Actor:         "test-suite",
+			Payload:       testPayload{Number: i},
+		}
+		_, err := store.Append(context.Background(), req)
 		if err != nil {
 			t.Fatalf("append event %d: %v", i, err)
 		}
@@ -32,7 +42,15 @@ func TestAppendAndReadStreamPreservesOrderAndContent(t *testing.T) {
 		t.Fatalf("expected 5 events, got %d", len(stream))
 	}
 	for i, event := range stream {
-		if event.Sequence != int64(i+1) || event.AggregateID != aggregateID || event.EventType != events.AccountCreated || event.EventVersion != 1 || event.Actor != "test-suite" || event.EventID.Version() != 7 || event.OccurredAt.Location() != time.UTC {
+		isInvalid := event.Sequence != int64(i+1) ||
+			event.AggregateID != aggregateID ||
+			event.EventType != events.AccountCreated ||
+			event.EventVersion != 1 ||
+			event.Actor != "test-suite" ||
+			event.EventID.Version() != 7 ||
+			event.OccurredAt.Location() != time.UTC
+
+		if isInvalid {
 			t.Fatalf("unexpected envelope at position %d: %+v", i, event)
 		}
 		var payload testPayload
@@ -44,7 +62,15 @@ func TestAppendAndReadStreamPreservesOrderAndContent(t *testing.T) {
 
 func TestAppendRejectsStaleOrDuplicateSequence(t *testing.T) {
 	store := events.NewEventStore(events.NewMemoryRepository())
-	req := events.AppendRequest{AggregateType: events.AggregateAccount, AggregateID: uuid.New(), Sequence: 1, EventType: events.AccountCreated, EventVersion: 1, Actor: "test", Payload: testPayload{Number: 1}}
+	req := events.AppendRequest{
+		AggregateType: events.AggregateAccount,
+		AggregateID:   uuid.New(),
+		Sequence:      1,
+		EventType:     events.AccountCreated,
+		EventVersion:  1,
+		Actor:         "test",
+		Payload:       testPayload{Number: 1},
+	}
 	if _, err := store.Append(context.Background(), req); err != nil {
 		t.Fatalf("initial append: %v", err)
 	}

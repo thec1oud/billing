@@ -29,7 +29,11 @@ func TestChargePaymentMethod_IdempotentOnRetry(t *testing.T) {
 	}
 
 	if first.ProviderReference != second.ProviderReference {
-		t.Errorf("expected same provider_reference on retry, got %q then %q", first.ProviderReference, second.ProviderReference)
+		t.Errorf(
+			"expected same provider_reference on retry, got %q then %q",
+			first.ProviderReference,
+			second.ProviderReference,
+		)
 	}
 	if first.Status != second.Status {
 		t.Errorf("expected same status on retry, got %q then %q", first.Status, second.Status)
@@ -45,7 +49,11 @@ func TestChargePaymentMethod_DifferentKeysChargeIndependently(t *testing.T) {
 	second, _ := adapter.ChargePaymentMethod(ctx, amount, "pm_123", "idem-key-2")
 
 	if first.ProviderReference == second.ProviderReference {
-		t.Errorf("expected distinct provider_reference for distinct idempotency keys, got same %q for both", first.ProviderReference)
+		// Replace Line 48 with:
+		t.Errorf(
+			"expected distinct provider_reference for distinct keys, got same %q for both",
+			first.ProviderReference,
+		)
 	}
 }
 

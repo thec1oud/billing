@@ -1,32 +1,51 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
+  go: '1.20'
 
 linters:
+  disable-all: true
   enable:
+    # --- Correctness, Bugs & Safety ---
     - govet
     - staticcheck
     - errcheck
-    - gofmt
-    - goimports
-    - gosimple
     - ineffassign
-    - deadcode
     - unused
-    - structcheck
-    - varcheck
+    # --- Style & Idioms ---
+    - lll           # Limits line length
+    - revive        # Strict styling framework
 
-linters-settings:
-  gofmt:
-    simplify: true
+  # In v2, linter settings MUST go here, nested inside "linters"
+  settings:
+    revive:
+      rules:
+        - name: receiver-naming
+        - name: blank-imports
+        - name: error-return
+        - name: error-strings
+        # Missing 'exported' rule here explicitly disables it!
+
+formatters:
+  enable:
+    - gofmt
+    - gci
+  settings:
+    lll:
+      line-length: 120
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/thec1oud/billing)
+      custom-order: true
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
   exclude-use-default: false
-  exclude:
-    - "generated"
-
-skip-dirs:
-  - vendor
-  - third_party
+  exclude-dirs:
+    - third_party
+    - vendor

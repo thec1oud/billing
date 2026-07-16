@@ -38,7 +38,8 @@ func TestCheckOrReserveRejectsDifferentRequest(t *testing.T) {
 	if _, err := store.CheckOrReserve(context.Background(), "request-123", "account.create", "hash-one"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CheckOrReserve(context.Background(), "request-123", "account.create", "hash-two"); !errors.Is(err, ErrConflict) {
+	_, err := store.CheckOrReserve(context.Background(), "request-123", "account.create", "hash-two")
+	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
 }

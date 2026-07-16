@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 )
 
 type LogTarget string
@@ -138,21 +137,4 @@ func Load() (*Config, error) {
 		RabbitMQUser:  rabbitMQUser,
 		RabbitMQPass:  rabbitMQPass,
 	}, nil
-}
-
-// log targets are gonna be defined in env with like LOG_TARGETS=CONSOLE,FILE
-func parseLogTargets(val string) []LogTarget {
-	if val == "" {
-		return []LogTarget{TargetConsole} // Safe baseline default
-	}
-
-	rawTargets := strings.Split(val, ",")
-	var targets []LogTarget
-	for _, raw := range rawTargets {
-		trimmed := LogTarget(strings.ToUpper(strings.TrimSpace(raw)))
-		if trimmed != "" {
-			targets = append(targets, trimmed)
-		}
-	}
-	return targets
 }

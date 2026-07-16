@@ -30,5 +30,9 @@ func MonthlyPeriodEnd(periodStart time.Time, anchorDay int) (time.Time, error) {
 	if anchorDay > lastDay {
 		anchorDay = lastDay
 	}
-	return time.Date(year, targetMonth, anchorDay, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), time.UTC), nil
+	return time.Date(
+		year, targetMonth, anchorDay,
+		start.Hour(), start.Minute(), start.Second(), start.Nanosecond(),
+		time.UTC,
+	), nil
 }
