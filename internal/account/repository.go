@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/thec1oud/billing/internal/substrate/events"
+	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 )
 
 // Repository is responsible for persisting and rebuilding

@@ -2,11 +2,10 @@ package account
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
-	"github.com/thec1oud/billing/internal/substrate/events"
+	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
 )
 
@@ -35,68 +34,35 @@ func (s *Service) CreateAccount(
 	timezone string,
 	idempotencyKey string,
 ) (*Account, error) {
-
 	requestHash := idempotency.HashRequest(
 		[]byte(fmt.Sprintf("%s:%s", currency, timezone)),
 	)
 
-	decision, err := s.idem.CheckOrReserve(
-		ctx,
-		idempotencyKey,
-		"account.create",
-		requestHash,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Replay a previously completed request.
-	if !decision.ShouldProceed() {
-		var cached Account
-
-		if err := json.Unmarshal(decision.CachedResponse, &cached); err != nil {
+	return idempotency.Execute(ctx, s.idem, idempotencyKey, "account.create", requestHash, func() (*Account, error) {
+		accountID, err := sharedUUID.New()
+		if err != nil {
 			return nil, err
 		}
 
-		return &cached, nil
-	}
+		event := AccountCreated{
+			AccountID: accountID,
+			Currency:  currency,
+			Timezone:  timezone,
+		}
 
-	accountID, err := sharedUUID.New()
-	if err != nil {
-		return nil, err
-	}
+		err = s.repository.Append(ctx, events.AppendRequest{
+			AggregateType: events.AggregateAccount,
+			AggregateID:   accountID,
+			Sequence:      1,
+			EventType:     events.AccountCreated,
+			EventVersion:  1,
+			Actor:         "account.service",
+			Payload:       event,
+		})
+		if err != nil {
+			return nil, err
+		}
 
-	event := AccountCreated{
-		AccountID: accountID,
-		Currency:  currency,
-		Timezone:  timezone,
-	}
-
-	err = s.repository.Append(ctx, events.AppendRequest{
-		AggregateType: events.AggregateAccount,
-		AggregateID:   accountID,
-		Sequence:      1,
-		EventType:     events.AccountCreated,
-		EventVersion:  1,
-		Actor:         "account.service",
-		Payload:       event,
+		return s.repository.Get(ctx, accountID)
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	account, err := s.repository.Get(ctx, accountID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.idem.StoreResponse(
-		ctx,
-		*decision.ProceedToken,
-		account,
-	); err != nil {
-		return nil, err
-	}
-
-	return account, nil
 }

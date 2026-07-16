@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/thec1oud/billing/internal/ppi/adapters"
-	"github.com/thec1oud/billing/internal/substrate/events"
+	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
 	"github.com/thec1oud/billing/internal/substrate/money"
 )

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// ProceedToken proves that its holder owns a reservation. 
+// ProceedToken proves that its holder owns a reservation.
 type ProceedToken struct {
 	key   string
 	value string

@@ -2,7 +2,6 @@ package subscription
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 	"github.com/thec1oud/billing/internal/account"
 	"github.com/thec1oud/billing/internal/plan"
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
-	"github.com/thec1oud/billing/internal/substrate/events"
+	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
 	"github.com/thec1oud/billing/internal/substrate/timeutil"
 )
@@ -47,7 +46,6 @@ func NewService(
 //   - Add-ons
 //   - Pause / Resume
 //   - Cancellation
-//
 func (s *Service) CreateSubscription(
 	ctx context.Context,
 	accountID uuid.UUID,
@@ -63,161 +61,127 @@ func (s *Service) CreateSubscription(
 		[]byte(fmt.Sprintf("%s:%s", accountID.String(), planID)),
 	)
 
-	decision, err := s.idem.CheckOrReserve(
-		ctx,
-		idempotencyKey,
-		"subscription.create",
-		requestHash,
-	)
-	if err != nil {
-		return nil, err
-	}
+	return idempotency.Execute(ctx, s.idem, idempotencyKey, "subscription.create", requestHash, func() (*Subscription, error) {
 
-	// Return cached response if this request already succeeded.
-	if !decision.ShouldProceed() {
+		//------------------------------------------------------------------
+		// Verify Account Exists
+		//------------------------------------------------------------------
 
-		var cached Subscription
-
-		if err := json.Unmarshal(
-			decision.CachedResponse,
-			&cached,
-		); err != nil {
-			return nil, err
-		}
-
-		return &cached, nil
-	}
-
-	//------------------------------------------------------------------
-	// Verify Account Exists
-	//------------------------------------------------------------------
-
-	acc, err := s.accountRepository.Get(
-		ctx,
-		accountID,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if acc == nil {
-		return nil, fmt.Errorf("account %s not found", accountID)
-	}
-
-	//------------------------------------------------------------------
-	// Load Latest Immutable Plan Version
-	//------------------------------------------------------------------
-
-	latestVersion, err := s.planRepository.LatestVersion(
-		ctx,
-		planID,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	selectedPlan, err := s.planRepository.Get(
-		ctx,
-		planID,
-		latestVersion,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	//------------------------------------------------------------------
-	// Compute Billing Period
-	//------------------------------------------------------------------
-
-	now := timeutil.NowUTC()
-
-	var currentPeriodEnd time.Time
-
-	switch selectedPlan.BillingPeriod {
-
-	case plan.BillingPeriodMonthly:
-
-		currentPeriodEnd, err = timeutil.MonthlyPeriodEnd(
-			now,
-			now.Day(),
+		acc, err := s.accountRepository.Get(
+			ctx,
+			accountID,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-	default:
-		return nil, fmt.Errorf(
-			"unsupported billing period %s",
-			selectedPlan.BillingPeriod,
+		if acc == nil {
+			return nil, fmt.Errorf("account %s not found", accountID)
+		}
+
+		//------------------------------------------------------------------
+		// Load Latest Immutable Plan Version
+		//------------------------------------------------------------------
+
+		latestVersion, err := s.planRepository.LatestVersion(
+			ctx,
+			planID,
 		)
-	}
+		if err != nil {
+			return nil, err
+		}
 
-	//------------------------------------------------------------------
-	// Create Aggregate ID
-	//------------------------------------------------------------------
+		selectedPlan, err := s.planRepository.Get(
+			ctx,
+			planID,
+			latestVersion,
+		)
+		if err != nil {
+			return nil, err
+		}
 
-	subscriptionID, err := sharedUUID.New()
-	if err != nil {
-		return nil, err
-	}
+		//------------------------------------------------------------------
+		// Compute Billing Period
+		//------------------------------------------------------------------
 
-	//------------------------------------------------------------------
-	// Build Event Payload
-	//------------------------------------------------------------------
+		now := timeutil.NowUTC()
 
-	event := SubscriptionCreated{
-		SubscriptionID:     subscriptionID,
-		AccountID:          accountID,
-		PlanID:             selectedPlan.ID,
-		PlanVersion:        selectedPlan.Version,
-		CurrentPeriodStart: now,
-		CurrentPeriodEnd:   currentPeriodEnd,
-		BillingCycleAnchor: now.Day(),
-	}
+		var currentPeriodEnd time.Time
 
-	//------------------------------------------------------------------
-	// Append Event
-	//------------------------------------------------------------------
+		switch selectedPlan.BillingPeriod {
 
-	err = s.repository.Append(
-		ctx,
-		events.AppendRequest{
-			AggregateType: events.AggregateSubscription,
-			AggregateID:   subscriptionID,
-			Sequence:      1,
-			EventType:     events.SubscriptionCreated,
-			EventVersion:  1,
-			Actor:         "subscription.service",
-			Payload:       event,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
+		case plan.BillingPeriodMonthly:
 
-	//------------------------------------------------------------------
-	// Rebuild Aggregate
-	//------------------------------------------------------------------
+			currentPeriodEnd, err = timeutil.MonthlyPeriodEnd(
+				now,
+				now.Day(),
+			)
+			if err != nil {
+				return nil, err
+			}
 
-	subscription, err := s.repository.Get(
-		ctx,
-		subscriptionID,
-	)
-	if err != nil {
-		return nil, err
-	}
+		default:
+			return nil, fmt.Errorf(
+				"unsupported billing period %s",
+				selectedPlan.BillingPeriod,
+			)
+		}
 
-	//------------------------------------------------------------------
-	// Cache Response
-	//------------------------------------------------------------------
+		//------------------------------------------------------------------
+		// Create Aggregate ID
+		//------------------------------------------------------------------
 
-	if err := s.idem.StoreResponse(
-		ctx,
-		*decision.ProceedToken,
-		subscription,
-	); err != nil {
-		return nil, err
-	}
+		subscriptionID, err := sharedUUID.New()
+		if err != nil {
+			return nil, err
+		}
 
-	return subscription, nil
+		//------------------------------------------------------------------
+		// Build Event Payload
+		//------------------------------------------------------------------
+
+		event := SubscriptionCreated{
+			SubscriptionID:     subscriptionID,
+			AccountID:          accountID,
+			PlanID:             selectedPlan.ID,
+			PlanVersion:        selectedPlan.Version,
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   currentPeriodEnd,
+			BillingCycleAnchor: now.Day(),
+		}
+
+		//------------------------------------------------------------------
+		// Append Event
+		//------------------------------------------------------------------
+
+		err = s.repository.Append(
+			ctx,
+			events.AppendRequest{
+				AggregateType: events.AggregateSubscription,
+				AggregateID:   subscriptionID,
+				Sequence:      1,
+				EventType:     events.SubscriptionCreated,
+				EventVersion:  1,
+				Actor:         "subscription.service",
+				Payload:       event,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		//------------------------------------------------------------------
+		// Rebuild Aggregate
+		//------------------------------------------------------------------
+
+		subscription, err := s.repository.Get(
+			ctx,
+			subscriptionID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return subscription, nil
+	})
 }

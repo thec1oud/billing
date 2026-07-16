@@ -5,14 +5,12 @@ import (
 	"sync"
 )
 
-
 type Repository interface {
 	Get(ctx context.Context, key string) (record, bool, error)
 	Reserve(ctx context.Context, key string, value record) (bool, error)
 	Complete(ctx context.Context, key, token string, response []byte) (bool, error)
 	Delete(ctx context.Context, key string) error
 }
-
 
 type MemoryRepository struct {
 	mu      sync.Mutex

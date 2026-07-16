@@ -1,0 +1,26 @@
+name: Lint
+
+on:
+  push: {}
+  pull_request: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+      - name: Install tools
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.0
+          go install golang.org/x/tools/cmd/goimports@latest
+      - name: Run golangci-lint
+        run: golangci-lint run ./...
+      - name: Run go vet
+        run: go vet ./...
+      - name: Check gofmt
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then echo "Run 'gofmt -s -w .'"; gofmt -l .; exit 1; fi

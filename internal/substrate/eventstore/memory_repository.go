@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 )
 
-
 type MemoryRepository struct {
 	mu      sync.RWMutex
 	streams map[streamKey][]Event

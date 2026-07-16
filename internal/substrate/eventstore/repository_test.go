@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/thec1oud/billing/internal/substrate/events"
+	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 )
 
 type testPayload struct {
