@@ -40,7 +40,7 @@ func NewService(
 	idem *idempotency.Store,
 	plans PlanLookup,
 	accounts AccountLookup,
-	ppi PPI,
+	ppi ppi.PPI,
 ) *Service {
 	return &Service{store: store, idem: idem, plans: plans, accounts: accounts, ppi: ppi}
 }
@@ -146,14 +146,6 @@ func (s *Service) FinalizeInvoice(ctx context.Context, invoiceID uuid.UUID) (Inv
 
 	inv.Status = StatusOpen
 	return inv, nil
-}
-
-type PPI interface {
-	ChargePaymentMethod(
-		ctx context.Context,
-		amount money.Money,
-		paymentMethodID, idempotencyKey string,
-	) (ppi.ChargeResult, error)
 }
 
 func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idempotencyKey string) (Invoice, error) {
