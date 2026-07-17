@@ -10,9 +10,7 @@ import (
 )
 
 func newTestService() (*Service, *Repository) {
-	eventStore := events.NewEventStore(
-		events.NewMemoryRepository(),
-	)
+	eventStore := events.NewMemoryEventStore()
 
 	repository := NewRepository(eventStore)
 

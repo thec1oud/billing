@@ -17,9 +17,7 @@ func TestCreateSubscription(t *testing.T) {
 
 	ctx := context.Background()
 
-	eventStore := events.NewEventStore(
-		events.NewMemoryRepository(),
-	)
+	eventStore := events.NewMemoryEventStore()
 
 	accountRepo := account.NewRepository(eventStore)
 	planRepo := plan.NewRepository()

@@ -19,9 +19,7 @@ func TestBillingProjection(t *testing.T) {
 	// Shared infrastructure
 	//----------------------------------------------------------------------
 
-	eventStore := events.NewEventStore(
-		events.NewMemoryRepository(),
-	)
+	eventStore := events.NewMemoryEventStore()
 
 	accountRepo := account.NewRepository(eventStore)
 	planRepo := plan.NewRepository()

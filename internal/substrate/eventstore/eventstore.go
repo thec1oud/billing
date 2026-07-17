@@ -1,14 +1,21 @@
 package events
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-type EventType string
+var (
+	ErrSequenceConflict = errors.New("event sequence conflict: stale or duplicate state write path")
+	ErrInvalidSequence  = errors.New("event sequence must be a positive integer greater than zero")
+)
 
+// Domain Event Enumerations
+type EventType string
 const (
 	AccountCreated      EventType = "billing.account.created"
 	PaymentMethodAdded  EventType = "billing.account.payment_method_added"
@@ -22,14 +29,13 @@ const (
 )
 
 type AggregateType string
-
 const (
 	AggregateAccount      AggregateType = "ACCOUNT"
 	AggregateSubscription AggregateType = "SUBSCRIPTION"
 	AggregateInvoice      AggregateType = "INVOICE"
 )
 
-// Event is the immutable envelope stored for every business-state change.
+// Event is the unalterable system envelope ledger item contract
 type Event struct {
 	EventID       uuid.UUID       `json:"event_id"`
 	EventType     EventType       `json:"event_type"`
@@ -44,9 +50,7 @@ type Event struct {
 	CorrelationID *uuid.UUID      `json:"correlation_id,omitempty"`
 }
 
-// AppendRequest contains the caller-provided event data. EventID and
-// OccurredAt are created by EventStore so every stored event has a UTC UUIDv7
-// envelope.
+// AppendRequest contains user-provided execution mutations parameters
 type AppendRequest struct {
 	AggregateType AggregateType
 	AggregateID   uuid.UUID
@@ -57,4 +61,26 @@ type AppendRequest struct {
 	Payload       any
 	CausationID   *uuid.UUID
 	CorrelationID *uuid.UUID
+}
+
+// EventStore contract interface for out-of-package boundary callers (Track B & C)
+type EventStore interface {
+	Append(ctx context.Context, req AppendRequest) (uuid.UUID, error)
+	ReadStream(ctx context.Context, aggregateType AggregateType, aggregateID uuid.UUID) ([]Event, error)
+}
+
+// Reducer functions represent mathematical deterministic folds transforming history back into runtime structures
+type Reducer[State any] func(State, Event) (State, error)
+
+// Rebuild streams out  ledger history and compiles  system state on the fly
+func Rebuild[State any](initial State, stream []Event, reduce Reducer[State]) (State, error) {
+	state := initial
+	for _, event := range stream {
+		var err error
+		state, err = reduce(state, event)
+		if err != nil {
+			return state, err
+		}
+	}
+	return state, nil
 }

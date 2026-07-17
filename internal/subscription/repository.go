@@ -12,11 +12,11 @@ import (
 // Repository is responsible for persisting and rebuilding
 // Subscription aggregates from the event store.
 type Repository struct {
-	store *events.EventStore
+	store events.EventStore
 }
 
 // NewRepository creates a new Subscription repository.
-func NewRepository(store *events.EventStore) *Repository {
+func NewRepository(store events.EventStore) *Repository {
 	return &Repository{
 		store: store,
 	}

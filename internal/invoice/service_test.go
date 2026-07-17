@@ -34,7 +34,7 @@ func (s stubAccountLookup) DefaultPaymentMethodID(ctx context.Context, accountID
 }
 
 func newTestService(paymentMethodID string) *Service {
-	store := events.NewEventStore(events.NewMemoryRepository())
+	store := events.NewMemoryEventStore()
 	idem := idempotency.NewStore()
 	ppiAdapter := adapters.NewFakeAdapter(idem)
 	accounts := stubAccountLookup{paymentMethodID: paymentMethodID}

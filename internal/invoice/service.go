@@ -28,7 +28,7 @@ type PlanLookup interface {
 }
 
 type Service struct {
-	store    *events.EventStore
+	store    events.EventStore
 	idem     *idempotency.Store
 	plans    PlanLookup
 	accounts AccountLookup
@@ -36,7 +36,7 @@ type Service struct {
 }
 
 func NewService(
-	store *events.EventStore,
+	store events.EventStore,
 	idem *idempotency.Store,
 	plans PlanLookup,
 	accounts AccountLookup,
