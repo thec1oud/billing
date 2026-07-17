@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
+	"github.com/thec1oud/billing/internal/ppi/adapters"
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
@@ -65,4 +68,42 @@ func (s *Service) CreateAccount(
 
 		return s.repository.Get(ctx, accountID)
 	})
+}
+
+func (s *Service) AddPaymentMethod(
+	ctx context.Context,
+	accountID uuid.UUID,
+	paymentMethodID string,
+) (*Account, error) {
+	if _, ok := adapters.MockPaymentMethods[paymentMethodID]; !ok {
+		return nil, ErrPaymentMethodNotFound
+	}
+
+	account, err := s.repository.Get(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	nextSequence := account.Version + 1
+
+	event := PaymentMethodAdded{
+		AccountID:       accountID,
+		PaymentMethodID: paymentMethodID,
+	}
+
+	err = s.repository.Append(ctx, events.AppendRequest{
+		AggregateType: events.AggregateAccount,
+		AggregateID:   accountID,
+		Sequence:      nextSequence,
+		EventType:     events.PaymentMethodAdded,
+		EventVersion:  1,
+		Actor:         "account.service",
+		Payload:       event,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repository.Get(ctx, accountID)
+
 }
