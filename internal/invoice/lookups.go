@@ -36,7 +36,8 @@ func NewSubscriptionPlanLookup(subscriptions *subscription.Service) PlanLookupFu
 		}
 		accountID, err := uuid.Parse(projection.AccountID)
 		if err != nil {
-			return uuid.Nil, money.Money{}, time.Time{}, time.Time{}, err
+			return uuid.Nil, money.Money{}, time.Time{}, time.Time{},
+				errors.Join(err, errors.New("invalid account id in subscription billing projection"))
 		}
 		return accountID, projection.Amount, projection.PeriodStart, projection.PeriodEnd, nil
 	}
