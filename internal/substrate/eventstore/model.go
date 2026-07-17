@@ -11,6 +11,7 @@ type EventType string
 
 const (
 	AccountCreated      EventType = "billing.account.created"
+	PaymentMethodAdded  EventType = "billing.account.payment_method_added"
 	SubscriptionCreated EventType = "billing.subscription.created"
 	InvoiceCreated      EventType = "billing.invoice.created"
 	InvoiceFinalized    EventType = "billing.invoice.finalized"

@@ -41,6 +41,16 @@ func (a *Account) Apply(event events.Event) error {
 		a.Status = StatusActive
 		a.PaymentMethods = []string{}
 		a.Version = event.Sequence
+
+	case events.PaymentMethodAdded:
+		var payload PaymentMethodAdded
+
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			return err
+		}
+
+		a.PaymentMethods = append(a.PaymentMethods, payload.PaymentMethodID)
+		a.Version = event.Sequence
 	}
 
 	return nil

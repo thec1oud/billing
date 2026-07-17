@@ -2,14 +2,14 @@ package account
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	events "github.com/thec1oud/billing/internal/substrate/eventstore"
 	"github.com/thec1oud/billing/internal/substrate/idempotency"
 )
 
-func TestCreateAccountAndReadProjection(t *testing.T) {
-
+func newTestService() (*Service, *Repository) {
 	eventStore := events.NewEventStore(
 		events.NewMemoryRepository(),
 	)
@@ -20,6 +20,13 @@ func TestCreateAccountAndReadProjection(t *testing.T) {
 		repository,
 		idempotency.NewStore(),
 	)
+
+	return service, repository
+}
+
+func TestCreateAccountAndReadProjection(t *testing.T) {
+
+	service, repository := newTestService()
 
 	account, err := service.CreateAccount(
 		context.Background(),
@@ -68,5 +75,51 @@ func TestCreateAccountAndReadProjection(t *testing.T) {
 			"expected ACTIVE status, got %s",
 			projected.Status,
 		)
+	}
+
+	if len(projected.PaymentMethods) != 0 {
+		t.Fatalf(
+			"expected PaymentMethods to be empty on creation, got %v",
+			projected.PaymentMethods,
+		)
+	}
+}
+
+func TestAddPaymentMethod_AppendsToExistingAccount(t *testing.T) {
+
+	service, _ := newTestService()
+	ctx := context.Background()
+
+	account, err := service.CreateAccount(ctx, "USD", "Africa/Addis_Ababa", "account-create-1")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	updated, err := service.AddPaymentMethod(ctx, account.AccountID, "pm_chapa_active")
+	if err != nil {
+		t.Fatalf("add payment method: %v", err)
+	}
+
+	if len(updated.PaymentMethods) != 1 || updated.PaymentMethods[0] != "pm_chapa_active" {
+		t.Fatalf(
+			"expected PaymentMethods to contain pm_good, got %v",
+			updated.PaymentMethods,
+		)
+	}
+}
+
+func TestAddPaymentMethod_RejectsUnknownPaymentMethodID(t *testing.T) {
+
+	service, _ := newTestService()
+	ctx := context.Background()
+
+	account, err := service.CreateAccount(ctx, "USD", "Africa/Addis_Ababa", "account-create-1")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	_, err = service.AddPaymentMethod(ctx, account.AccountID, "pm_does_not_exist")
+	if !errors.Is(err, ErrPaymentMethodNotFound) {
+		t.Fatalf("expected ErrPaymentMethodNotFound, got %v", err)
 	}
 }
