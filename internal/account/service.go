@@ -107,3 +107,7 @@ func (s *Service) AddPaymentMethod(
 	return s.repository.Get(ctx, accountID)
 
 }
+
+func (s *Service) GetAccount(ctx context.Context, accountID uuid.UUID) (*Account, error) {
+	return s.repository.Get(ctx, accountID)
+}

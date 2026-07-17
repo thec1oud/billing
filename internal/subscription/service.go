@@ -192,3 +192,7 @@ func (s *Service) CreateSubscription(
 			return subscription, nil
 		})
 }
+
+func (s *Service) BillingProjection(ctx context.Context, subscriptionID uuid.UUID) (*BillingProjection, error) {
+	return s.repository.BillingProjection(ctx, subscriptionID, s.planRepository)
+}
