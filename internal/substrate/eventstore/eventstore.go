@@ -16,6 +16,7 @@ var (
 
 // Domain Event Enumerations
 type EventType string
+
 const (
 	AccountCreated      EventType = "billing.account.created"
 	PaymentMethodAdded  EventType = "billing.account.payment_method_added"
@@ -29,6 +30,7 @@ const (
 )
 
 type AggregateType string
+
 const (
 	AggregateAccount      AggregateType = "ACCOUNT"
 	AggregateSubscription AggregateType = "SUBSCRIPTION"

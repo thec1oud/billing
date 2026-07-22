@@ -6,7 +6,7 @@
 
 ```powershell
 go env -w GOPROXY=https://proxy.golang.org,direct
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.0
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 go install golang.org/x/tools/cmd/goimports@latest
 pre-commit install
 ```

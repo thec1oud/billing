@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 )
 
@@ -48,7 +49,7 @@ func (m *MemoryEventStore) Append(_ context.Context, req AppendRequest) (uuid.UU
 	defer m.mu.Unlock()
 
 	stream := m.streams[key]
-	
+
 	// Monotonically increasing sequencing integrity assertion check
 	if req.Sequence != int64(len(stream)+1) {
 		return uuid.Nil, ErrSequenceConflict

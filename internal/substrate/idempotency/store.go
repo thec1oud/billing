@@ -51,7 +51,10 @@ func NewStore() *Store {
 	return NewMemoryIdempotencyStore()
 }
 
-func (m *MemoryIdempotencyStore) CheckOrReserve(ctx context.Context, key, operationType, requestHash string) (Decision, error) {
+func (m *MemoryIdempotencyStore) CheckOrReserve(
+	ctx context.Context,
+	key, operationType, requestHash string,
+) (Decision, error) {
 	if key == "" || operationType == "" || requestHash == "" {
 		return Decision{}, ErrInvalidKey
 	}

@@ -33,7 +33,11 @@ func (m *memoryEventStore) Append(_ context.Context, req AppendRequest) (uuid.UU
 	}
 
 	eventID := uuid.New()
-	key := fmt.Sprintf("%s:%s", req.AggregateType, req.AggregateID.String())
+	key := fmt.Sprintf(
+		"%s:%s",
+		req.AggregateType,
+		req.AggregateID.String(),
+	)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -62,7 +66,11 @@ func (m *memoryEventStore) Append(_ context.Context, req AppendRequest) (uuid.UU
 	return eventID, nil
 }
 
-func (m *memoryEventStore) ReadStream(_ context.Context, aggregateType AggregateType, aggregateID uuid.UUID) ([]Event, error) {
+func (m *memoryEventStore) ReadStream(
+	_ context.Context,
+	aggregateType AggregateType,
+	aggregateID uuid.UUID,
+) ([]Event, error) {
 	key := fmt.Sprintf("%s:%s", aggregateType, aggregateID.String())
 
 	m.mu.RLock()
@@ -193,4 +201,3 @@ func TestA2_ProveGenericRebuildProjection(t *testing.T) {
 		t.Errorf("Expected 2, got %d", finalState)
 	}
 }
-	

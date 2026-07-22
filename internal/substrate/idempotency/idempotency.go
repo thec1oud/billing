@@ -50,7 +50,7 @@ func Execute[T any](
 	if err != nil {
 		return zero, err
 	}
-	
+
 	// If a response is already cached, bypass execution entirely
 	if !decision.ShouldProceed() {
 		if err := json.Unmarshal(decision.CachedResponse, &zero); err != nil {
@@ -69,7 +69,7 @@ func Execute[T any](
 	if err := tracker.StoreResponse(ctx, *decision.ProceedToken, result); err != nil {
 		return zero, fmt.Errorf("store idempotent response: %w", err)
 	}
-	
+
 	return result, nil
 }
 
