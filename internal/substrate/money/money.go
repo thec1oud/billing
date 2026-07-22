@@ -2,11 +2,10 @@
 package money
 
 import (
+	"errors"
 	"math/big"
 	"strings"
-	"errors"
 )
-
 
 var (
 	ErrInvalidCurrency  = errors.New("currency must be a three-letter ISO 4217 code")
@@ -15,18 +14,19 @@ var (
 	ErrOverflow         = errors.New("money amount exceeds int64 range")
 )
 
+type Currency string
 
 type Money struct {
-	AmountMinor int64  `json:"amount_minor"`
-	Currency    string `json:"currency"`
+	AmountMinor int64    `json:"amount_minor"`
+	Currency    Currency `json:"currency"`
 }
 
 func New(amountMinor int64, currency string) (Money, error) {
-	currency = strings.ToUpper(strings.TrimSpace(currency))
-	if !isCurrencyCode(currency) {
+	parsed, ok := ParseCurrency(currency)
+	if !ok {
 		return Money{}, ErrInvalidCurrency
 	}
-	return Money{AmountMinor: amountMinor, Currency: currency}, nil
+	return Money{AmountMinor: amountMinor, Currency: parsed}, nil
 }
 
 func (m Money) Add(other Money) (Money, error) {
@@ -61,11 +61,19 @@ func requireSameCurrency(left, right Money) error {
 	return nil
 }
 
-func resultFromBig(amount *big.Int, currency string) (Money, error) {
+func resultFromBig(amount *big.Int, currency Currency) (Money, error) {
 	if !amount.IsInt64() {
 		return Money{}, ErrOverflow
 	}
 	return Money{AmountMinor: amount.Int64(), Currency: currency}, nil
+}
+
+func ParseCurrency(raw string) (Currency, bool) {
+	currency := Currency(strings.ToUpper(strings.TrimSpace(raw)))
+	if !isCurrencyCode(string(currency)) {
+		return "", false
+	}
+	return currency, true
 }
 
 func isCurrencyCode(currency string) bool {

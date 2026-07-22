@@ -19,7 +19,7 @@ import (
 // no stubs anywhere. Building this fresh per test keeps each test's data
 // isolated from the others.
 type testDeps struct {
-	store       *events.EventStore
+	store       events.EventStore
 	accountSvc  *account.Service
 	accountRepo *account.Repository
 	planSvc     *plan.Service
@@ -29,7 +29,7 @@ type testDeps struct {
 }
 
 func newTestDeps() *testDeps {
-	store := events.NewEventStore(events.NewMemoryRepository())
+	store := events.NewMemoryEventStore()
 	idem := idempotency.NewStore()
 
 	planRepo := plan.NewRepository()

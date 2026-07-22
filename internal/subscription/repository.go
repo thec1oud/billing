@@ -83,7 +83,7 @@ func (r *Repository) BillingProjection(
 		PlanVersion: selectedPlan.Version,
 
 		Amount:   selectedPlan.FlatFeeAmount,
-		Currency: selectedPlan.FlatFeeAmount.Currency,
+		Currency: string(selectedPlan.FlatFeeAmount.Currency),
 
 		PeriodStart: subscription.CurrentPeriodStart,
 		PeriodEnd:   subscription.CurrentPeriodEnd,

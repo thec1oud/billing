@@ -85,7 +85,7 @@ func (s *Service) CreateDraftInvoice(
 		payload := CreatedPayload{
 			AccountID:      accountID,
 			SubscriptionID: subscriptionID,
-			Currency:       fee.Currency,
+			Currency:       string(fee.Currency),
 			PeriodStart:    periodStart,
 			PeriodEnd:      periodEnd,
 			LineItems:      lineItems,
@@ -109,7 +109,7 @@ func (s *Service) CreateDraftInvoice(
 			AccountID:      accountID,
 			SubscriptionID: subscriptionID,
 			Status:         StatusDraft,
-			Currency:       fee.Currency,
+			Currency:       string(fee.Currency),
 			PeriodStart:    periodStart,
 			PeriodEnd:      periodEnd,
 			LineItems:      lineItems,
