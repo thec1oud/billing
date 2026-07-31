@@ -2,43 +2,48 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/thec1oud/billing/internal/config"
+	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
 	"github.com/thec1oud/billing/internal/infra/logger"
 )
 
 func main() {
-	ctx := context.Background()
+	if err := run(); err != nil {
+		slog.Error("fatal", "error", err)
+		os.Exit(1)
+	}
+}
 
-	// Load config vars from the env file
+func run() error {
+	ctx := context.Background()
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("Failed to initialize config variables", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("config: %w", err)
 	}
 
 	deps := infra.InitDependencies(ctx, cfg)
 	logClosers, err := logger.InitGlobalLogger(cfg)
 	if err != nil {
-		log.Fatalf("Logger boot failed: %v", err)
+		return fmt.Errorf("logger: %w", err)
 	}
-
-	// Gracefully flush/close all underlying adapters upon application shutdown
 	defer func() {
-		for _, closer := range logClosers {
-			_ = closer.Close()
+		for _, c := range logClosers {
+			_ = c.Close()
 		}
 	}()
-
-	//clean up when the main loop exits
 	defer func() { _ = deps.DB.Close(ctx) }()
 	defer func() { _ = deps.Redis.Close() }()
 	defer func() { _ = deps.Rabbit.Close() }()
 
-	slog.Info("All background services wired. Starting application layer...", "port", cfg.AppPort)
+	if err := database.RunMigrations(deps.DB); err != nil {
+		return fmt.Errorf("migrations: %w", err)
+	}
 
+	slog.Info("All background services wired. Starting application layer...", "port", cfg.AppPort)
+	return nil
 }
