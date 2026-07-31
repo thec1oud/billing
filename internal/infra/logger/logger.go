@@ -3,8 +3,10 @@ package logger
 import (
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/thec1oud/billing/internal/config"
 )
@@ -29,44 +31,65 @@ func InitGlobalLogger(cfg *config.Config) ([]io.Closer, error) {
 	var closers []io.Closer
 
 	for _, target := range cfg.LogTargets {
-		var adapter LogWriterAdapter
-
 		switch target {
 		case config.TargetConsole:
-			adapter = &ConsoleAdapter{}
+			adapter := &ConsoleAdapter{}
+			w, err := adapter.GetWriter()
+			if err != nil {
+				return nil, fmt.Errorf("failed to initialize console adapter: %w", err)
+			}
+			writers = append(writers, w)
+			closers = append(closers, adapter)
+
 		case config.TargetFile:
-			return nil, fmt.Errorf("log target 'FILE' is declared but not yet implemented. Extend LogWriterAdapter to use it")
+			return nil, fmt.Errorf("log target 'FILE' is declared but not yet implemented")
+
 		default:
-			adapter = &ConsoleAdapter{}
+			// Fallback to console for unknown/unhandled target types
+			adapter := &ConsoleAdapter{}
+			w, _ := adapter.GetWriter()
+			writers = append(writers, w)
+			closers = append(closers, adapter)
 		}
-
-		writer, err := adapter.GetWriter()
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize logger adapter for %s: %w", target, err)
-		}
-
-		writers = append(writers, writer)
-		closers = append(closers, adapter)
 	}
 
-	// Dynamic Strategy: Merge all active writers into a single pipeline stream
+	// GUARD: If LogTargets was empty or failed to parse, fallback to os.Stdout directly
+	if len(writers) == 0 {
+		writers = append(writers, os.Stdout)
+	}
+
 	combinedWriter := io.MultiWriter(writers...)
 
-	// Configure structure rules based on environment
-	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
-	if cfg.AppEnv == "development" {
+	// Configure log level based on environment
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+
+	if strings.EqualFold(cfg.AppEnv, "development") {
 		opts.Level = slog.LevelDebug
+		opts.AddSource = true // Helps trace log origin during dev
 	}
 
 	var handler slog.Handler
-	if cfg.AppEnv == "production" {
+	if strings.EqualFold(cfg.AppEnv, "production") {
 		handler = slog.NewJSONHandler(combinedWriter, opts)
 	} else {
 		handler = slog.NewTextHandler(combinedWriter, opts)
 	}
 
-	slog.SetDefault(slog.New(handler))
+	logger := slog.New(handler)
 
-	// Return active resources back to main to handle defer tracking cleanly
+	// 1. Set global slog default
+	slog.SetDefault(logger)
+
+	// 2. Redirect standard log package output (used by third-party packages / driver internals) to slog
+	log.SetFlags(0)
+	log.SetOutput(slog.NewLogLogger(handler, slog.LevelInfo).Writer())
+
+	slog.Info("logger pipeline initialized successfully",
+		"env", cfg.AppEnv,
+		"targets_count", len(writers),
+	)
+
 	return closers, nil
 }
