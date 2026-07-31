@@ -94,7 +94,6 @@ INSERT INTO ledger_entry_type (ledger_entry_type_code) VALUES ('CREDIT_TRANSFER'
 -- 1. TARIFFS & PLANS
 -- ==========================================
 
-
 CREATE TABLE tariffs (
     tariff_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tariff_code VARCHAR(128) NOT NULL,
@@ -114,7 +113,7 @@ CREATE TABLE tariffs (
 
 CREATE TABLE plans (
     plan_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    plan_code VARCHAR(128) UNIQUE NOT NULL,
+    plan_code VARCHAR(128) NOT NULL,
     version INT NOT NULL DEFAULT 1,
     tariff_id BIGINT NOT NULL REFERENCES tariffs(tariff_id),
     effective_from TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -136,7 +135,6 @@ CREATE TABLE purchasable_items (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
 );
 
 -- ==========================================
@@ -176,9 +174,7 @@ CREATE TABLE accounts (
     compliance_flags JSONB NOT NULL DEFAULT '{}'::jsonb,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
 );
-
 
 CREATE TABLE payment_methods (
     payment_method_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -190,7 +186,6 @@ CREATE TABLE payment_methods (
     payment_status_code VARCHAR(30) NOT NULL DEFAULT 'ACTIVE' REFERENCES payment_status(payment_status_code),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
 );
 
 -- ==========================================
@@ -205,11 +200,15 @@ CREATE TABLE event_log (
     sequence BIGINT NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     actor JSONB NOT NULL,
-    causation_id UUID REFERENCES event_log(event_id),
+    causation_id UUID,
     correlation_id UUID,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT uq_aggregate_sequence UNIQUE (aggregate_type, aggregate_id, sequence)
 );
+
+ALTER TABLE event_log
+    ADD CONSTRAINT fk_event_log_causation
+    FOREIGN KEY (causation_id) REFERENCES event_log(event_id) ON DELETE SET NULL;
 
 -- ==========================================
 -- 5. SUBSCRIPTIONS
@@ -234,7 +233,6 @@ CREATE TABLE subscriptions (
     resumes_at TIMESTAMPTZ,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
 );
 
 -- ==========================================
@@ -260,9 +258,7 @@ CREATE TABLE invoices (
     idempotency_key VARCHAR(255) UNIQUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
 );
-
 
 CREATE TABLE invoice_line_items (
     line_item_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -335,6 +331,7 @@ CREATE TRIGGER trg_protect_event_log_immutability
     BEFORE UPDATE OR DELETE ON event_log
     FOR EACH ROW
     EXECUTE FUNCTION prevent_event_log_mutation();
+
 CREATE OR REPLACE FUNCTION protect_finalized_invoice_header()
 RETURNS TRIGGER AS $$
 BEGIN

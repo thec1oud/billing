@@ -2,8 +2,8 @@ package infra
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/rabbitmq/amqp091-go"
@@ -19,31 +19,25 @@ type Dependencies struct {
 	Rabbit *amqp091.Connection
 }
 
-func InitDependencies(ctx context.Context, cfg *config.Config) *Dependencies {
-	// PostgreSQL
+func InitDependencies(ctx context.Context, cfg *config.Config) (*Dependencies, error) {
 	slog.Info("Attempting to connect to PostgreSQL...", "host", cfg.DBHost, "port", cfg.DBPort)
 	dbConn, err := storage.NewPostgresConnection(ctx, cfg)
 	if err != nil {
-		slog.Error("Fatal database connection error", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("postgres connection failed: %w", err)
 	}
 	slog.Info("Successfully connected to PostgreSQL!")
 
-	// Redis
 	slog.Info("Attempting to connect to Redis...", "host", cfg.RedisHost, "port", cfg.RedisPort)
 	redisClient, err := storage.NewRedisClient(ctx, cfg)
 	if err != nil {
-		slog.Error("Fatal Redis connection error", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("redis connection failed: %w", err)
 	}
 	slog.Info("Successfully connected to Redis!")
 
-	// RabbitMQ
 	slog.Info("Attempting to connect to RabbitMQ...", "host", cfg.RabbitMQHost, "port", cfg.RabbitMQPort)
 	rabbitConn, err := storage.NewRabbitMQConnection(cfg)
 	if err != nil {
-		slog.Error("Fatal RabbitMQ connection error", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("rabbitmq connection failed: %w", err)
 	}
 	slog.Info("Successfully connected to RabbitMQ!")
 
@@ -51,5 +45,5 @@ func InitDependencies(ctx context.Context, cfg *config.Config) *Dependencies {
 		DB:     dbConn,
 		Redis:  redisClient,
 		Rabbit: rabbitConn,
-	}
+	}, nil
 }
