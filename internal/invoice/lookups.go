@@ -9,7 +9,7 @@ import (
 
 	"github.com/thec1oud/billing/internal/account"
 	"github.com/thec1oud/billing/internal/subscription"
-	"github.com/thec1oud/billing/internal/substrate/money"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 var ErrNoPaymentMethodOnFile = errors.New("account has no payment method on file")

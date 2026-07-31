@@ -10,9 +10,9 @@ import (
 	"github.com/thec1oud/billing/internal/account"
 	"github.com/thec1oud/billing/internal/plan"
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
-	"github.com/thec1oud/billing/internal/substrate/timeutil"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
+	"github.com/thec1oud/billing/internal/shared/timeutil"
 )
 
 type Service struct {

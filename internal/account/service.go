@@ -8,8 +8,8 @@ import (
 
 	"github.com/thec1oud/billing/internal/ppi/adapters"
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
 )
 
 type Service struct {

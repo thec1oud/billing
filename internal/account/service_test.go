@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
 )
 
 func newTestService() (*Service, *Repository) {

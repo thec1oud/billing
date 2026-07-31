@@ -1,6 +1,6 @@
 package plan
 
-import "github.com/thec1oud/billing/internal/substrate/money"
+import "github.com/thec1oud/billing/internal/shared/money"
 
 type BillingPeriod string
 

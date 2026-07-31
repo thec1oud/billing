@@ -10,9 +10,9 @@ import (
 	"github.com/thec1oud/billing/internal/plan"
 	"github.com/thec1oud/billing/internal/ppi/adapters"
 	"github.com/thec1oud/billing/internal/subscription"
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
-	"github.com/thec1oud/billing/internal/substrate/money"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 // testDeps wires every real module against a shared in-memory event store —

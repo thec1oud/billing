@@ -3,7 +3,7 @@ package plan
 import (
 	"context"
 
-	"github.com/thec1oud/billing/internal/substrate/money"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type Service struct {

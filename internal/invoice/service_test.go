@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/thec1oud/billing/internal/ppi/adapters"
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
-	"github.com/thec1oud/billing/internal/substrate/money"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type stubPlanLookup struct{}

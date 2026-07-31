@@ -7,10 +7,10 @@ import (
 
 	"github.com/thec1oud/billing/internal/account"
 	"github.com/thec1oud/billing/internal/plan"
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
-	"github.com/thec1oud/billing/internal/substrate/money"
-	"github.com/thec1oud/billing/internal/substrate/timeutil"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
+	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/thec1oud/billing/internal/shared/timeutil"
 )
 
 func TestCreateSubscription(t *testing.T) {

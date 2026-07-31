@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
 )
 
 type Status string

@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/thec1oud/billing/internal/substrate/money"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type Status string

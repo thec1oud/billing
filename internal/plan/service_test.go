@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/thec1oud/billing/internal/substrate/money"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 func TestPlanVersionsAreImmutable(t *testing.T) {

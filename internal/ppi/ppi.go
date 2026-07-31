@@ -3,7 +3,7 @@ package ppi
 import (
 	"context"
 
-	"github.com/thec1oud/billing/internal/substrate/money"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type ChargeStatus string

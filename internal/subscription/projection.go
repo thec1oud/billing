@@ -3,7 +3,7 @@ package subscription
 import (
 	"time"
 
-	"github.com/thec1oud/billing/internal/substrate/money"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 // BillingProjection is the read model exposed to the

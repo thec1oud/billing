@@ -10,9 +10,9 @@ import (
 
 	"github.com/thec1oud/billing/internal/ppi"
 	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
-	events "github.com/thec1oud/billing/internal/substrate/eventstore"
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
-	"github.com/thec1oud/billing/internal/substrate/money"
+	events "github.com/thec1oud/billing/internal/shared/eventstore"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 var (

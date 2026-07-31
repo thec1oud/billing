@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/thec1oud/billing/internal/substrate/idempotency"
-	"github.com/thec1oud/billing/internal/substrate/money"
+	"github.com/thec1oud/billing/internal/shared/idempotency"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 func newTestAdapter() *FakeAdapter {
