@@ -95,7 +95,6 @@ INSERT INTO ledger_entry_type (ledger_entry_type_code) VALUES ('CREDIT_TRANSFER'
 -- 1. TARIFFS & PLANS
 -- ==========================================
 
-
 CREATE TABLE tariffs (
     tariff_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tariff_code VARCHAR(128) NOT NULL,
@@ -115,7 +114,7 @@ CREATE TABLE tariffs (
 
 CREATE TABLE plans (
     plan_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    plan_code VARCHAR(128) UNIQUE NOT NULL,
+    plan_code VARCHAR(128) NOT NULL,
     version INT NOT NULL DEFAULT 1,
     tariff_id BIGINT NOT NULL REFERENCES tariffs(tariff_id),
     effective_from TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -136,8 +135,7 @@ CREATE TABLE purchasable_items (
     plan_id BIGINT REFERENCES plans(plan_id) ON DELETE SET NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==========================================
@@ -176,12 +174,8 @@ CREATE TABLE accounts (
     billing_address JSONB NOT NULL DEFAULT '{}'::jsonb,
     compliance_flags JSONB NOT NULL DEFAULT '{}'::jsonb,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-
-
 
 CREATE TABLE payment_methods (
     payment_method_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -192,8 +186,7 @@ CREATE TABLE payment_methods (
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
     payment_status_code VARCHAR(30) NOT NULL DEFAULT 'ACTIVE' REFERENCES payment_status(payment_status_code),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==========================================
@@ -208,11 +201,15 @@ CREATE TABLE event_log (
     sequence BIGINT NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     actor JSONB NOT NULL,
-    causation_id UUID REFERENCES event_log(event_id),
+    causation_id UUID,
     correlation_id UUID,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT uq_aggregate_sequence UNIQUE (aggregate_type, aggregate_id, sequence)
 );
+
+ALTER TABLE event_log
+    ADD CONSTRAINT fk_event_log_causation
+    FOREIGN KEY (causation_id) REFERENCES event_log(event_id) ON DELETE SET NULL;
 
 -- ==========================================
 -- 5. SUBSCRIPTIONS
@@ -236,8 +233,7 @@ CREATE TABLE subscriptions (
     paused_at TIMESTAMPTZ,
     resumes_at TIMESTAMPTZ,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==========================================
@@ -247,7 +243,7 @@ CREATE TABLE subscriptions (
 CREATE TABLE invoices (
     invoice_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     account_id BIGINT NOT NULL REFERENCES accounts(account_id),
-    invoice_number VARCHAR(64) UNIQUE,                  
+    invoice_number VARCHAR(64) UNIQUE,
     invoice_status_code VARCHAR(32) NOT NULL DEFAULT 'DRAFT' REFERENCES invoice_status(invoice_status_code),
     currency VARCHAR(3) NOT NULL,
     subtotal_amount BIGINT NOT NULL DEFAULT 0,
@@ -262,10 +258,8 @@ CREATE TABLE invoices (
     billing_address_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     idempotency_key VARCHAR(255) UNIQUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
 
 CREATE TABLE invoice_line_items (
     line_item_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -292,7 +286,7 @@ CREATE TABLE credit_ledger (
     destination_party_type_code VARCHAR(32) NOT NULL REFERENCES ledger_party_type(ledger_party_type_code),
     destination_party_id VARCHAR(255) NOT NULL,
     ledger_entry_type_code VARCHAR(40) NOT NULL REFERENCES ledger_entry_type(ledger_entry_type_code),
-    amount BIGINT NOT NULL CHECK (amount > 0),          
+    amount BIGINT NOT NULL CHECK (amount > 0),
     reference_type VARCHAR(50),
     reference_id VARCHAR(255),
     description TEXT,
@@ -309,7 +303,7 @@ RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.currency IS DISTINCT FROM NEW.currency THEN
         IF EXISTS (
-            SELECT 1 FROM credit_ledger 
+            SELECT 1 FROM credit_ledger
             WHERE (source_party_type_code = 'ACCOUNT' AND source_party_id = OLD.account_id::VARCHAR)
                OR (destination_party_type_code = 'ACCOUNT' AND destination_party_id = OLD.account_id::VARCHAR)
             UNION ALL
