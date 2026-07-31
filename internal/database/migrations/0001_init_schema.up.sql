@@ -1,3 +1,4 @@
+
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ==========================================
@@ -135,8 +136,8 @@ CREATE TABLE purchasable_items (
     plan_id BIGINT REFERENCES plans(plan_id) ON DELETE SET NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==========================================
@@ -175,9 +176,11 @@ CREATE TABLE accounts (
     billing_address JSONB NOT NULL DEFAULT '{}'::jsonb,
     compliance_flags JSONB NOT NULL DEFAULT '{}'::jsonb,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+
 
 
 CREATE TABLE payment_methods (
@@ -189,8 +192,8 @@ CREATE TABLE payment_methods (
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
     payment_status_code VARCHAR(30) NOT NULL DEFAULT 'ACTIVE' REFERENCES payment_status(payment_status_code),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==========================================
@@ -233,8 +236,8 @@ CREATE TABLE subscriptions (
     paused_at TIMESTAMPTZ,
     resumes_at TIMESTAMPTZ,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ==========================================
@@ -244,7 +247,7 @@ CREATE TABLE subscriptions (
 CREATE TABLE invoices (
     invoice_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     account_id BIGINT NOT NULL REFERENCES accounts(account_id),
-    invoice_number VARCHAR(64) UNIQUE,
+    invoice_number VARCHAR(64) UNIQUE,                  
     invoice_status_code VARCHAR(32) NOT NULL DEFAULT 'DRAFT' REFERENCES invoice_status(invoice_status_code),
     currency VARCHAR(3) NOT NULL,
     subtotal_amount BIGINT NOT NULL DEFAULT 0,
@@ -259,8 +262,8 @@ CREATE TABLE invoices (
     billing_address_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     idempotency_key VARCHAR(255) UNIQUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -289,7 +292,7 @@ CREATE TABLE credit_ledger (
     destination_party_type_code VARCHAR(32) NOT NULL REFERENCES ledger_party_type(ledger_party_type_code),
     destination_party_id VARCHAR(255) NOT NULL,
     ledger_entry_type_code VARCHAR(40) NOT NULL REFERENCES ledger_entry_type(ledger_entry_type_code),
-    amount BIGINT NOT NULL CHECK (amount > 0),
+    amount BIGINT NOT NULL CHECK (amount > 0),          
     reference_type VARCHAR(50),
     reference_id VARCHAR(255),
     description TEXT,
@@ -306,7 +309,7 @@ RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.currency IS DISTINCT FROM NEW.currency THEN
         IF EXISTS (
-            SELECT 1 FROM credit_ledger
+            SELECT 1 FROM credit_ledger 
             WHERE (source_party_type_code = 'ACCOUNT' AND source_party_id = OLD.account_id::VARCHAR)
                OR (destination_party_type_code = 'ACCOUNT' AND destination_party_id = OLD.account_id::VARCHAR)
             UNION ALL
@@ -335,6 +338,7 @@ CREATE TRIGGER trg_protect_event_log_immutability
     BEFORE UPDATE OR DELETE ON event_log
     FOR EACH ROW
     EXECUTE FUNCTION prevent_event_log_mutation();
+
 CREATE OR REPLACE FUNCTION protect_finalized_invoice_header()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -349,7 +353,7 @@ BEGIN
                 OLD.invoice_id, OLD.invoice_status_code;
         END IF;
     END IF;
-
+    NEW.updated_at := CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
