@@ -56,9 +56,7 @@ func (r *Repository) Get(
 func (r *Repository) BillingProjection(
 	ctx context.Context,
 	subscriptionID uuid.UUID,
-	planRepository interface {
-		Get(context.Context, string, int) (plan.Plan, error)
-	},
+	planRepository plan.Repository,
 ) (*BillingProjection, error) {
 
 	subscription, err := r.Get(ctx, subscriptionID)
@@ -66,7 +64,7 @@ func (r *Repository) BillingProjection(
 		return nil, err
 	}
 
-	selectedPlan, err := planRepository.Get(
+	selectedPlan, err := planRepository.GetByCodeAndVersion(
 		ctx,
 		subscription.PlanID,
 		subscription.PlanVersion,
@@ -79,7 +77,7 @@ func (r *Repository) BillingProjection(
 		SubscriptionID: subscription.SubscriptionID.String(),
 		AccountID:      subscription.AccountID.String(),
 
-		PlanID:      selectedPlan.ID,
+		PlanID:      selectedPlan.PlanCode,
 		PlanVersion: selectedPlan.Version,
 
 		Amount:   selectedPlan.FlatFeeAmount,

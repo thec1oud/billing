@@ -7,41 +7,40 @@ import (
 )
 
 type Service struct {
-	repository *Repository
+	repository Repository
 }
 
-func NewService(repository *Repository) *Service {
+func NewService(repository Repository) *Service {
 	return &Service{
 		repository: repository,
 	}
 }
 
-// CreatePlan creates a new immutable plan version.
-//
-// If this is the first time the plan ID is used,
-// Version = 1.
-//
-// Otherwise the latest version is found and the new
-// plan becomes LatestVersion + 1.
+// CreatePlan calculates the next version and persists an immutable plan.
 func (s *Service) CreatePlan(
 	ctx context.Context,
-	id string,
+	code string,
 	amount money.Money,
-	period BillingPeriod,
+	interval BillingInterval,
 ) (Plan, error) {
 
 	version := 1
 
-	if latest, err := s.repository.LatestVersion(ctx, id); err == nil {
+	if latest, err := s.repository.LatestVersion(ctx, code); err == nil && latest > 0 {
 		version = latest + 1
 	}
 
 	plan := Plan{
-		ID:            id,
+		PlanCode:      code,
 		Version:       version,
 		FlatFeeAmount: amount,
-		BillingPeriod: period,
+		Interval:      interval,
 	}
 
 	return s.repository.Save(ctx, plan)
+}
+
+// GetPlanVersion retrieves a targeted version of a plan.
+func (s *Service) GetPlanVersion(ctx context.Context, code string, version int) (Plan, error) {
+	return s.repository.GetByCodeAndVersion(ctx, code, version)
 }

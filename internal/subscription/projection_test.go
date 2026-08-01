@@ -22,7 +22,7 @@ func TestBillingProjection(t *testing.T) {
 	eventStore := events.NewMemoryEventStore()
 
 	accountRepo := account.NewRepository(eventStore)
-	planRepo := plan.NewRepository()
+	planRepo := newFakePlanRepository()
 	subscriptionRepo := NewRepository(eventStore)
 
 	accountService := account.NewService(
@@ -66,7 +66,7 @@ func TestBillingProjection(t *testing.T) {
 		ctx,
 		"basic",
 		price,
-		plan.BillingPeriodMonthly,
+		plan.BillingIntervalMonth,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestBillingProjection(t *testing.T) {
 	sub, err := subscriptionService.CreateSubscription(
 		ctx,
 		acc.AccountID,
-		p.ID,
+		p.PlanCode,
 		"subscription-projection",
 	)
 	if err != nil {
@@ -103,8 +103,8 @@ func TestBillingProjection(t *testing.T) {
 	// Assertions
 	//----------------------------------------------------------------------
 
-	if projection.PlanID != p.ID {
-		t.Fatalf("expected plan %s got %s", p.ID, projection.PlanID)
+	if projection.PlanID != p.PlanCode {
+		t.Fatalf("expected plan %s got %s", p.PlanCode, projection.PlanID)
 	}
 
 	if projection.PlanVersion != p.Version {

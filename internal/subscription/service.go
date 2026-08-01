@@ -9,23 +9,23 @@ import (
 
 	"github.com/thec1oud/billing/internal/account"
 	"github.com/thec1oud/billing/internal/plan"
-	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 	"github.com/thec1oud/billing/internal/shared/idempotency"
 	"github.com/thec1oud/billing/internal/shared/timeutil"
+	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 )
 
 type Service struct {
 	repository        *Repository
 	accountRepository *account.Repository
-	planRepository    *plan.Repository
+	planRepository    plan.Repository
 	idem              *idempotency.Store
 }
 
 func NewService(
 	repository *Repository,
 	accountRepository *account.Repository,
-	planRepository *plan.Repository,
+	planRepository plan.Repository,
 	idem *idempotency.Store,
 ) *Service {
 
@@ -98,7 +98,7 @@ func (s *Service) CreateSubscription(
 				return nil, err
 			}
 
-			selectedPlan, err := s.planRepository.Get(
+			selectedPlan, err := s.planRepository.GetByCodeAndVersion(
 				ctx,
 				planID,
 				latestVersion,
@@ -115,9 +115,9 @@ func (s *Service) CreateSubscription(
 
 			var currentPeriodEnd time.Time
 
-			switch selectedPlan.BillingPeriod {
+			switch selectedPlan.Interval {
 
-			case plan.BillingPeriodMonthly:
+			case plan.BillingIntervalMonth:
 
 				currentPeriodEnd, err = timeutil.MonthlyPeriodEnd(
 					now,
@@ -129,8 +129,8 @@ func (s *Service) CreateSubscription(
 
 			default:
 				return nil, fmt.Errorf(
-					"unsupported billing period %s",
-					selectedPlan.BillingPeriod,
+					"unsupported billing interval %s",
+					selectedPlan.Interval,
 				)
 			}
 
@@ -150,7 +150,7 @@ func (s *Service) CreateSubscription(
 			event := SubscriptionCreated{
 				SubscriptionID:     subscriptionID,
 				AccountID:          accountID,
-				PlanID:             selectedPlan.ID,
+				PlanID:             selectedPlan.PlanCode,
 				PlanVersion:        selectedPlan.Version,
 				CurrentPeriodStart: now,
 				CurrentPeriodEnd:   currentPeriodEnd,

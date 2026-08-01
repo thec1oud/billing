@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,6 +14,57 @@ import (
 	"github.com/thec1oud/billing/internal/shared/timeutil"
 )
 
+type fakePlanRepository struct {
+	nextID int64
+	plans  map[string]map[int]plan.Plan
+}
+
+func newFakePlanRepository() *fakePlanRepository {
+	return &fakePlanRepository{
+		plans: map[string]map[int]plan.Plan{},
+	}
+}
+
+func (r *fakePlanRepository) Save(ctx context.Context, p plan.Plan) (plan.Plan, error) {
+	r.nextID++
+	p.ID = r.nextID
+	if _, ok := r.plans[p.PlanCode]; !ok {
+		r.plans[p.PlanCode] = map[int]plan.Plan{}
+	}
+	r.plans[p.PlanCode][p.Version] = p
+	return p, nil
+}
+
+func (r *fakePlanRepository) Get(ctx context.Context, code string, version int) (plan.Plan, error) {
+	return r.GetByCodeAndVersion(ctx, code, version)
+}
+
+func (r *fakePlanRepository) GetByCodeAndVersion(ctx context.Context, code string, version int) (plan.Plan, error) {
+	versions, ok := r.plans[code]
+	if !ok {
+		return plan.Plan{}, fmt.Errorf("plan %s version %d not found", code, version)
+	}
+	p, ok := versions[version]
+	if !ok {
+		return plan.Plan{}, fmt.Errorf("plan %s version %d not found", code, version)
+	}
+	return p, nil
+}
+
+func (r *fakePlanRepository) LatestVersion(ctx context.Context, code string) (int, error) {
+	versions, ok := r.plans[code]
+	if !ok {
+		return 0, nil
+	}
+	latest := 0
+	for version := range versions {
+		if version > latest {
+			latest = version
+		}
+	}
+	return latest, nil
+}
+
 func TestCreateSubscription(t *testing.T) {
 
 	ctx := context.Background()
@@ -20,7 +72,7 @@ func TestCreateSubscription(t *testing.T) {
 	eventStore := events.NewMemoryEventStore()
 
 	accountRepo := account.NewRepository(eventStore)
-	planRepo := plan.NewRepository()
+	planRepo := newFakePlanRepository()
 	subscriptionRepo := NewRepository(eventStore)
 
 	accountService := account.NewService(
@@ -64,7 +116,7 @@ func TestCreateSubscription(t *testing.T) {
 		ctx,
 		"basic",
 		price,
-		plan.BillingPeriodMonthly,
+		plan.BillingIntervalMonth,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +129,7 @@ func TestCreateSubscription(t *testing.T) {
 	sub, err := subscriptionService.CreateSubscription(
 		ctx,
 		acc.AccountID,
-		createdPlan.ID,
+		createdPlan.PlanCode,
 		"subscription-key",
 	)
 	if err != nil {
@@ -92,7 +144,7 @@ func TestCreateSubscription(t *testing.T) {
 		t.Fatal("wrong account")
 	}
 
-	if sub.PlanID != createdPlan.ID {
+	if sub.PlanID != createdPlan.PlanCode {
 		t.Fatal("wrong plan")
 	}
 
