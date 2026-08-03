@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -109,6 +110,8 @@ func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.In
 func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.Invoice) (int64, error) {
 	q := sqlcgen.New(tx)
 
+	fmt.Println(inv.Status)
+
 	invoiceID, err := q.CreateInvoice(ctx, sqlcgen.CreateInvoiceParams{
 		AccountID:         inv.AccountID,
 		InvoiceStatusCode: string(inv.Status),
@@ -121,11 +124,7 @@ func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.In
 		AmountDue:         inv.AmountDue.AmountMinor,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return 0, fmt.Errorf("%w: %s", ErrInvalidStatus, inv.Status)
-		}
-		return 0, fmt.Errorf("insert invoice: %w", err)
+		return 0, r.handleError(err, "insert invoice")
 	}
 
 	for _, li := range inv.LineItems {
@@ -137,6 +136,13 @@ func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.In
 		var qVal pgtype.Numeric
 		_ = qVal.Scan(fmt.Sprintf("%.4f", li.QuantityValue))
 
+		metaBytes := []byte("{}")
+		if len(li.Metadata) > 0 {
+			if b, err := json.Marshal(li.Metadata); err == nil {
+				metaBytes = b
+			}
+		}
+
 		err := q.CreateInvoiceLineItem(ctx, sqlcgen.CreateInvoiceLineItemParams{
 			InvoiceID:      invoiceID,
 			ItemID:         li.ItemID,
@@ -146,6 +152,7 @@ func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.In
 			QuantityUnit:   li.QuantityUnit,
 			UnitAmount:     li.UnitAmount.AmountMinor,
 			TotalAmount:    li.TotalAmount.AmountMinor,
+			Metadata:       metaBytes,
 		})
 		if err != nil {
 			return 0, fmt.Errorf("insert line item: %w", err)
@@ -254,7 +261,9 @@ func (r *PostgresRepository) UpdatePaymentBalances(
 func (r *PostgresRepository) handleError(err error, op string) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-		return fmt.Errorf("%w: %s", ErrInvalidStatus, op)
+		if pgErr.ConstraintName == "invoices_invoice_status_code_fkey" {
+			return fmt.Errorf("%w: %s", ErrInvalidStatus, op)
+		}
 	}
 	return fmt.Errorf("%s: %w", op, err)
 }
