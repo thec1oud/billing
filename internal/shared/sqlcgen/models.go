@@ -5,35 +5,38 @@
 package sqlcgen
 
 import (
+	"time"
+
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Account struct {
-	AccountID         int64              `json:"account_id"`
-	ExternalID        pgtype.Text        `json:"external_id"`
-	AccountStatusCode string             `json:"account_status_code"`
-	Currency          string             `json:"currency"`
-	Timezone          string             `json:"timezone"`
-	Locale            string             `json:"locale"`
-	NetTerms          int16              `json:"net_terms"`
-	DunningProfileID  pgtype.Int8        `json:"dunning_profile_id"`
-	TaxIdentifiers    []byte             `json:"tax_identifiers"`
-	BillingAddress    []byte             `json:"billing_address"`
-	ComplianceFlags   []byte             `json:"compliance_flags"`
-	Metadata          []byte             `json:"metadata"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	AccountID         int64       `json:"account_id"`
+	ExternalID        pgtype.Text `json:"external_id"`
+	AccountStatusCode string      `json:"account_status_code"`
+	Currency          string      `json:"currency"`
+	Timezone          string      `json:"timezone"`
+	Locale            string      `json:"locale"`
+	NetTerms          int16       `json:"net_terms"`
+	DunningProfileID  pgtype.Int8 `json:"dunning_profile_id"`
+	TaxIdentifiers    []byte      `json:"tax_identifiers"`
+	BillingAddress    []byte      `json:"billing_address"`
+	ComplianceFlags   []byte      `json:"compliance_flags"`
+	Metadata          []byte      `json:"metadata"`
+	CreatedAt         time.Time   `json:"created_at"`
 }
 
 type AccountStatus struct {
-	AccountStatusCode string             `json:"account_status_code"`
-	Description       pgtype.Text        `json:"description"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	AccountStatusCode string      `json:"account_status_code"`
+	Description       pgtype.Text `json:"description"`
+	CreatedAt         time.Time   `json:"created_at"`
 }
 
 type BillingInterval struct {
-	BillingIntervalCode string             `json:"billing_interval_code"`
-	Description         pgtype.Text        `json:"description"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	BillingIntervalCode string      `json:"billing_interval_code"`
+	Description         pgtype.Text `json:"description"`
+	CreatedAt           time.Time   `json:"created_at"`
 }
 
 type CreditLedger struct {
@@ -48,20 +51,21 @@ type CreditLedger struct {
 	ReferenceID              pgtype.Text        `json:"reference_id"`
 	Description              pgtype.Text        `json:"description"`
 	ExpiresAt                pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	CreatedAt                time.Time          `json:"created_at"`
 }
 
 type EventLog struct {
-	EventID       pgtype.UUID        `json:"event_id"`
-	EventType     string             `json:"event_type"`
-	AggregateType string             `json:"aggregate_type"`
-	AggregateID   string             `json:"aggregate_id"`
-	Sequence      int64              `json:"sequence"`
-	OccurredAt    pgtype.Timestamptz `json:"occurred_at"`
-	Actor         []byte             `json:"actor"`
-	CausationID   pgtype.UUID        `json:"causation_id"`
-	CorrelationID pgtype.UUID        `json:"correlation_id"`
-	Payload       []byte             `json:"payload"`
+	EventID       uuid.UUID  `json:"event_id"`
+	EventType     string     `json:"event_type"`
+	AggregateType string     `json:"aggregate_type"`
+	AggregateID   string     `json:"aggregate_id"`
+	Sequence      int64      `json:"sequence"`
+	OccurredAt    time.Time  `json:"occurred_at"`
+	Actor         []byte     `json:"actor"`
+	CausationID   *uuid.UUID `json:"causation_id"`
+	CorrelationID *uuid.UUID `json:"correlation_id"`
+	Payload       []byte     `json:"payload"`
+	EventVersion  int32      `json:"event_version"`
 }
 
 type Invoice struct {
@@ -82,76 +86,76 @@ type Invoice struct {
 	BillingAddressSnapshot []byte             `json:"billing_address_snapshot"`
 	IdempotencyKey         pgtype.Text        `json:"idempotency_key"`
 	Metadata               []byte             `json:"metadata"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	CreatedAt              time.Time          `json:"created_at"`
 	Version                int64              `json:"version"`
 }
 
 type InvoiceLineItem struct {
-	LineItemID     int64              `json:"line_item_id"`
-	InvoiceID      int64              `json:"invoice_id"`
-	ItemID         int64              `json:"item_id"`
-	SubscriptionID pgtype.Int8        `json:"subscription_id"`
-	Description    string             `json:"description"`
-	QuantityValue  pgtype.Numeric     `json:"quantity_value"`
-	QuantityUnit   string             `json:"quantity_unit"`
-	UnitAmount     int64              `json:"unit_amount"`
-	TotalAmount    int64              `json:"total_amount"`
-	Metadata       []byte             `json:"metadata"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	LineItemID     int64          `json:"line_item_id"`
+	InvoiceID      int64          `json:"invoice_id"`
+	ItemID         int64          `json:"item_id"`
+	SubscriptionID pgtype.Int8    `json:"subscription_id"`
+	Description    string         `json:"description"`
+	QuantityValue  pgtype.Numeric `json:"quantity_value"`
+	QuantityUnit   string         `json:"quantity_unit"`
+	UnitAmount     int64          `json:"unit_amount"`
+	TotalAmount    int64          `json:"total_amount"`
+	Metadata       []byte         `json:"metadata"`
+	CreatedAt      time.Time      `json:"created_at"`
 }
 
 type InvoiceStatus struct {
-	InvoiceStatusCode string             `json:"invoice_status_code"`
-	Description       pgtype.Text        `json:"description"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	InvoiceStatusCode string      `json:"invoice_status_code"`
+	Description       pgtype.Text `json:"description"`
+	CreatedAt         time.Time   `json:"created_at"`
 }
 
 type ItemType struct {
-	ItemTypeCode string             `json:"item_type_code"`
-	Description  pgtype.Text        `json:"description"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ItemTypeCode string      `json:"item_type_code"`
+	Description  pgtype.Text `json:"description"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 type LedgerEntryType struct {
-	LedgerEntryTypeCode string             `json:"ledger_entry_type_code"`
-	Description         pgtype.Text        `json:"description"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	LedgerEntryTypeCode string      `json:"ledger_entry_type_code"`
+	Description         pgtype.Text `json:"description"`
+	CreatedAt           time.Time   `json:"created_at"`
 }
 
 type LedgerPartyType struct {
-	LedgerPartyTypeCode string             `json:"ledger_party_type_code"`
-	Description         pgtype.Text        `json:"description"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	LedgerPartyTypeCode string      `json:"ledger_party_type_code"`
+	Description         pgtype.Text `json:"description"`
+	CreatedAt           time.Time   `json:"created_at"`
 }
 
 type PaymentMethod struct {
-	PaymentMethodID     int64              `json:"payment_method_id"`
-	AccountID           int64              `json:"account_id"`
-	PaymentProviderCode string             `json:"payment_provider_code"`
-	ProviderReference   string             `json:"provider_reference"`
-	PaymentTypeCode     string             `json:"payment_type_code"`
-	IsDefault           bool               `json:"is_default"`
-	PaymentStatusCode   string             `json:"payment_status_code"`
-	Metadata            []byte             `json:"metadata"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	PaymentMethodID     int64     `json:"payment_method_id"`
+	AccountID           int64     `json:"account_id"`
+	PaymentProviderCode string    `json:"payment_provider_code"`
+	ProviderReference   string    `json:"provider_reference"`
+	PaymentTypeCode     string    `json:"payment_type_code"`
+	IsDefault           bool      `json:"is_default"`
+	PaymentStatusCode   string    `json:"payment_status_code"`
+	Metadata            []byte    `json:"metadata"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type PaymentProvider struct {
-	PaymentProviderCode string             `json:"payment_provider_code"`
-	Description         pgtype.Text        `json:"description"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	PaymentProviderCode string      `json:"payment_provider_code"`
+	Description         pgtype.Text `json:"description"`
+	CreatedAt           time.Time   `json:"created_at"`
 }
 
 type PaymentStatus struct {
-	PaymentStatusCode string             `json:"payment_status_code"`
-	Description       pgtype.Text        `json:"description"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	PaymentStatusCode string      `json:"payment_status_code"`
+	Description       pgtype.Text `json:"description"`
+	CreatedAt         time.Time   `json:"created_at"`
 }
 
 type PaymentType struct {
-	PaymentTypeCode string             `json:"payment_type_code"`
-	Description     pgtype.Text        `json:"description"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	PaymentTypeCode string      `json:"payment_type_code"`
+	Description     pgtype.Text `json:"description"`
+	CreatedAt       time.Time   `json:"created_at"`
 }
 
 type Plan struct {
@@ -159,44 +163,44 @@ type Plan struct {
 	PlanCode              string             `json:"plan_code"`
 	Version               int32              `json:"version"`
 	TariffID              int64              `json:"tariff_id"`
-	EffectiveFrom         pgtype.Timestamptz `json:"effective_from"`
+	EffectiveFrom         time.Time          `json:"effective_from"`
 	EffectiveUntil        pgtype.Timestamptz `json:"effective_until"`
 	LegacyPricePolicyCode string             `json:"legacy_price_policy_code"`
 	MigrationPath         []byte             `json:"migration_path"`
 	Metadata              []byte             `json:"metadata"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	CreatedAt             time.Time          `json:"created_at"`
 }
 
 type PlanLegacyPricePolicy struct {
-	LegacyPricePolicyCode string             `json:"legacy_price_policy_code"`
-	Description           pgtype.Text        `json:"description"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	LegacyPricePolicyCode string      `json:"legacy_price_policy_code"`
+	Description           pgtype.Text `json:"description"`
+	CreatedAt             time.Time   `json:"created_at"`
 }
 
 type PricingRule struct {
-	RuleID      int64              `json:"rule_id"`
-	RuleCode    string             `json:"rule_code"`
-	IsActive    bool               `json:"is_active"`
-	RulePayload []byte             `json:"rule_payload"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	RuleID      int64     `json:"rule_id"`
+	RuleCode    string    `json:"rule_code"`
+	IsActive    bool      `json:"is_active"`
+	RulePayload []byte    `json:"rule_payload"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type PurchasableItem struct {
-	ItemID       int64              `json:"item_id"`
-	ItemCode     string             `json:"item_code"`
-	ItemTypeCode string             `json:"item_type_code"`
-	Name         string             `json:"name"`
-	Description  pgtype.Text        `json:"description"`
-	PlanID       pgtype.Int8        `json:"plan_id"`
-	IsActive     bool               `json:"is_active"`
-	Metadata     []byte             `json:"metadata"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ItemID       int64       `json:"item_id"`
+	ItemCode     string      `json:"item_code"`
+	ItemTypeCode string      `json:"item_type_code"`
+	Name         string      `json:"name"`
+	Description  pgtype.Text `json:"description"`
+	PlanID       pgtype.Int8 `json:"plan_id"`
+	IsActive     bool        `json:"is_active"`
+	Metadata     []byte      `json:"metadata"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 type PurchasableItemPricingRule struct {
-	ItemID    int64              `json:"item_id"`
-	RuleID    int64              `json:"rule_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ItemID    int64     `json:"item_id"`
+	RuleID    int64     `json:"rule_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Subscription struct {
@@ -206,9 +210,9 @@ type Subscription struct {
 	PlanVersion            int32              `json:"plan_version"`
 	SubscriptionStatusCode string             `json:"subscription_status_code"`
 	Quantity               int32              `json:"quantity"`
-	CurrentPeriodStartAt   pgtype.Timestamptz `json:"current_period_start_at"`
-	CurrentPeriodEndAt     pgtype.Timestamptz `json:"current_period_end_at"`
-	BillingCycleAnchor     pgtype.Timestamptz `json:"billing_cycle_anchor"`
+	CurrentPeriodStartAt   time.Time          `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time          `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time          `json:"billing_cycle_anchor"`
 	TrialStartAt           pgtype.Timestamptz `json:"trial_start_at"`
 	TrialEndAt             pgtype.Timestamptz `json:"trial_end_at"`
 	CancelAtPeriodEnd      bool               `json:"cancel_at_period_end"`
@@ -217,33 +221,33 @@ type Subscription struct {
 	PausedAt               pgtype.Timestamptz `json:"paused_at"`
 	ResumesAt              pgtype.Timestamptz `json:"resumes_at"`
 	Metadata               []byte             `json:"metadata"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	CreatedAt              time.Time          `json:"created_at"`
 }
 
 type SubscriptionStatus struct {
-	SubscriptionStatusCode string             `json:"subscription_status_code"`
-	Description            pgtype.Text        `json:"description"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	SubscriptionStatusCode string      `json:"subscription_status_code"`
+	Description            pgtype.Text `json:"description"`
+	CreatedAt              time.Time   `json:"created_at"`
 }
 
 type Tariff struct {
-	TariffID            int64              `json:"tariff_id"`
-	TariffCode          string             `json:"tariff_code"`
-	Version             int32              `json:"version"`
-	Name                string             `json:"name"`
-	Description         pgtype.Text        `json:"description"`
-	TariffTypeCode      string             `json:"tariff_type_code"`
-	Amount              pgtype.Int8        `json:"amount"`
-	BillingIntervalCode pgtype.Text        `json:"billing_interval_code"`
-	IntervalCount       pgtype.Int4        `json:"interval_count"`
-	TierBrackets        []byte             `json:"tier_brackets"`
-	IsActive            bool               `json:"is_active"`
-	Metadata            []byte             `json:"metadata"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	TariffID            int64       `json:"tariff_id"`
+	TariffCode          string      `json:"tariff_code"`
+	Version             int32       `json:"version"`
+	Name                string      `json:"name"`
+	Description         pgtype.Text `json:"description"`
+	TariffTypeCode      string      `json:"tariff_type_code"`
+	Amount              pgtype.Int8 `json:"amount"`
+	BillingIntervalCode pgtype.Text `json:"billing_interval_code"`
+	IntervalCount       pgtype.Int4 `json:"interval_count"`
+	TierBrackets        []byte      `json:"tier_brackets"`
+	IsActive            bool        `json:"is_active"`
+	Metadata            []byte      `json:"metadata"`
+	CreatedAt           time.Time   `json:"created_at"`
 }
 
 type TariffType struct {
-	TariffTypeCode string             `json:"tariff_type_code"`
-	Description    pgtype.Text        `json:"description"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	TariffTypeCode string      `json:"tariff_type_code"`
+	Description    pgtype.Text `json:"description"`
+	CreatedAt      time.Time   `json:"created_at"`
 }

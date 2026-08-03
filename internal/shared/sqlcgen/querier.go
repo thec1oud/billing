@@ -9,6 +9,7 @@ import (
 )
 
 type Querier interface {
+	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
 	CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error
 	// ============================================================================
@@ -20,6 +21,8 @@ type Querier interface {
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
+	ReadStream(ctx context.Context, arg ReadStreamParams) ([]ReadStreamRow, error)
+	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.
 	UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error)
 	// Transitions -> VOID. Leaves balances intact for historical audit.
