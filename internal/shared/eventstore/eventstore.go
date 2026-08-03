@@ -43,7 +43,7 @@ type Event struct {
 	EventType     EventType       `json:"event_type"`
 	EventVersion  int             `json:"event_version"`
 	AggregateType AggregateType   `json:"aggregate_type"`
-	AggregateID   uuid.UUID       `json:"aggregate_id"`
+	AggregateID   string          `json:"aggregate_id"`
 	Sequence      int64           `json:"sequence"`
 	Actor         string          `json:"actor"`
 	Payload       json.RawMessage `json:"payload"`
@@ -55,7 +55,7 @@ type Event struct {
 // AppendRequest contains user-provided execution mutations parameters
 type AppendRequest struct {
 	AggregateType AggregateType
-	AggregateID   uuid.UUID
+	AggregateID   string
 	Sequence      int64
 	EventType     EventType
 	EventVersion  int
@@ -68,7 +68,7 @@ type AppendRequest struct {
 // EventStore contract interface for out-of-package boundary callers (Track B & C)
 type EventStore interface {
 	Append(ctx context.Context, req AppendRequest) (uuid.UUID, error)
-	ReadStream(ctx context.Context, aggregateType AggregateType, aggregateID uuid.UUID) ([]Event, error)
+	ReadStream(ctx context.Context, aggregateType AggregateType, aggregateID string) ([]Event, error)
 }
 
 // Reducer functions represent mathematical deterministic folds transforming history back into runtime structures

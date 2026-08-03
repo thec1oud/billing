@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	sharedEvents "github.com/thec1oud/billing/internal/shared/eventstore"
 )
 
@@ -14,8 +15,12 @@ func Reduce(state Invoice, event sharedEvents.Event) (Invoice, error) {
 		if err := json.Unmarshal(event.Payload, &p); err != nil {
 			return state, fmt.Errorf("unmarshal InvoiceCreated payload: %w", err)
 		}
+		invoiceID, err := uuid.Parse(event.AggregateID)
+		if err != nil {
+			return Invoice{}, fmt.Errorf("invalid uuid for aggregate_id %q: %w", event.AggregateID, err)
+		}
 		return Invoice{
-			InvoiceID:      event.AggregateID,
+			InvoiceID:      invoiceID,
 			AccountID:      p.AccountID,
 			SubscriptionID: p.SubscriptionID,
 			Status:         StatusDraft,

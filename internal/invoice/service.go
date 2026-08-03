@@ -9,10 +9,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/thec1oud/billing/internal/ppi"
-	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 	"github.com/thec1oud/billing/internal/shared/idempotency"
 	"github.com/thec1oud/billing/internal/shared/money"
+	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 )
 
 var (
@@ -46,7 +46,7 @@ func NewService(
 }
 
 func (s *Service) currentState(ctx context.Context, invoiceID uuid.UUID) (Invoice, []events.Event, error) {
-	stream, err := s.store.ReadStream(ctx, events.AggregateInvoice, invoiceID)
+	stream, err := s.store.ReadStream(ctx, events.AggregateInvoice, invoiceID.String())
 	if err != nil {
 		return Invoice{}, nil, fmt.Errorf("read invoice stream: %w", err)
 	}
@@ -94,7 +94,7 @@ func (s *Service) CreateDraftInvoice(
 
 		if _, err := s.store.Append(ctx, events.AppendRequest{
 			AggregateType: events.AggregateInvoice,
-			AggregateID:   invoiceID,
+			AggregateID:   invoiceID.String(),
 			Sequence:      1, // new aggregate — always the first event in its stream
 			EventType:     events.InvoiceCreated,
 			EventVersion:  1,
@@ -131,7 +131,7 @@ func (s *Service) FinalizeInvoice(ctx context.Context, invoiceID uuid.UUID) (Inv
 
 	if _, err := s.store.Append(ctx, events.AppendRequest{
 		AggregateType: events.AggregateInvoice,
-		AggregateID:   invoiceID,
+		AggregateID:   invoiceID.String(),
 		Sequence:      nextSequence,
 		EventType:     events.InvoiceFinalized,
 		EventVersion:  1,
@@ -175,7 +175,7 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 
 			if _, err := s.store.Append(ctx, events.AppendRequest{
 				AggregateType: events.AggregateInvoice,
-				AggregateID:   invoiceID,
+				AggregateID:   invoiceID.String(),
 				Sequence:      seq,
 				EventType:     events.PaymentAttempted,
 				EventVersion:  1,
@@ -206,7 +206,7 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 			case ppi.ChargeStatusSuccess:
 				if _, err := s.store.Append(ctx, events.AppendRequest{
 					AggregateType: events.AggregateInvoice,
-					AggregateID:   invoiceID,
+					AggregateID:   invoiceID.String(),
 					Sequence:      seq,
 					EventType:     events.PaymentSucceeded,
 					EventVersion:  1,
@@ -219,7 +219,7 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 
 				if _, err := s.store.Append(ctx, events.AppendRequest{
 					AggregateType: events.AggregateInvoice,
-					AggregateID:   invoiceID,
+					AggregateID:   invoiceID.String(),
 					Sequence:      seq,
 					EventType:     events.InvoicePaid,
 					EventVersion:  1,
@@ -233,7 +233,7 @@ func (s *Service) AttemptPayment(ctx context.Context, invoiceID uuid.UUID, idemp
 			default: // FAILED and anything else the fake adapter doesn't produce yet
 				if _, err := s.store.Append(ctx, events.AppendRequest{
 					AggregateType: events.AggregateInvoice,
-					AggregateID:   invoiceID,
+					AggregateID:   invoiceID.String(),
 					Sequence:      seq,
 					EventType:     events.PaymentFailed,
 					EventVersion:  1,

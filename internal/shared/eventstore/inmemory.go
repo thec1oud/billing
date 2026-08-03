@@ -18,7 +18,7 @@ type MemoryEventStore struct {
 
 type streamKey struct {
 	aggregateType AggregateType
-	aggregateID   uuid.UUID
+	aggregateID   string
 }
 
 func NewMemoryEventStore() EventStore {
@@ -76,7 +76,7 @@ func (m *MemoryEventStore) Append(_ context.Context, req AppendRequest) (uuid.UU
 func (m *MemoryEventStore) ReadStream(
 	_ context.Context,
 	aggregateType AggregateType,
-	aggregateID uuid.UUID,
+	aggregateID string,
 ) ([]Event, error) {
 	key := streamKey{aggregateType: aggregateType, aggregateID: aggregateID}
 
