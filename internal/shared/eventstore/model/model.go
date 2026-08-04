@@ -1,9 +1,10 @@
-package events
+package model
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,11 +46,22 @@ type Event struct {
 	AggregateType AggregateType   `json:"aggregate_type"`
 	AggregateID   string          `json:"aggregate_id"`
 	Sequence      int64           `json:"sequence"`
-	Actor         string          `json:"actor"`
+	Actor         json.RawMessage `json:"actor"`
 	Payload       json.RawMessage `json:"payload"`
 	OccurredAt    time.Time       `json:"occurred_at"`
 	CausationID   *uuid.UUID      `json:"causation_id,omitempty"`
 	CorrelationID *uuid.UUID      `json:"correlation_id,omitempty"`
+}
+
+// UnmarshalPayload deserializes the raw JSON payload into the target struct.
+func (e Event) UnmarshalPayload(target any) error {
+	if len(e.Payload) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(e.Payload, target); err != nil {
+		return fmt.Errorf("unmarshal event payload (%s): %w", e.EventType, err)
+	}
+	return nil
 }
 
 // AppendRequest contains user-provided execution mutations parameters
@@ -59,29 +71,47 @@ type AppendRequest struct {
 	Sequence      int64
 	EventType     EventType
 	EventVersion  int
-	Actor         string
-	Payload       any
+	Actor         json.RawMessage // Standard JSONB type
 	CausationID   *uuid.UUID
 	CorrelationID *uuid.UUID
+	Payload       any
 }
 
-// EventStore contract interface for out-of-package boundary callers (Track B & C)
+func (req AppendRequest) Validate() error {
+
+	if req.AggregateID == "" {
+		return errors.New("aggregate_id cannot be empty")
+	}
+	if req.AggregateType == "" {
+		return errors.New("aggregate_type cannot be empty")
+	}
+	if req.EventType == "" {
+		return errors.New("event_type cannot be empty")
+	}
+	if req.EventVersion <= 0 {
+		return errors.New("event_version must be greater than zero")
+	}
+	return nil
+}
+
+// EventStore contract interface for out-of-package boundary callers
 type EventStore interface {
 	Append(ctx context.Context, req AppendRequest) (uuid.UUID, error)
 	ReadStream(ctx context.Context, aggregateType AggregateType, aggregateID string) ([]Event, error)
+	ReadStreamFrom(ctx context.Context, aggregateType AggregateType, aggregateID string, fromSequence int64) ([]Event, error)
 }
 
 // Reducer functions represent mathematical deterministic folds transforming history back into runtime structures
 type Reducer[State any] func(State, Event) (State, error)
 
-// Rebuild streams out  ledger history and compiles  system state on the fly
+// Rebuild streams out ledger history and compiles system state on the fly
 func Rebuild[State any](initial State, stream []Event, reduce Reducer[State]) (State, error) {
 	state := initial
 	for _, event := range stream {
 		var err error
 		state, err = reduce(state, event)
 		if err != nil {
-			return state, err
+			return state, fmt.Errorf("rebuild failed at sequence %d (%s): %w", event.Sequence, event.EventType, err)
 		}
 	}
 	return state, nil
