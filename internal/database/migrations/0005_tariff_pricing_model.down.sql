@@ -3,12 +3,6 @@
 -- ==========================================
 
 ALTER TABLE tariffs
-    DROP CONSTRAINT IF EXISTS chk_tariff_interval_consistency;
-
-ALTER TABLE tariffs
-    DROP CONSTRAINT IF EXISTS chk_tariff_interval_count_positive;
-
-ALTER TABLE tariffs
     DROP CONSTRAINT IF EXISTS chk_tariff_amount_currency;
 
 DELETE FROM tariff_type
