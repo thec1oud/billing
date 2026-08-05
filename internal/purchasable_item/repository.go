@@ -174,4 +174,3 @@ func toModel(row sqlcgen.PurchasableItem) (PurchasableItem, error) {
 		CreatedAt:    row.CreatedAt,
 	}, nil
 }
-

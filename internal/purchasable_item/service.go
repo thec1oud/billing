@@ -80,4 +80,3 @@ func (s *Service) GetByCode(
 
 	return s.repository.GetByCode(ctx, code)
 }
-
