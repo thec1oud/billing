@@ -1,7 +1,3 @@
--- ==========================================
--- ROLLBACK TARIFF PRICING MODEL REFINEMENT
--- ==========================================
-
 ALTER TABLE tariffs
     DROP CONSTRAINT IF EXISTS chk_tariff_amount_currency;
 

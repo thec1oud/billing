@@ -1,7 +1,3 @@
--- ==========================================
--- TARIFF PRICING MODEL REFINEMENT
--- ==========================================
-
 -- Remove the legacy tariff type.
 DELETE FROM tariff_type
 WHERE tariff_type_code = 'ONE_TIME';
