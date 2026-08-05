@@ -95,9 +95,9 @@ func (s *Service) CreatePlanDuration(
 	)
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
-		"create plan duration: %w",
-		err,
-	)
+			"create plan duration: %w",
+			err,
+		)
 	}
 
 	return created, nil
@@ -218,13 +218,6 @@ func (s *Service) GetDurationByPlanAndCode(
 		)
 	}
 
-	if !duration.Valid() {
-		return PlanDuration{}, fmt.Errorf(
-			"unsupported plan duration %q",
-			duration,
-		)
-	}
-
 	result, err := s.repository.GetDurationByPlanAndCode(
 		ctx,
 		planID,
@@ -299,4 +292,3 @@ func (s *Service) UpdateDurationTariff(
 
 	return duration, nil
 }
-

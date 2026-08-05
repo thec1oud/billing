@@ -56,4 +56,3 @@ func (i PurchasableItem) Validate() error {
 
 	return nil
 }
-

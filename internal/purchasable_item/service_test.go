@@ -10,9 +10,9 @@ import (
 )
 
 type fakePurchasableItemRepository struct {
-	item       PurchasableItem
-	createErr  error
-	getByIDErr error
+	item         PurchasableItem
+	createErr    error
+	getByIDErr   error
 	getByCodeErr error
 }
 
@@ -314,8 +314,8 @@ func TestPurchasableItem_Validate(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		item PurchasableItem
+		name    string
+		item    PurchasableItem
 		wantErr bool
 	}{
 		{

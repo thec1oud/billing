@@ -40,7 +40,7 @@ func (r *Repository) Get(
 	stream, err := r.store.ReadStream(
 		ctx,
 		events.AggregateAccount,
-		accountID,
+		accountID.String(),
 	)
 	if err != nil {
 		return nil, err

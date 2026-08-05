@@ -28,23 +28,6 @@ func (p LegacyPricePolicy) Valid() bool {
 
 type PlanDurationCode string
 
-const (
-	PlanDurationMonthly PlanDurationCode = "MONTHLY"
-	PlanDurationQuarterly PlanDurationCode = "QUARTERLY"
-	PlanDurationYearly PlanDurationCode = "YEARLY"
-)
-
-func (d PlanDurationCode) Valid() bool {
-	switch d {
-	case PlanDurationMonthly,
-		PlanDurationQuarterly,
-		PlanDurationYearly:
-		return true
-	default:
-		return false
-	}
-}
-
 // Plan represents an immutable, versioned pricing entity.
 type Plan struct {
 	ID                    int64             `json:"plan_id"`
@@ -114,11 +97,16 @@ func (d PlanDuration) Validate() error {
 		return errors.New("tariff id must be greater than zero")
 	}
 
-	if !d.Duration.Valid() {
-		return fmt.Errorf(
-			"unsupported plan duration %q",
-			d.Duration,
-		)
+	if err := d.Duration.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d PlanDurationCode) Validate() error {
+	if d == "" {
+		return errors.New("plan duration is required")
 	}
 
 	return nil

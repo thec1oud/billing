@@ -55,7 +55,7 @@ func (s *Service) CreateAccount(
 
 		err = s.repository.Append(ctx, events.AppendRequest{
 			AggregateType: events.AggregateAccount,
-			AggregateID:   accountID,
+			AggregateID:   accountID.String(),
 			Sequence:      1,
 			EventType:     events.AccountCreated,
 			EventVersion:  1,
@@ -93,7 +93,7 @@ func (s *Service) AddPaymentMethod(
 
 	err = s.repository.Append(ctx, events.AppendRequest{
 		AggregateType: events.AggregateAccount,
-		AggregateID:   accountID,
+		AggregateID:   accountID.String(),
 		Sequence:      nextSequence,
 		EventType:     events.PaymentMethodAdded,
 		EventVersion:  1,

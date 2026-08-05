@@ -391,4 +391,3 @@ func toPlanDurationModel(row sqlcgen.PlanDuration) PlanDuration {
 		CreatedAt: row.CreatedAt,
 	}
 }
-
