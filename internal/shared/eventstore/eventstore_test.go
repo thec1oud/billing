@@ -2,13 +2,12 @@ package events_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
 
-	"github.com/thec1oud/billing/internal/shared/eventstore/model"
-	"github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
+	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 )
 
@@ -20,16 +19,22 @@ func TestPostgresEventStore_SequenceGeneration(t *testing.T) {
 	defer pool.Close()
 
 	ctx := context.Background()
-	store := repository.NewPostgresEventStore(pool)
+	store := eventrepo.NewPostgresEventStore(pool)
 
 	aggID := "inv_" + uuid.NewString()
-	aggType := model.AggregateType("INVOICE")
-	actor := json.RawMessage(`{"user":"test-runner"}`)
+	aggType := eventmodel.AggregateInvoice
+	actor := eventmodel.Actor{Type: "USER", ID: "test-runner"}
 
-	e1, err := store.Append(ctx, model.AppendRequest{
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	e1, err := store.Append(ctx, tx, eventmodel.AppendRequest{
 		AggregateType: aggType,
 		AggregateID:   aggID,
-		EventType:     model.EventType("InvoiceCreated"),
+		EventType:     eventmodel.InvoiceCreated,
 		EventVersion:  1,
 		Actor:         actor,
 		Payload:       map[string]any{"total": 1000},
@@ -41,10 +46,10 @@ func TestPostgresEventStore_SequenceGeneration(t *testing.T) {
 		t.Errorf("expected sequence 1, got %d", e1.Sequence)
 	}
 
-	e2, err := store.Append(ctx, model.AppendRequest{
+	e2, err := store.Append(ctx, tx, eventmodel.AppendRequest{
 		AggregateType: aggType,
 		AggregateID:   aggID,
-		EventType:     model.EventType("InvoiceFinalized"),
+		EventType:     eventmodel.InvoiceFinalized,
 		EventVersion:  1,
 		Actor:         actor,
 		Payload:       map[string]any{"status": "finalized"},
@@ -54,6 +59,10 @@ func TestPostgresEventStore_SequenceGeneration(t *testing.T) {
 	}
 	if e2.Sequence != 2 {
 		t.Errorf("expected sequence 2, got %d", e2.Sequence)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("failed to commit transaction: %v", err)
 	}
 
 	events, err := store.ReadStream(ctx, aggType, aggID)
@@ -76,18 +85,24 @@ func TestPostgresEventStore_SequenceIsolation(t *testing.T) {
 	defer pool.Close()
 
 	ctx := context.Background()
-	store := repository.NewPostgresEventStore(pool)
+	store := eventrepo.NewPostgresEventStore(pool)
 
-	aggType := model.AggregateType("ACCOUNT")
-	actor := json.RawMessage(`{"user":"test-runner"}`)
+	aggType := eventmodel.AggregateType("ACCOUNT")
+	actor := eventmodel.Actor{Type: "USER", ID: "test-runner"}
 
 	aggID1 := "acc_" + uuid.NewString()
 	aggID2 := "acc_" + uuid.NewString()
 
-	e1, err := store.Append(ctx, model.AppendRequest{
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	e1, err := store.Append(ctx, tx, eventmodel.AppendRequest{
 		AggregateType: aggType,
 		AggregateID:   aggID1,
-		EventType:     model.EventType("AccountCreated"),
+		EventType:     eventmodel.EventType("AccountCreated"),
 		EventVersion:  1,
 		Actor:         actor,
 		Payload:       map[string]any{"name": "Org A"},
@@ -96,16 +111,20 @@ func TestPostgresEventStore_SequenceIsolation(t *testing.T) {
 		t.Fatalf("failed to append to agg1: %v", err)
 	}
 
-	e2, err := store.Append(ctx, model.AppendRequest{
+	e2, err := store.Append(ctx, tx, eventmodel.AppendRequest{
 		AggregateType: aggType,
 		AggregateID:   aggID2,
-		EventType:     model.EventType("AccountCreated"),
+		EventType:     eventmodel.EventType("AccountCreated"),
 		EventVersion:  1,
 		Actor:         actor,
 		Payload:       map[string]any{"name": "Org B"},
 	})
 	if err != nil {
 		t.Fatalf("failed to append to agg2: %v", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("failed to commit transaction: %v", err)
 	}
 
 	if e1.Sequence != 1 || e2.Sequence != 1 {

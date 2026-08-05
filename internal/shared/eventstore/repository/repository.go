@@ -21,23 +21,38 @@ func NewPostgresEventStore(pool *pgxpool.Pool) *PostgresEventStore {
 	return &PostgresEventStore{pool: pool}
 }
 
-func (s *PostgresEventStore) Append(ctx context.Context, req model.AppendRequest) (model.Event, error) {
+// Both transaction and pool satisfy DBTX
+func (s *PostgresEventStore) Append(ctx context.Context, tx sqlcgen.DBTX, req model.AppendRequest) (model.Event, error) {
 	if err := req.Validate(); err != nil {
 		return model.Event{}, err
 	}
 
-	payloadBytes, err := json.Marshal(req.Payload)
-	if err != nil {
-		return model.Event{}, fmt.Errorf("marshal event payload: %w", err)
+	var payloadBytes []byte
+	switch p := req.Payload.(type) {
+	case []byte:
+		payloadBytes = p
+	case json.RawMessage:
+		payloadBytes = p
+	default:
+		var err error
+		payloadBytes, err = json.Marshal(req.Payload)
+		if err != nil {
+			return model.Event{}, fmt.Errorf("marshal event payload: %w", err)
+		}
 	}
 
-	q := sqlcgen.New(s.pool)
+	q := sqlcgen.New(tx)
+	actorBytes, err := json.Marshal(req.Actor)
+	if err != nil {
+		actorBytes = []byte("{}")
+	}
+
 	row, err := q.AppendEvent(ctx, sqlcgen.AppendEventParams{
 		EventType:     string(req.EventType),
 		EventVersion:  int32(req.EventVersion),
 		AggregateType: string(req.AggregateType),
 		AggregateID:   req.AggregateID,
-		Actor:         req.Actor,
+		Actor:         actorBytes,
 		CausationID:   req.CausationID,
 		CorrelationID: req.CorrelationID,
 		Payload:       payloadBytes,
@@ -58,7 +73,7 @@ func (s *PostgresEventStore) Append(ctx context.Context, req model.AppendRequest
 		AggregateID:   req.AggregateID,
 		Sequence:      row.Sequence,
 		OccurredAt:    row.OccurredAt,
-		Actor:         req.Actor,
+		Actor:         actorBytes,
 		Payload:       payloadBytes,
 		CausationID:   req.CausationID,
 		CorrelationID: req.CorrelationID,

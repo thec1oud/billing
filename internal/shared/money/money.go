@@ -87,3 +87,31 @@ func isCurrencyCode(currency string) bool {
 	}
 	return true
 }
+func Zero(currency Currency) (Money, error) {
+	parsed, ok := ParseCurrency(string(currency))
+	if !ok {
+		return Money{}, ErrInvalidCurrency
+	}
+	return Money{AmountMinor: 0, Currency: parsed}, nil
+}
+
+// Panicking versions of the above helpers
+// only for tests and seeding scripts
+
+func MustNew(amountMinor int64, currency Currency) Money {
+	m, err := New(amountMinor, string(currency))
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+func (m Money) MustAdd(other Money) Money {
+	res, err := m.Add(other)
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
+func MustZero(currency Currency) Money {
+	return MustNew(0, currency)
+}

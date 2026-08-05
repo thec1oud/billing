@@ -154,7 +154,7 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 		t.Fatalf("failed to begin finalize tx: %v", err)
 	}
 	finalizedAt := time.Now().UTC()
-	err = repo.Finalize(ctx, tx, invoiceID, finalizedAt, fetched.Version)
+	err = repo.Finalize(ctx, tx, invoiceID, finalizedAt)
 	if err != nil {
 		tx.Rollback(ctx)
 		t.Fatalf("failed to finalize: %v", err)
@@ -178,7 +178,7 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 	}
 	paidAt := time.Now().UTC()
 	zeroDue, _ := money.New(0, "USD")
-	err = repo.MarkPaid(ctx, tx, invoiceID, fetched.Total, zeroDue, paidAt, fetched.Version)
+	err = repo.MarkPaid(ctx, tx, invoiceID, fetched.Total, zeroDue, paidAt)
 	if err != nil {
 		tx.Rollback(ctx)
 		t.Fatalf("failed to mark paid: %v", err)
@@ -193,79 +193,5 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 	}
 	if fetched.Status != model.StatusPaid {
 		t.Errorf("expected status paid, got %s", fetched.Status)
-	}
-}
-
-func TestPostgresRepository_VersionConflict(t *testing.T) {
-	pool, err := testutil.GetTestPool()
-	if err != nil {
-		t.Skipf("Skipping integration test: failed to get test pool (%v)", err)
-	}
-	defer pool.Close()
-
-	ctx := context.Background()
-	repo := repository.NewPostgresRepository(pool)
-
-	subtotal, _ := money.New(2000, "USD")
-	tax, _ := money.New(0, "USD")
-	discount, _ := money.New(0, "USD")
-	total, _ := money.New(2000, "USD")
-	amountPaid, _ := money.New(0, "USD")
-	amountDue, _ := money.New(2000, "USD")
-
-	inv := model.Invoice{
-		AccountID:  1,
-		Status:     model.StatusDraft,
-		Currency:   "USD",
-		Subtotal:   subtotal,
-		Tax:        tax,
-		Discount:   discount,
-		Total:      total,
-		AmountPaid: amountPaid,
-		AmountDue:  amountDue,
-	}
-
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin tx: %v", err)
-	}
-	invoiceID, err := repo.Create(ctx, tx, inv)
-	if err != nil {
-		tx.Rollback(ctx)
-		t.Fatalf("failed to create: %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("failed to commit create: %v", err)
-	}
-
-	fetched, err := repo.Get(ctx, invoiceID)
-	if err != nil {
-		t.Fatalf("failed to get: %v", err)
-	}
-
-	// First modification updates version
-	tx, err = pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin tx: %v", err)
-	}
-	err = repo.Finalize(ctx, tx, invoiceID, time.Now().UTC(), fetched.Version)
-	if err != nil {
-		tx.Rollback(ctx)
-		t.Fatalf("failed to finalize: %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("failed to commit: %v", err)
-	}
-
-	// Second modification using stale version should fail with conflict
-	tx, err = pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin tx: %v", err)
-	}
-	defer tx.Rollback(ctx)
-
-	err = repo.MarkVoid(ctx, tx, invoiceID, fetched.Version)
-	if !errors.Is(err, repository.ErrVersionConflict) {
-		t.Errorf("expected ErrVersionConflict, got %v", err)
 	}
 }
