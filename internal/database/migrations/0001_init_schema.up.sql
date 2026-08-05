@@ -78,7 +78,8 @@ CREATE TABLE ledger_entry_type (
 );
 
 -- Seed Initial Reference Values
-INSERT INTO tariff_type (tariff_type_code) VALUES ('FLAT_FEE'), ('PER_UNIT'), ('TIERED_USAGE'), ('ONE_TIME');
+INSERT INTO tariff_type (tariff_type_code)
+VALUES  ('FLAT_FEE'), ('PER_UNIT'), ('TIERED_USAGE'), ('STAIRSTEP'), ('PACKAGE'), ('MATRIX'), ('COMPOSITE');
 INSERT INTO billing_interval (billing_interval_code) VALUES ('DAY'), ('WEEK'), ('MONTH'), ('YEAR');
 INSERT INTO plan_legacy_price_policy (legacy_price_policy_code) VALUES ('KEEP_FOREVER'), ('MIGRATE_IMMEDIATELY'), ('MIGRATE_ON_RENEWAL');
 INSERT INTO item_type (item_type_code) VALUES ('PLAN'), ('ONE_TIME_SERVICE'), ('PRODUCT');
@@ -103,8 +104,7 @@ CREATE TABLE tariffs (
     description TEXT,
     tariff_type_code VARCHAR(64) NOT NULL REFERENCES tariff_type(tariff_type_code),
     amount BIGINT,
-    billing_interval_code VARCHAR(32) REFERENCES billing_interval(billing_interval_code),
-    interval_count INT,
+    currency VARCHAR(3) NOT NULL,
     tier_brackets JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -112,11 +112,13 @@ CREATE TABLE tariffs (
     CONSTRAINT uq_tariff_code_version UNIQUE (tariff_code, version)
 );
 
+
+
+
 CREATE TABLE plans (
     plan_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     plan_code VARCHAR(128) NOT NULL,
     version INT NOT NULL DEFAULT 1,
-    tariff_id BIGINT NOT NULL REFERENCES tariffs(tariff_id),
     effective_from TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     effective_until TIMESTAMPTZ,
     legacy_price_policy_code VARCHAR(64) NOT NULL DEFAULT 'KEEP_FOREVER' REFERENCES plan_legacy_price_policy(legacy_price_policy_code),
@@ -124,6 +126,24 @@ CREATE TABLE plans (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_plan_code_version UNIQUE (plan_code, version)
+);
+
+CREATE TABLE plan_durations (
+    plan_duration_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    plan_id BIGINT NOT NULL
+        REFERENCES plans(plan_id) ON DELETE CASCADE,
+
+    tariff_id BIGINT NOT NULL
+        REFERENCES tariffs(tariff_id),
+
+    duration VARCHAR(32) NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_plan_duration UNIQUE (plan_id, duration)
 );
 
 CREATE TABLE purchasable_items (

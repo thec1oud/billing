@@ -162,13 +162,21 @@ type Plan struct {
 	PlanID                int64              `json:"plan_id"`
 	PlanCode              string             `json:"plan_code"`
 	Version               int32              `json:"version"`
-	TariffID              int64              `json:"tariff_id"`
 	EffectiveFrom         time.Time          `json:"effective_from"`
 	EffectiveUntil        pgtype.Timestamptz `json:"effective_until"`
 	LegacyPricePolicyCode string             `json:"legacy_price_policy_code"`
 	MigrationPath         []byte             `json:"migration_path"`
 	Metadata              []byte             `json:"metadata"`
 	CreatedAt             time.Time          `json:"created_at"`
+}
+
+type PlanDuration struct {
+	PlanDurationID int64     `json:"plan_duration_id"`
+	PlanID         int64     `json:"plan_id"`
+	TariffID       int64     `json:"tariff_id"`
+	Duration       string    `json:"duration"`
+	IsActive       bool      `json:"is_active"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type PlanLegacyPricePolicy struct {
@@ -231,19 +239,18 @@ type SubscriptionStatus struct {
 }
 
 type Tariff struct {
-	TariffID            int64       `json:"tariff_id"`
-	TariffCode          string      `json:"tariff_code"`
-	Version             int32       `json:"version"`
-	Name                string      `json:"name"`
-	Description         pgtype.Text `json:"description"`
-	TariffTypeCode      string      `json:"tariff_type_code"`
-	Amount              pgtype.Int8 `json:"amount"`
-	BillingIntervalCode pgtype.Text `json:"billing_interval_code"`
-	IntervalCount       pgtype.Int4 `json:"interval_count"`
-	TierBrackets        []byte      `json:"tier_brackets"`
-	IsActive            bool        `json:"is_active"`
-	Metadata            []byte      `json:"metadata"`
-	CreatedAt           time.Time   `json:"created_at"`
+	TariffID       int64       `json:"tariff_id"`
+	TariffCode     string      `json:"tariff_code"`
+	Version        int32       `json:"version"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	TariffTypeCode string      `json:"tariff_type_code"`
+	Amount         pgtype.Int8 `json:"amount"`
+	Currency       string      `json:"currency"`
+	TierBrackets   []byte      `json:"tier_brackets"`
+	IsActive       bool        `json:"is_active"`
+	Metadata       []byte      `json:"metadata"`
+	CreatedAt      time.Time   `json:"created_at"`
 }
 
 type TariffType struct {

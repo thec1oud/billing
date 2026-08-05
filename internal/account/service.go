@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/thec1oud/billing/internal/ppi/adapters"
-	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 	"github.com/thec1oud/billing/internal/shared/idempotency"
+	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 )
 
 type Service struct {

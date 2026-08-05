@@ -2,143 +2,260 @@ package tariff
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/thec1oud/billing/internal/shared/sqlcgen"
+)
+
+var (
+	ErrTariffNotFound = errors.New("tariff not found")
 )
 
 type Repository interface {
-	Save(ctx context.Context, t Tariff) (Tariff, error)
+	Create(ctx context.Context, tx pgx.Tx, tariff Tariff) (Tariff, error)
 	GetByCodeAndVersion(ctx context.Context, code string, version int) (Tariff, error)
 	LatestVersion(ctx context.Context, code string) (int, error)
+	ListVersions(ctx context.Context, code string) ([]Tariff, error)
 }
 
-type postgresRepository struct {
-	db *sql.DB
+type PostgresRepository struct {
+	pool *pgxpool.Pool
 }
 
-func NewRepository(db *sql.DB) Repository {
-	return &postgresRepository{db: db}
+func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{
+		pool: pool,
+	}
 }
 
-func (r *postgresRepository) Save(ctx context.Context, t Tariff) (Tariff, error) {
-	query := `
-		INSERT INTO tariffs (
-			tariff_code, version, name, tariff_type_code, amount, billing_interval_code, is_active, metadata
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), COALESCE($8, '{}'::jsonb)
-		)
-		RETURNING tariff_id, created_at;
-	`
+func (r *PostgresRepository) Create(
+	ctx context.Context,
+	tx pgx.Tx,
+	tariff Tariff,
+) (Tariff, error) {
+	q := sqlcgen.New(tx)
 
-	metadataBytes := t.Metadata
-	if len(t.Tiers) > 0 {
-		// Embed tier structures within metadata JSONB if not using a separate child table
-		tierMap := map[string]interface{}{
-			"tiers": t.Tiers,
-		}
-		if len(metadataBytes) > 0 {
-			var existing map[string]interface{}
-			_ = json.Unmarshal(metadataBytes, &existing)
-			existing["tiers"] = t.Tiers
-			metadataBytes, _ = json.Marshal(existing)
-		} else {
-			metadataBytes, _ = json.Marshal(tierMap)
-		}
+	tierBrackets, err := json.Marshal(tariff.Tiers)
+	if err != nil {
+		return Tariff{}, fmt.Errorf("marshal tier brackets: %w", err)
 	}
 
-	var tariffID int64
-	var createdAt time.Time
+	var amount *int64
+	var currency *string
 
-	err := r.db.QueryRowContext(
+	if tariff.Amount != nil {
+		amountValue := tariff.Amount.AmountMinor
+		currencyValue := string(tariff.Amount.Currency)
+
+		amount = &amountValue
+		currency = &currencyValue
+	}
+
+	var billingInterval *string
+	var intervalCount *int32
+
+	if tariff.Duration != nil {
+		interval := string(tariff.Duration.Interval)
+		count := int32(tariff.Duration.Count)
+
+		billingInterval = &interval
+		intervalCount = &count
+	}
+
+	row, err := q.CreateTariff(ctx, sqlcgen.CreateTariffParams{
+		TariffCode:          tariff.TariffCode,
+		Version:             int32(tariff.Version),
+		Name:                tariff.Name,
+		Description:         tariff.Description,
+		TariffTypeCode:      string(tariff.TariffTypeCode),
+		Amount:              amount,
+		Currency:            currency,
+		BillingIntervalCode: billingInterval,
+		IntervalCount:       intervalCount,
+		TierBrackets:        tierBrackets,
+		IsActive:            tariff.IsActive,
+		Metadata:            tariff.Metadata,
+	})
+	if err != nil {
+		return Tariff{}, fmt.Errorf("create tariff: %w", err)
+	}
+
+	tariff.ID = row.TariffID
+	tariff.Version = int(row.Version)
+	tariff.CreatedAt = row.CreatedAt
+
+	return tariff, nil
+}
+
+func (r *PostgresRepository) GetByCodeAndVersion(
+	ctx context.Context,
+	code string,
+	version int,
+) (Tariff, error) {
+	q := sqlcgen.New(r.pool)
+
+	row, err := q.GetTariffByCodeAndVersion(
 		ctx,
-		query,
-		t.TariffCode,
-		t.Version,
-		t.Name,
-		t.TariffTypeCode,
-		t.Amount.AmountMinor,
-		t.BillingIntervalCode,
-		t.IsActive,
-		metadataBytes,
-	).Scan(&tariffID, &createdAt)
-	if err != nil {
-		return Tariff{}, fmt.Errorf("failed to insert tariff: %w", err)
-	}
-
-	t.ID = tariffID
-	t.CreatedAt = createdAt
-	t.Metadata = metadataBytes
-	return t, nil
-}
-
-func (r *postgresRepository) GetByCodeAndVersion(ctx context.Context, code string, version int) (Tariff, error) {
-	query := `
-		SELECT 
-			tariff_id, tariff_code, version, name, tariff_type_code, amount, billing_interval_code, is_active, metadata, created_at
-		FROM tariffs
-		WHERE tariff_code = $1 AND version = $2;
-	`
-
-	var t Tariff
-	var rawAmount int64
-	var rawType, rawInterval string
-
-	err := r.db.QueryRowContext(ctx, query, code, version).Scan(
-		&t.ID,
-		&t.TariffCode,
-		&t.Version,
-		&t.Name,
-		&rawType,
-		&rawAmount,
-		&rawInterval,
-		&t.IsActive,
-		&t.Metadata,
-		&t.CreatedAt,
+		sqlcgen.GetTariffByCodeAndVersionParams{
+			TariffCode: code,
+			Version:    int32(version),
+		},
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Tariff{}, ErrTariffNotFound
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Tariff{}, fmt.Errorf("tariff %s v%d not found", code, version)
-		}
-		return Tariff{}, fmt.Errorf("failed to query tariff: %w", err)
+		return Tariff{}, fmt.Errorf("get tariff: %w", err)
 	}
 
-	t.TariffTypeCode = TariffTypeCode(rawType)
-	t.BillingIntervalCode = BillingInterval(rawInterval)
-	
-	// Currency defaults to system default or metadata field
-	m, _ := money.New(rawAmount, "USD")
-	t.Amount = m
+	var amount *money.Money
 
-	// Unmarshal embedded tiers if available
-	if len(t.Metadata) > 0 {
-		var meta struct {
-			Tiers []Tier `json:"tiers"`
+	if row.Amount.Valid {
+		if !row.Currency.Valid {
+			return Tariff{}, fmt.Errorf(
+				"tariff %s v%d has amount without currency",
+				row.TariffCode,
+				row.Version,
+			)
 		}
-		if err := json.Unmarshal(t.Metadata, &meta); err == nil && len(meta.Tiers) > 0 {
-			t.Tiers = meta.Tiers
+
+		m, err := money.New(
+			row.Amount.Int64,
+			row.Currency.String,
+		)
+		if err != nil {
+			return Tariff{}, fmt.Errorf("create tariff money: %w", err)
+		}
+
+		amount = &m
+	}
+
+	var duration *BillingDuration
+
+	if row.BillingIntervalCode.Valid {
+		if !row.IntervalCount.Valid || row.IntervalCount.Int32 <= 0 {
+			return Tariff{}, fmt.Errorf(
+				"tariff %s v%d has invalid billing duration",
+				row.TariffCode,
+				row.Version,
+			)
+		}
+
+		duration = &BillingDuration{
+			Count:    int(row.IntervalCount.Int32),
+			Interval: BillingInterval(row.BillingIntervalCode.String),
 		}
 	}
 
-	return t, nil
+	var tiers []Tier
+
+	if len(row.TierBrackets) > 0 {
+		if err := json.Unmarshal(row.TierBrackets, &tiers); err != nil {
+			return Tariff{}, fmt.Errorf("decode tariff tiers: %w", err)
+		}
+	}
+
+	return Tariff{
+		ID:             row.TariffID,
+		TariffCode:     row.TariffCode,
+		Version:        int(row.Version),
+		Name:           row.Name,
+		Description:    row.Description,
+		TariffTypeCode: TariffTypeCode(row.TariffTypeCode),
+		Amount:         amount,
+		Duration:       duration,
+		IsActive:       row.IsActive,
+		Tiers:          tiers,
+		Metadata:       row.Metadata,
+		CreatedAt:      row.CreatedAt,
+	}, nil
 }
 
-func (r *postgresRepository) LatestVersion(ctx context.Context, code string) (int, error) {
-	query := `
-		SELECT COALESCE(MAX(version), 0)
-		FROM tariffs
-		WHERE tariff_code = $1;
-	`
+func (r *PostgresRepository) LatestVersion(
+	ctx context.Context,
+	code string,
+) (int, error) {
+	q := sqlcgen.New(r.pool)
 
-	var latest int
-	err := r.db.QueryRowContext(ctx, query, code).Scan(&latest)
+	version, err := q.GetLatestTariffVersion(ctx, code)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch latest tariff version: %w", err)
+		return 0, fmt.Errorf("get latest tariff version: %w", err)
 	}
 
-	return latest, nil
+	return int(version), nil
+}
+
+func (r *PostgresRepository) ListVersions(
+	ctx context.Context,
+	code string,
+) ([]Tariff, error) {
+	q := sqlcgen.New(r.pool)
+
+	rows, err := q.ListTariffVersions(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("list tariff versions: %w", err)
+	}
+
+	tariffs := make([]Tariff, 0, len(rows))
+
+	for _, row := range rows {
+		var amount *money.Money
+
+		if row.Amount.Valid {
+			if !row.Currency.Valid {
+				return nil, fmt.Errorf(
+					"tariff %s v%d has amount without currency",
+					row.TariffCode,
+					row.Version,
+				)
+			}
+
+			m, err := money.New(row.Amount.Int64, row.Currency.String)
+			if err != nil {
+				return nil, fmt.Errorf("create tariff money: %w", err)
+			}
+
+			amount = &m
+		}
+
+		var duration *BillingDuration
+
+		if row.BillingIntervalCode.Valid {
+			duration = &BillingDuration{
+				Count:    int(row.IntervalCount.Int32),
+				Interval: BillingInterval(row.BillingIntervalCode.String),
+			}
+		}
+
+		var tiers []Tier
+
+		if len(row.TierBrackets) > 0 {
+			if err := json.Unmarshal(row.TierBrackets, &tiers); err != nil {
+				return nil, fmt.Errorf("decode tariff tiers: %w", err)
+			}
+		}
+
+		tariffs = append(tariffs, Tariff{
+			ID:             row.TariffID,
+			TariffCode:     row.TariffCode,
+			Version:        int(row.Version),
+			Name:           row.Name,
+			Description:    row.Description,
+			TariffTypeCode: TariffTypeCode(row.TariffTypeCode),
+			Amount:         amount,
+			Duration:       duration,
+			IsActive:       row.IsActive,
+			Tiers:          tiers,
+			Metadata:       row.Metadata,
+			CreatedAt:      row.CreatedAt,
+		})
+	}
+
+	return tariffs, nil
 }

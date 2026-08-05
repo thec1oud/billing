@@ -98,7 +98,8 @@ func (req AppendRequest) Validate() error {
 type EventStore interface {
 	Append(ctx context.Context, req AppendRequest) (uuid.UUID, error)
 	ReadStream(ctx context.Context, aggregateType AggregateType, aggregateID string) ([]Event, error)
-	ReadStreamFrom(ctx context.Context, aggregateType AggregateType, aggregateID string, fromSequence int64) ([]Event, error)
+	ReadStreamFrom(ctx context.Context, aggregateType AggregateType,
+		aggregateID string, fromSequence int64) ([]Event, error)
 }
 
 // Reducer functions represent mathematical deterministic folds transforming history back into runtime structures

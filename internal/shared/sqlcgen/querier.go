@@ -12,12 +12,17 @@ type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
 	CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error
+	CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error)
+	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
 	// ============================================================================
 	// FINE-GRAINED STATE & BALANCE TRANSITIONS
 	// ============================================================================
 	// Transitions DRAFT -> OPEN. Sets finalized_at timestamp.
 	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (int64, error)
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
+	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
+	GetPlanByCodeAndVersion(ctx context.Context, arg GetPlanByCodeAndVersionParams) (Plan, error)
+	GetPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)

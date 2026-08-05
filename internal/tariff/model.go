@@ -70,7 +70,10 @@ func (t *Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 	}
 
 	if len(t.Tiers) == 0 {
-		return money.Money{}, fmt.Errorf("no pricing tiers defined for tariff %s v%d", t.TariffCode, t.Version)
+		return money.Money{}, fmt.Errorf(
+			"no pricing tiers defined for tariff %s v%d",
+			t.TariffCode,
+			t.Version)
 	}
 
 	var totalAmount int64
@@ -86,7 +89,10 @@ func (t *Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 			}
 
 			if tier.UnitPrice.Currency != t.Amount.Currency {
-				return money.Money{}, fmt.Errorf("currency mismatch between tier (%s) and base tariff (%s)", tier.UnitPrice.Currency, t.Amount.Currency)
+				return money.Money{}, fmt.Errorf(
+					"currency mismatch between tier (%s) and base tariff (%s)",
+					tier.UnitPrice.Currency,
+					t.Amount.Currency)
 			}
 
 			var tierCapacity int64

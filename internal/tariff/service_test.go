@@ -2,8 +2,8 @@ package tariff
 
 import (
 	"context"
+	"fmt"
 	"testing"
-	 "fmt"
 
 	"github.com/thec1oud/billing/internal/shared/money"
 )
@@ -58,7 +58,7 @@ func (m *mockRepository) LatestVersion(_ context.Context, code string) (int, err
 // ==========================================
 
 func TestTariff_CalculateCharge_Tiered(t *testing.T) {
-	usd10, _ := money.New(1000, "USD") // $10 flat fee base
+	usd10, _ := money.New(1000, "USD")     // $10 flat fee base
 	priceTier1, _ := money.New(100, "USD") // $1 per unit minor
 	priceTier2, _ := money.New(50, "USD")  // $0.50 per unit minor
 	zeroFee, _ := money.New(0, "USD")

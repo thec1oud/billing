@@ -2,165 +2,172 @@ package plan
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
-	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/thec1oud/billing/internal/shared/sqlcgen"
+)
+
+var (
+	ErrPlanNotFound = errors.New("plan not found")
 )
 
 type Repository interface {
-	Save(ctx context.Context, plan Plan) (Plan, error)
+	Create(ctx context.Context, tx pgx.Tx, plan Plan) (Plan, error)
+	CreateDuration(ctx context.Context, tx pgx.Tx, duration PlanDuration) (PlanDuration, error)
 	GetByCodeAndVersion(ctx context.Context, code string, version int) (Plan, error)
+	GetDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
 	LatestVersion(ctx context.Context, code string) (int, error)
 }
 
-type postgresRepository struct {
-	db *sql.DB
+type PostgresRepository struct {
+	pool *pgxpool.Pool
 }
 
-func NewRepository(db *sql.DB) Repository {
-	return &postgresRepository{db: db}
+func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{pool: pool}
 }
 
-func (r *postgresRepository) Save(ctx context.Context, plan Plan) (Plan, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
+func (r *PostgresRepository) Create(
+	ctx context.Context,
+	tx pgx.Tx,
+	plan Plan,
+) (Plan, error) {
+	q := sqlcgen.New(tx)
+
+	row, err := q.CreatePlan(ctx, sqlcgen.CreatePlanParams{
+		PlanCode:              plan.PlanCode,
+		Version:               int32(plan.Version),
+		EffectiveFrom:         plan.EffectiveFrom,
+		EffectiveUntil:        plan.EffectiveUntil,
+		LegacyPricePolicyCode: string(plan.LegacyPricePolicyCode),
+		MigrationPath:         plan.MigrationPath,
+		Metadata:              plan.Metadata,
+	})
 	if err != nil {
-		return Plan{}, fmt.Errorf("failed to begin transaction: %w", err)
+		return Plan{}, fmt.Errorf("create plan: %w", err)
 	}
-	defer tx.Rollback()
 
-	// 1. Insert into tariffs table
-	tariffQuery := `
-		INSERT INTO tariffs (
-			tariff_code, version, name, tariff_type_code, amount, billing_interval_code, is_active, metadata
-		) VALUES ($1, $2, $3, 'FLAT_FEE', $4, $5, TRUE, '{}'::jsonb)
-		RETURNING tariff_id, created_at;
-	`
-	tariffCode := fmt.Sprintf("TRF_%s_V%d", plan.PlanCode, plan.Version)
-	tariffName := fmt.Sprintf("Tariff for plan %s v%d", plan.PlanCode, plan.Version)
+	return Plan{
+		ID:                    row.PlanID,
+		PlanCode:              row.PlanCode,
+		Version:               int(row.Version),
+		EffectiveFrom:         row.EffectiveFrom,
+		EffectiveUntil:        row.EffectiveUntil,
+		LegacyPricePolicyCode: LegacyPricePolicy(row.LegacyPricePolicyCode),
+		MigrationPath:         row.MigrationPath,
+		Metadata:              row.Metadata,
+		CreatedAt:             row.CreatedAt,
+	}, nil
+}
 
-	var tariffID int64
-	var tariffCreatedAt time.Time
+func (r *PostgresRepository) CreateDuration(
+	ctx context.Context,
+	tx pgx.Tx,
+	duration PlanDuration,
+) (PlanDuration, error) {
+	q := sqlcgen.New(tx)
 
-	err = tx.QueryRowContext(
+	row, err := q.CreatePlanDuration(ctx, sqlcgen.CreatePlanDurationParams{
+		PlanID:   duration.PlanID,
+		TariffID: duration.TariffID,
+		Duration: duration.Duration,
+		IsActive: duration.IsActive,
+	})
+	if err != nil {
+		return PlanDuration{}, fmt.Errorf("create plan duration: %w", err)
+	}
+
+	return PlanDuration{
+		ID:        row.PlanDurationID,
+		PlanID:    row.PlanID,
+		TariffID:  row.TariffID,
+		Duration:  row.Duration,
+		IsActive:  row.IsActive,
+		CreatedAt: row.CreatedAt,
+	}, nil
+}
+
+func (r *PostgresRepository) GetByCodeAndVersion(
+	ctx context.Context,
+	code string,
+	version int,
+) (Plan, error) {
+	q := sqlcgen.New(r.pool)
+
+	row, err := q.GetPlanByCodeAndVersion(
 		ctx,
-		tariffQuery,
-		tariffCode,
-		plan.Version,
-		tariffName,
-		plan.FlatFeeAmount.AmountMinor,
-		plan.Interval,
-	).Scan(&tariffID, &tariffCreatedAt)
-	if err != nil {
-		return Plan{}, fmt.Errorf("failed to insert tariff: %w", err)
-	}
-
-	// 2. Insert into plans table
-	planQuery := `
-		INSERT INTO plans (
-			plan_code, version, tariff_id, effective_from, effective_until, 
-			legacy_price_policy_code, migration_path, metadata
-		) VALUES (
-			$1, $2, $3, $4, $5, 
-			COALESCE(NULLIF($6, ''), 'KEEP_FOREVER'), 
-			COALESCE($7, '{}'::jsonb), 
-			COALESCE($8, '{}'::jsonb)
-		)
-		RETURNING plan_id, created_at;
-	`
-	effectiveFrom := plan.EffectiveFrom
-	if effectiveFrom.IsZero() {
-		effectiveFrom = time.Now().UTC()
-	}
-
-	var planID int64
-	var planCreatedAt time.Time
-
-	err = tx.QueryRowContext(
-		ctx,
-		planQuery,
-		plan.PlanCode,
-		plan.Version,
-		tariffID,
-		effectiveFrom,
-		plan.EffectiveUntil,
-		string(plan.LegacyPricePolicyCode),
-		plan.MigrationPath,
-		plan.Metadata,
-	).Scan(&planID, &planCreatedAt)
-	if err != nil {
-		return Plan{}, fmt.Errorf("failed to insert plan: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return Plan{}, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	plan.ID = planID
-	plan.TariffID = tariffID
-	plan.EffectiveFrom = effectiveFrom
-	plan.CreatedAt = planCreatedAt
-
-	return plan, nil
-}
-
-func (r *postgresRepository) GetByCodeAndVersion(ctx context.Context, code string, version int) (Plan, error) {
-	query := `
-		SELECT 
-			p.plan_id, p.plan_code, p.version, p.tariff_id, p.effective_from, p.effective_until,
-			p.legacy_price_policy_code, p.migration_path, p.metadata, p.created_at,
-			t.amount, t.billing_interval_code
-		FROM plans p
-		JOIN tariffs t ON p.tariff_id = t.tariff_id
-		WHERE p.plan_code = $1 AND p.version = $2;
-	`
-
-	var p Plan
-	var rawAmount int64
-	var interval string
-
-	err := r.db.QueryRowContext(ctx, query, code, version).Scan(
-		&p.ID,
-		&p.PlanCode,
-		&p.Version,
-		&p.TariffID,
-		&p.EffectiveFrom,
-		&p.EffectiveUntil,
-		&p.LegacyPricePolicyCode,
-		&p.MigrationPath,
-		&p.Metadata,
-		&p.CreatedAt,
-		&rawAmount,
-		&interval,
+		sqlcgen.GetPlanByCodeAndVersionParams{
+			PlanCode: code,
+			Version:  int32(version),
+		},
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Plan{}, ErrPlanNotFound
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Plan{}, fmt.Errorf("plan %s version %d not found", code, version)
-		}
-		return Plan{}, fmt.Errorf("failed to query plan: %w", err)
+		return Plan{}, fmt.Errorf("get plan: %w", err)
 	}
 
-	p.Interval = BillingInterval(interval)
-	m, _ := money.New(rawAmount, string(p.FlatFeeAmount.Currency))
-	p.FlatFeeAmount = m
+	durations, err := r.GetDurations(ctx, row.PlanID)
+	if err != nil {
+		return Plan{}, fmt.Errorf("get plan durations: %w", err)
+	}
 
-	return p, nil
+	return Plan{
+		ID:                    row.PlanID,
+		PlanCode:              row.PlanCode,
+		Version:               int(row.Version),
+		EffectiveFrom:         row.EffectiveFrom,
+		EffectiveUntil:        row.EffectiveUntil,
+		LegacyPricePolicyCode: LegacyPricePolicy(row.LegacyPricePolicyCode),
+		MigrationPath:         row.MigrationPath,
+		Metadata:              row.Metadata,
+		CreatedAt:             row.CreatedAt,
+		Durations:             durations,
+	}, nil
 }
 
-func (r *postgresRepository) LatestVersion(ctx context.Context, code string) (int, error) {
-	query := `
-		SELECT COALESCE(MAX(version), 0)
-		FROM plans
-		WHERE plan_code = $1;
-	`
+func (r *PostgresRepository) GetDurations(
+	ctx context.Context,
+	planID int64,
+) ([]PlanDuration, error) {
+	q := sqlcgen.New(r.pool)
 
-	var latest int
-	err := r.db.QueryRowContext(ctx, query, code).Scan(&latest)
+	rows, err := q.GetPlanDurations(ctx, planID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get latest version for plan %s: %w", code, err)
+		return nil, fmt.Errorf("get plan durations: %w", err)
 	}
 
-	return latest, nil
+	durations := make([]PlanDuration, 0, len(rows))
+
+	for _, row := range rows {
+		durations = append(durations, PlanDuration{
+			ID:        row.PlanDurationID,
+			PlanID:    row.PlanID,
+			TariffID:  row.TariffID,
+			Duration:  row.Duration,
+			IsActive:  row.IsActive,
+			CreatedAt: row.CreatedAt,
+		})
+	}
+
+	return durations, nil
+}
+
+func (r *PostgresRepository) LatestVersion(
+	ctx context.Context,
+	code string,
+) (int, error) {
+	q := sqlcgen.New(r.pool)
+
+	version, err := q.GetLatestPlanVersion(ctx, code)
+	if err != nil {
+		return 0, fmt.Errorf("get latest plan version: %w", err)
+	}
+
+	return int(version), nil
 }

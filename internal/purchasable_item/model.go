@@ -13,7 +13,6 @@ const (
 	ItemTypeProduct        ItemTypeCode = "PRODUCT"
 )
 
-// PurchasableItem maps directly to the `purchasable_items` table.
 type PurchasableItem struct {
 	ID           int64           `json:"item_id"`
 	ItemCode     string          `json:"item_code"`
