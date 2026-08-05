@@ -2,115 +2,163 @@ package tariff
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
+
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type mockRepository struct {
-	tariffs map[string]map[int]Tariff
+	latestVersions []int
+	latestCalls    int
+	createErrs     []error
+	createCalls    int
+	created        Tariff
+	listVersions   []Tariff
+	listErr        error
 }
 
-func newMockRepository() *mockRepository {
-	return &mockRepository{
-		tariffs: make(map[string]map[int]Tariff),
+func (m *mockRepository) Create(
+	_ context.Context,
+	_ pgx.Tx,
+	tariff Tariff,
+) (Tariff, error) {
+	m.createCalls++
+	if len(m.createErrs) > 0 {
+		err := m.createErrs[0]
+		m.createErrs = m.createErrs[1:]
+		return Tariff{}, err
 	}
+	m.created = tariff
+	tariff.ID = 1
+	return tariff, nil
 }
 
-func (m *mockRepository) Save(_ context.Context, t Tariff) (Tariff, error) {
-	if _, exists := m.tariffs[t.TariffCode]; !exists {
-		m.tariffs[t.TariffCode] = make(map[int]Tariff)
-	}
-	t.ID = int64(len(m.tariffs[t.TariffCode]) + 1)
-	m.tariffs[t.TariffCode][t.Version] = t
-	return t, nil
+func (m *mockRepository) GetByCodeAndVersion(
+	_ context.Context,
+	code string,
+	version int,
+) (Tariff, error) {
+	return Tariff{
+		TariffCode: code,
+		Version:    version,
+	}, nil
 }
 
-func (m *mockRepository) GetByCodeAndVersion(_ context.Context, code string, version int) (Tariff, error) {
-	vMap, exists := m.tariffs[code]
-	if !exists {
-		return Tariff{}, fmt.Errorf("not found")
+func (m *mockRepository) LatestVersion(
+	_ context.Context,
+	_ string,
+) (int, error) {
+	if m.latestCalls < len(m.latestVersions) {
+		latest := m.latestVersions[m.latestCalls]
+		m.latestCalls++
+		return latest, nil
 	}
-	t, exists := vMap[version]
-	if !exists {
-		return Tariff{}, fmt.Errorf("version not found")
-	}
-	return t, nil
+	return 0, nil
 }
 
-func (m *mockRepository) LatestVersion(_ context.Context, code string) (int, error) {
-	vMap, exists := m.tariffs[code]
-	if !exists || len(vMap) == 0 {
-		return 0, nil
+func (m *mockRepository) ListVersions(
+	_ context.Context,
+	_ string,
+) ([]Tariff, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
 	}
-	latest := 0
-	for v := range vMap {
-		if v > latest {
-			latest = v
-		}
-	}
-	return latest, nil
+	return m.listVersions, nil
 }
 
-// ==========================================
-// TARIFF MATH & SERVICE UNIT TESTS
-// ==========================================
+func TestServiceCreateTariff(t *testing.T) {
+	repo := &mockRepository{
+		latestVersions: []int{2},
+	}
 
-func TestTariff_CalculateCharge_Tiered(t *testing.T) {
-	usd10, _ := money.New(1000, "USD")     // $10 flat fee base
-	priceTier1, _ := money.New(100, "USD") // $1 per unit minor
-	priceTier2, _ := money.New(50, "USD")  // $0.50 per unit minor
-	zeroFee, _ := money.New(0, "USD")
+	service := NewService(repo)
 
-	upTo100 := int64(100)
+	amount, err := money.New(1000, "USD")
+	require.NoError(t, err)
 
-	tieredTariff := Tariff{
-		TariffCode:     "API_USAGE",
-		Version:        1,
-		TariffTypeCode: TariffTypeTiered,
-		Amount:         usd10,
-		Tiers: []Tier{
-			{UpToQuantity: &upTo100, UnitPrice: priceTier1, FlatFee: zeroFee},
-			{UpToQuantity: nil, UnitPrice: priceTier2, FlatFee: zeroFee},
+	created, err := service.CreateTariff(
+		context.Background(),
+		nil,
+		"BASIC",
+		"Basic",
+		"",
+		TariffTypeFlatFee,
+		amount,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "BASIC", created.TariffCode)
+	require.Equal(t, 3, created.Version)
+	require.Equal(t, 1, repo.createCalls)
+}
+
+func TestServiceCreateTariff_RetriesAfterUniqueVersionConflict(t *testing.T) {
+	repo := &mockRepository{
+		latestVersions: []int{1, 2},
+		createErrs: []error{
+			&pgconn.PgError{Code: "23505", ConstraintName: "uq_tariff_code_version"},
 		},
 	}
 
-	t.Run("calculates usage correctly across tiers without floats", func(t *testing.T) {
-		// 150 units -> 100 units @ $1.00 ($100) + 50 units @ $0.50 ($25) = $125 total (12500 cents)
-		qty := Quantity{Value: 150, Unit: UnitAPICall}
-		charge, err := tieredTariff.CalculateCharge(qty)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	service := NewService(repo)
 
-		if charge.AmountMinor != 12500 {
-			t.Errorf("expected 12500 minor units ($125.00), got %d", charge.AmountMinor)
-		}
-	})
+	amount, err := money.New(1000, "USD")
+	require.NoError(t, err)
+
+	created, err := service.CreateTariff(
+		context.Background(),
+		nil,
+		"BASIC",
+		"Basic",
+		"",
+		TariffTypeFlatFee,
+		amount,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 3, created.Version)
+	require.Equal(t, 2, repo.createCalls)
 }
 
-func TestService_CreateTariff(t *testing.T) {
-	repo := newMockRepository()
-	svc := NewService(repo)
-	basePrice, _ := money.New(2999, "USD")
+func TestServiceListVersions_ReturnsNotFound(t *testing.T) {
+	repo := &mockRepository{listErr: ErrTariffNotFound}
+	service := NewService(repo)
 
-	t.Run("creates version 1 tariff", func(t *testing.T) {
-		trf, err := svc.CreateTariff(
-			context.Background(),
-			"BASE_SUBSCRIPTION",
-			"Base Subscription Tariff",
-			TariffTypeFlatFee,
-			basePrice,
-			BillingIntervalMonth,
-			nil,
-		)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
+	_, err := service.ListVersions(context.Background(), "BASIC")
+	require.ErrorIs(t, err, ErrTariffNotFound)
+}
 
-		if trf.Version != 1 {
-			t.Errorf("expected version 1, got %d", trf.Version)
-		}
-	})
+func TestServiceCreateTariff_RetainsRepositoryError(t *testing.T) {
+	repo := &mockRepository{
+		latestVersions: []int{2},
+		createErrs: []error{
+			errors.New("database error"),
+		},
+	}
+
+	service := NewService(repo)
+
+	amount, err := money.New(1000, "USD")
+	require.NoError(t, err)
+
+	_, err = service.CreateTariff(
+		context.Background(),
+		nil,
+		"BASIC",
+		"Basic",
+		"",
+		TariffTypeFlatFee,
+		amount,
+		nil,
+		nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create tariff")
 }

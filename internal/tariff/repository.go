@@ -7,19 +7,22 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
-var (
-	ErrTariffNotFound = errors.New("tariff not found")
-)
+var ErrTariffNotFound = errors.New("tariff not found")
 
 type Repository interface {
 	Create(ctx context.Context, tx pgx.Tx, tariff Tariff) (Tariff, error)
-	GetByCodeAndVersion(ctx context.Context, code string, version int) (Tariff, error)
+	GetByCodeAndVersion(
+		ctx context.Context,
+		code string,
+		version int,
+	) (Tariff, error)
 	LatestVersion(ctx context.Context, code string) (int, error)
 	ListVersions(ctx context.Context, code string) ([]Tariff, error)
 }
@@ -39,58 +42,50 @@ func (r *PostgresRepository) Create(
 	tx pgx.Tx,
 	tariff Tariff,
 ) (Tariff, error) {
-	q := sqlcgen.New(tx)
+	if err := tariff.Validate(); err != nil {
+		return Tariff{}, fmt.Errorf("validate tariff: %w", err)
+	}
 
 	tierBrackets, err := json.Marshal(tariff.Tiers)
 	if err != nil {
-		return Tariff{}, fmt.Errorf("marshal tier brackets: %w", err)
+		return Tariff{}, fmt.Errorf(
+			"marshal tier brackets: %w",
+			err,
+		)
 	}
 
-	var amount *int64
-	var currency *string
-
-	if tariff.Amount != nil {
-		amountValue := tariff.Amount.AmountMinor
-		currencyValue := string(tariff.Amount.Currency)
-
-		amount = &amountValue
-		currency = &currencyValue
+	description := pgtype.Text{
+		String: tariff.Description,
+		Valid:  tariff.Description != "",
 	}
 
-	var billingInterval *string
-	var intervalCount *int32
-
-	if tariff.Duration != nil {
-		interval := string(tariff.Duration.Interval)
-		count := int32(tariff.Duration.Count)
-
-		billingInterval = &interval
-		intervalCount = &count
+	metadata := tariff.Metadata
+	if len(metadata) == 0 {
+		metadata = json.RawMessage(`{}`)
 	}
+
+	q := sqlcgen.New(tx)
 
 	row, err := q.CreateTariff(ctx, sqlcgen.CreateTariffParams{
-		TariffCode:          tariff.TariffCode,
-		Version:             int32(tariff.Version),
-		Name:                tariff.Name,
-		Description:         tariff.Description,
-		TariffTypeCode:      string(tariff.TariffTypeCode),
-		Amount:              amount,
-		Currency:            currency,
-		BillingIntervalCode: billingInterval,
-		IntervalCount:       intervalCount,
-		TierBrackets:        tierBrackets,
-		IsActive:            tariff.IsActive,
-		Metadata:            tariff.Metadata,
+		TariffCode:     tariff.TariffCode,
+		Version:        int32(tariff.Version),
+		Name:           tariff.Name,
+		Description:    description,
+		TariffTypeCode: string(tariff.TariffTypeCode),
+		Amount: pgtype.Int8{
+			Int64: tariff.Amount.AmountMinor,
+			Valid: true,
+		},
+		Currency:     string(tariff.Amount.Currency),
+		TierBrackets: tierBrackets,
+		IsActive:     tariff.IsActive,
+		Metadata:     metadata,
 	})
 	if err != nil {
 		return Tariff{}, fmt.Errorf("create tariff: %w", err)
 	}
 
-	tariff.ID = row.TariffID
-	tariff.Version = int(row.Version)
-	tariff.CreatedAt = row.CreatedAt
-
-	return tariff, nil
+	return toModel(row)
 }
 
 func (r *PostgresRepository) GetByCodeAndVersion(
@@ -114,67 +109,7 @@ func (r *PostgresRepository) GetByCodeAndVersion(
 		return Tariff{}, fmt.Errorf("get tariff: %w", err)
 	}
 
-	var amount *money.Money
-
-	if row.Amount.Valid {
-		if !row.Currency.Valid {
-			return Tariff{}, fmt.Errorf(
-				"tariff %s v%d has amount without currency",
-				row.TariffCode,
-				row.Version,
-			)
-		}
-
-		m, err := money.New(
-			row.Amount.Int64,
-			row.Currency.String,
-		)
-		if err != nil {
-			return Tariff{}, fmt.Errorf("create tariff money: %w", err)
-		}
-
-		amount = &m
-	}
-
-	var duration *BillingDuration
-
-	if row.BillingIntervalCode.Valid {
-		if !row.IntervalCount.Valid || row.IntervalCount.Int32 <= 0 {
-			return Tariff{}, fmt.Errorf(
-				"tariff %s v%d has invalid billing duration",
-				row.TariffCode,
-				row.Version,
-			)
-		}
-
-		duration = &BillingDuration{
-			Count:    int(row.IntervalCount.Int32),
-			Interval: BillingInterval(row.BillingIntervalCode.String),
-		}
-	}
-
-	var tiers []Tier
-
-	if len(row.TierBrackets) > 0 {
-		if err := json.Unmarshal(row.TierBrackets, &tiers); err != nil {
-			return Tariff{}, fmt.Errorf("decode tariff tiers: %w", err)
-		}
-	}
-
-	return Tariff{
-		ID:             row.TariffID,
-		TariffCode:     row.TariffCode,
-		Version:        int(row.Version),
-		Name:           row.Name,
-		Description:    row.Description,
-		TariffTypeCode: TariffTypeCode(row.TariffTypeCode),
-		Amount:         amount,
-		Duration:       duration,
-		IsActive:       row.IsActive,
-		Tiers:          tiers,
-		Metadata:       row.Metadata,
-		CreatedAt:      row.CreatedAt,
-	}, nil
+	return toModel(row)
 }
 
 func (r *PostgresRepository) LatestVersion(
@@ -185,7 +120,10 @@ func (r *PostgresRepository) LatestVersion(
 
 	version, err := q.GetLatestTariffVersion(ctx, code)
 	if err != nil {
-		return 0, fmt.Errorf("get latest tariff version: %w", err)
+		return 0, fmt.Errorf(
+			"get latest tariff version: %w",
+			err,
+		)
 	}
 
 	return int(version), nil
@@ -199,63 +137,71 @@ func (r *PostgresRepository) ListVersions(
 
 	rows, err := q.ListTariffVersions(ctx, code)
 	if err != nil {
-		return nil, fmt.Errorf("list tariff versions: %w", err)
+		return nil, fmt.Errorf(
+			"list tariff versions: %w",
+			err,
+		)
+	}
+	if len(rows) == 0 {
+		return nil, ErrTariffNotFound
 	}
 
 	tariffs := make([]Tariff, 0, len(rows))
 
 	for _, row := range rows {
-		var amount *money.Money
-
-		if row.Amount.Valid {
-			if !row.Currency.Valid {
-				return nil, fmt.Errorf(
-					"tariff %s v%d has amount without currency",
-					row.TariffCode,
-					row.Version,
-				)
-			}
-
-			m, err := money.New(row.Amount.Int64, row.Currency.String)
-			if err != nil {
-				return nil, fmt.Errorf("create tariff money: %w", err)
-			}
-
-			amount = &m
+		tariff, err := toModel(row)
+		if err != nil {
+			return nil, err
 		}
 
-		var duration *BillingDuration
-
-		if row.BillingIntervalCode.Valid {
-			duration = &BillingDuration{
-				Count:    int(row.IntervalCount.Int32),
-				Interval: BillingInterval(row.BillingIntervalCode.String),
-			}
-		}
-
-		var tiers []Tier
-
-		if len(row.TierBrackets) > 0 {
-			if err := json.Unmarshal(row.TierBrackets, &tiers); err != nil {
-				return nil, fmt.Errorf("decode tariff tiers: %w", err)
-			}
-		}
-
-		tariffs = append(tariffs, Tariff{
-			ID:             row.TariffID,
-			TariffCode:     row.TariffCode,
-			Version:        int(row.Version),
-			Name:           row.Name,
-			Description:    row.Description,
-			TariffTypeCode: TariffTypeCode(row.TariffTypeCode),
-			Amount:         amount,
-			Duration:       duration,
-			IsActive:       row.IsActive,
-			Tiers:          tiers,
-			Metadata:       row.Metadata,
-			CreatedAt:      row.CreatedAt,
-		})
+		tariffs = append(tariffs, tariff)
 	}
 
 	return tariffs, nil
+}
+
+func toModel(row sqlcgen.Tariff) (Tariff, error) {
+	amount, err := money.New(
+		row.Amount.Int64,
+		row.Currency,
+	)
+	if err != nil {
+		return Tariff{}, fmt.Errorf(
+			"create tariff money: %w",
+			err,
+		)
+	}
+
+	var tiers []Tier
+
+	if len(row.TierBrackets) > 0 {
+		if err := json.Unmarshal(
+			row.TierBrackets,
+			&tiers,
+		); err != nil {
+			return Tariff{}, fmt.Errorf(
+				"decode tier brackets: %w",
+				err,
+			)
+		}
+	}
+
+	description := ""
+	if row.Description.Valid {
+		description = row.Description.String
+	}
+
+	return Tariff{
+		ID:             row.TariffID,
+		TariffCode:     row.TariffCode,
+		Version:        int(row.Version),
+		Name:           row.Name,
+		Description:    description,
+		TariffTypeCode: TariffTypeCode(row.TariffTypeCode),
+		Amount:         amount,
+		Tiers:          tiers,
+		Metadata:       row.Metadata,
+		CreatedAt:      row.CreatedAt,
+		IsActive:       row.IsActive,
+	}, nil
 }

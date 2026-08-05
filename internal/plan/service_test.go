@@ -4,129 +4,426 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
-	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/stretchr/testify/require"
 )
 
-type mockRepository struct {
-	plans        map[string]map[int]Plan
-	latestVerErr error
-	saveErr      error
+type fakePlanRepository struct {
+	latestVersion int
+	createdPlan   Plan
+
+	createdDuration PlanDuration
+
+	plans     []Plan
+	durations []PlanDuration
+
+	err error
 }
 
-func newMockRepository() *mockRepository {
-	return &mockRepository{
-		plans: make(map[string]map[int]Plan),
+func (f *fakePlanRepository) Create(
+	_ context.Context,
+	_ pgx.Tx,
+	plan Plan,
+) (Plan, error) {
+	if f.err != nil {
+		return Plan{}, f.err
 	}
+
+	f.createdPlan = plan
+
+	if plan.ID == 0 {
+		plan.ID = 1
+	}
+
+	return plan, nil
 }
 
-func (m *mockRepository) Save(_ context.Context, p Plan) (Plan, error) {
-	if m.saveErr != nil {
-		return Plan{}, m.saveErr
+func (f *fakePlanRepository) CreateDuration(
+	_ context.Context,
+	_ pgx.Tx,
+	duration PlanDuration,
+) (PlanDuration, error) {
+	if f.err != nil {
+		return PlanDuration{}, f.err
 	}
 
-	if _, exists := m.plans[p.PlanCode]; !exists {
-		m.plans[p.PlanCode] = make(map[int]Plan)
+	f.createdDuration = duration
+
+	if duration.ID == 0 {
+		duration.ID = 1
 	}
 
-	p.ID = int64(len(m.plans[p.PlanCode]) + 1)
-	p.TariffID = p.ID + 100
-	m.plans[p.PlanCode][p.Version] = p
-
-	return p, nil
+	return duration, nil
 }
 
-func (m *mockRepository) GetByCodeAndVersion(_ context.Context, code string, version int) (Plan, error) {
-	versions, exists := m.plans[code]
-	if !exists {
-		return Plan{}, errors.New("plan not found")
+func (f *fakePlanRepository) GetByCodeAndVersion(
+	_ context.Context,
+	code string,
+	version int,
+) (Plan, error) {
+	if f.err != nil {
+		return Plan{}, f.err
 	}
 
-	p, exists := versions[version]
-	if !exists {
-		return Plan{}, errors.New("version not found")
+	for _, plan := range f.plans {
+		if plan.PlanCode == code && plan.Version == version {
+			return plan, nil
+		}
 	}
 
-	return p, nil
+	return Plan{}, ErrPlanNotFound
 }
 
-func (m *mockRepository) LatestVersion(_ context.Context, code string) (int, error) {
-	if m.latestVerErr != nil {
-		return 0, m.latestVerErr
+func (f *fakePlanRepository) LatestVersion(
+	_ context.Context,
+	_ string,
+) (int, error) {
+	if f.err != nil {
+		return 0, f.err
 	}
 
-	versions, exists := m.plans[code]
-	if !exists || len(versions) == 0 {
-		return 0, nil
-	}
-
-	latest := 0
-	for v := range versions {
-		if v > latest {
-			latest = v
-		}
-	}
-
-	return latest, nil
+	return f.latestVersion, nil
 }
 
-// ==========================================
-// SERVICE UNIT TESTS
-// ==========================================
+func (f *fakePlanRepository) ListVersions(
+	_ context.Context,
+	_ string,
+) ([]Plan, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 
-func TestService_CreatePlan(t *testing.T) {
-	testMoney, _ := money.New(1000, "USD")
+	return f.plans, nil
+}
 
-	t.Run("creates version 1 for a brand new plan", func(t *testing.T) {
-		repo := newMockRepository()
-		svc := NewService(repo)
+func (f *fakePlanRepository) GetDuration(
+	_ context.Context,
+	id int64,
+) (PlanDuration, error) {
+	if f.err != nil {
+		return PlanDuration{}, f.err
+	}
 
-		result, err := svc.CreatePlan(context.Background(), "STARTER_PLAN", testMoney, BillingIntervalMonth)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
+	for _, duration := range f.durations {
+		if duration.ID == id {
+			return duration, nil
 		}
+	}
 
-		if result.Version != 1 {
-			t.Errorf("expected version 1, got %d", result.Version)
-		}
-		if result.PlanCode != "STARTER_PLAN" {
-			t.Errorf("expected plan code STARTER_PLAN, got %s", result.PlanCode)
-		}
-		if result.Interval != BillingIntervalMonth {
-			t.Errorf("expected billing interval MONTH, got %s", result.Interval)
-		}
-	})
+	return PlanDuration{}, ErrPlanDurationNotFound
+}
 
-	t.Run("increments version to 2 when version 1 exists", func(t *testing.T) {
-		repo := newMockRepository()
-		svc := NewService(repo)
+func (f *fakePlanRepository) GetDurationByPlanAndCode(
+	_ context.Context,
+	planID int64,
+	code PlanDurationCode,
+) (PlanDuration, error) {
+	if f.err != nil {
+		return PlanDuration{}, f.err
+	}
 
-		// Create Version 1
-		_, err := svc.CreatePlan(context.Background(), "PRO_PLAN", testMoney, BillingIntervalMonth)
-		if err != nil {
-			t.Fatalf("failed to create initial plan: %v", err)
+	for _, duration := range f.durations {
+		if duration.PlanID == planID && duration.Duration == code {
+			return duration, nil
 		}
+	}
 
-		// Create Version 2
-		v2Money, _ := money.New(1500, "USD")
-		resultV2, err := svc.CreatePlan(context.Background(), "PRO_PLAN", v2Money, BillingIntervalYear)
-		if err != nil {
-			t.Fatalf("expected no error on v2 creation, got %v", err)
+	return PlanDuration{}, ErrPlanDurationNotFound
+}
+
+func (f *fakePlanRepository) ListDurations(
+	_ context.Context,
+	planID int64,
+) ([]PlanDuration, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	result := make([]PlanDuration, 0)
+
+	for _, duration := range f.durations {
+		if duration.PlanID == planID {
+			result = append(result, duration)
 		}
+	}
 
-		if resultV2.Version != 2 {
-			t.Errorf("expected version 2, got %d", resultV2.Version)
+	return result, nil
+}
+
+func (f *fakePlanRepository) UpdateDurationTariff(
+	_ context.Context,
+	_ pgx.Tx,
+	durationID int64,
+	tariffID int64,
+	isActive bool,
+) (PlanDuration, error) {
+	if f.err != nil {
+		return PlanDuration{}, f.err
+	}
+
+	for _, duration := range f.durations {
+		if duration.ID == durationID {
+			duration.TariffID = tariffID
+			duration.IsActive = isActive
+			return duration, nil
 		}
-	})
+	}
 
-	t.Run("returns error when repository save fails", func(t *testing.T) {
-		repo := newMockRepository()
-		repo.saveErr = errors.New("database error")
-		svc := NewService(repo)
+	return PlanDuration{}, ErrPlanDurationNotFound
+}
 
-		_, err := svc.CreatePlan(context.Background(), "ENTERPRISE_PLAN", testMoney, BillingIntervalYear)
-		if err == nil {
-			t.Fatal("expected error from repo save failure, got nil")
-		}
-	})
+func TestCreatePlan(t *testing.T) {
+	repository := &fakePlanRepository{
+		latestVersion: 2,
+	}
+
+	service := NewService(repository)
+
+	ctx := context.Background()
+
+	plan := Plan{
+		PlanCode:              "PRO",
+		LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		EffectiveFrom:         time.Now().UTC(),
+	}
+
+	created, err := service.CreatePlan(ctx, nil, plan)
+
+	require.NoError(t, err)
+	require.Equal(t, 3, created.Version)
+	require.Equal(t, "PRO", created.PlanCode)
+	require.Equal(t, LegacyPolicyKeepForever, created.LegacyPricePolicyCode)
+	require.NotZero(t, created.ID)
+
+	require.Equal(t, 3, repository.createdPlan.Version)
+}
+
+func TestCreatePlanSetsEffectiveFromWhenMissing(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	before := time.Now().UTC()
+
+	created, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "BASIC",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+	)
+
+	after := time.Now().UTC()
+
+	require.NoError(t, err)
+	require.False(t, created.EffectiveFrom.IsZero())
+	require.True(
+		t,
+		!created.EffectiveFrom.Before(before) &&
+			!created.EffectiveFrom.After(after),
+	)
+}
+
+func TestCreatePlanRejectsInvalidPlan(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	_, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode: "",
+		},
+	)
+
+	require.Error(t, err)
+}
+
+func TestCreatePlanRepositoryError(t *testing.T) {
+	repositoryError := errors.New("database error")
+
+	repository := &fakePlanRepository{
+		err: repositoryError,
+	}
+
+	service := NewService(repository)
+
+	_, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			EffectiveFrom:         time.Now().UTC(),
+		},
+	)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, repositoryError)
+}
+
+func TestCreatePlanDuration(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	duration := PlanDuration{
+		PlanID:   1,
+		TariffID: 10,
+		Duration: PlanDurationMonthly,
+	}
+
+	created, err := service.CreatePlanDuration(
+		context.Background(),
+		nil,
+		duration,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), created.ID)
+	require.Equal(t, int64(1), created.PlanID)
+	require.Equal(t, int64(10), created.TariffID)
+	require.Equal(t, PlanDurationMonthly, created.Duration)
+	require.True(t, created.IsActive)
+}
+
+func TestCreatePlanDurationRejectsInvalidDuration(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	_, err := service.CreatePlanDuration(
+		context.Background(),
+		nil,
+		PlanDuration{
+			PlanID:   1,
+			TariffID: 10,
+			Duration: "INVALID",
+		},
+	)
+
+	require.Error(t, err)
+}
+
+func TestGetPlanVersion(t *testing.T) {
+	expected := Plan{
+		ID:                    1,
+		PlanCode:              "PRO",
+		Version:               2,
+		LegacyPricePolicyCode: LegacyPolicyKeepForever,
+	}
+
+	repository := &fakePlanRepository{
+		plans: []Plan{expected},
+	}
+
+	service := NewService(repository)
+
+	result, err := service.GetPlanVersion(
+		context.Background(),
+		"PRO",
+		2,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, result)
+}
+
+func TestGetPlanVersionRejectsInvalidVersion(t *testing.T) {
+	service := NewService(&fakePlanRepository{})
+
+	_, err := service.GetPlanVersion(
+		context.Background(),
+		"PRO",
+		0,
+	)
+
+	require.Error(t, err)
+}
+
+func TestGetDurationByPlanAndCode(t *testing.T) {
+	expected := PlanDuration{
+		ID:       1,
+		PlanID:   10,
+		TariffID: 20,
+		Duration: PlanDurationMonthly,
+		IsActive: true,
+	}
+
+	repository := &fakePlanRepository{
+		durations: []PlanDuration{expected},
+	}
+
+	service := NewService(repository)
+
+	result, err := service.GetDurationByPlanAndCode(
+		context.Background(),
+		10,
+		PlanDurationMonthly,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, result)
+}
+
+func TestListDurations(t *testing.T) {
+	repository := &fakePlanRepository{
+		durations: []PlanDuration{
+			{
+				ID:       1,
+				PlanID:   10,
+				TariffID: 20,
+				Duration: PlanDurationMonthly,
+			},
+			{
+				ID:       2,
+				PlanID:   10,
+				TariffID: 30,
+				Duration: PlanDurationYearly,
+			},
+		},
+	}
+
+	service := NewService(repository)
+
+	result, err := service.ListDurations(
+		context.Background(),
+		10,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+}
+
+func TestUpdateDurationTariff(t *testing.T) {
+	repository := &fakePlanRepository{
+		durations: []PlanDuration{
+			{
+				ID:       1,
+				PlanID:   10,
+				TariffID: 20,
+				Duration: PlanDurationMonthly,
+				IsActive: true,
+			},
+		},
+	}
+
+	service := NewService(repository)
+
+	result, err := service.UpdateDurationTariff(
+		context.Background(),
+		nil,
+		1,
+		99,
+		false,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(99), result.TariffID)
+	require.False(t, result.IsActive)
 }

@@ -7,8 +7,6 @@ INSERT INTO tariffs (
     tariff_type_code,
     amount,
     currency,
-    billing_interval_code,
-    interval_count,
     tier_brackets,
     is_active,
     metadata
@@ -23,9 +21,7 @@ VALUES (
     $7,
     $8,
     $9,
-    $10,
-    $11,
-    $12
+    $10
 )
 RETURNING
     tariff_id,
@@ -36,12 +32,11 @@ RETURNING
     tariff_type_code,
     amount,
     currency,
-    billing_interval_code,
-    interval_count,
     tier_brackets,
     is_active,
     metadata,
     created_at;
+
 
 -- name: GetTariffByCodeAndVersion :one
 SELECT
@@ -53,8 +48,6 @@ SELECT
     tariff_type_code,
     amount,
     currency,
-    billing_interval_code,
-    interval_count,
     tier_brackets,
     is_active,
     metadata,
@@ -80,8 +73,6 @@ SELECT
     tariff_type_code,
     amount,
     currency,
-    billing_interval_code,
-    interval_count,
     tier_brackets,
     is_active,
     metadata,

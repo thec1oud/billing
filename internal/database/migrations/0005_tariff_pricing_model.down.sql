@@ -11,9 +11,6 @@ ALTER TABLE tariffs
 ALTER TABLE tariffs
     DROP CONSTRAINT IF EXISTS chk_tariff_amount_currency;
 
-ALTER TABLE tariffs
-    DROP COLUMN IF EXISTS currency;
-
 DELETE FROM tariff_type
 WHERE tariff_type_code IN (
     'STAIRSTEP',
@@ -25,4 +22,3 @@ WHERE tariff_type_code IN (
 INSERT INTO tariff_type (tariff_type_code)
 VALUES ('ONE_TIME')
 ON CONFLICT (tariff_type_code) DO NOTHING;
-

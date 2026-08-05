@@ -2,117 +2,176 @@ package purchasable_item
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
+var ErrPurchasableItemNotFound = errors.New("purchasable item not found")
+
 type Repository interface {
-	Save(ctx context.Context, item PurchasableItem) (PurchasableItem, error)
-	GetByCode(ctx context.Context, code string) (PurchasableItem, error)
-	GetByID(ctx context.Context, id int64) (PurchasableItem, error)
+	Create(
+		ctx context.Context,
+		tx pgx.Tx,
+		item PurchasableItem,
+	) (PurchasableItem, error)
+
+	GetByID(
+		ctx context.Context,
+		id int64,
+	) (PurchasableItem, error)
+
+	GetByCode(
+		ctx context.Context,
+		code string,
+	) (PurchasableItem, error)
 }
 
-type postgresRepository struct {
-	db *sql.DB
+type PostgresRepository struct {
+	pool *pgxpool.Pool
 }
 
-func NewRepository(db *sql.DB) Repository {
-	return &postgresRepository{db: db}
+func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{
+		pool: pool,
+	}
 }
 
-func (r *postgresRepository) Save(ctx context.Context, item PurchasableItem) (PurchasableItem, error) {
-	query := `
-		INSERT INTO purchasable_items (
-			item_code, item_type_code, name, description, plan_id, is_active, metadata
-		) VALUES (
-			$1, $2, $3, $4, $5, COALESCE($6, TRUE), COALESCE($7, '{}'::jsonb)
+func (r *PostgresRepository) Create(
+	ctx context.Context,
+	tx pgx.Tx,
+	item PurchasableItem,
+) (PurchasableItem, error) {
+	if err := item.Validate(); err != nil {
+		return PurchasableItem{}, fmt.Errorf(
+			"validate purchasable item: %w",
+			err,
 		)
-		RETURNING item_id, is_active, metadata, created_at, updated_at;
-	`
+	}
 
-	err := r.db.QueryRowContext(
+	metadata := item.Metadata
+	if len(metadata) == 0 {
+		metadata = json.RawMessage(`{}`)
+	}
+
+	description := pgtype.Text{}
+	if item.Description != nil {
+		description = pgtype.Text{
+			String: *item.Description,
+			Valid:  true,
+		}
+	}
+
+	var planID pgtype.Int8
+	if item.PlanID != nil {
+		planID = pgtype.Int8{
+			Int64: *item.PlanID,
+			Valid: true,
+		}
+	}
+
+	q := sqlcgen.New(tx)
+
+	row, err := q.CreatePurchasableItem(
 		ctx,
-		query,
-		item.ItemCode,
-		item.ItemTypeCode,
-		item.Name,
-		item.Description,
-		item.PlanID,
-		item.IsActive,
-		item.Metadata,
-	).Scan(
-		&item.ID,
-		&item.IsActive,
-		&item.Metadata,
-		&item.CreatedAt,
-		&item.UpdatedAt,
+		sqlcgen.CreatePurchasableItemParams{
+			ItemCode:     item.ItemCode,
+			ItemTypeCode: string(item.ItemTypeCode),
+			Name:         item.Name,
+			Description:  description,
+			PlanID:       planID,
+			IsActive:     item.IsActive,
+			Metadata:     metadata,
+		},
 	)
 	if err != nil {
-		return PurchasableItem{}, fmt.Errorf("failed to insert purchasable item: %w", err)
+		return PurchasableItem{}, fmt.Errorf(
+			"create purchasable item: %w",
+			err,
+		)
 	}
 
-	return item, nil
+	return toModel(row)
 }
 
-func (r *postgresRepository) GetByCode(ctx context.Context, code string) (PurchasableItem, error) {
-	query := `
-		SELECT 
-			item_id, item_code, item_type_code, name, description, plan_id, is_active, metadata, created_at, updated_at
-		FROM purchasable_items
-		WHERE item_code = $1;
-	`
+func (r *PostgresRepository) GetByID(
+	ctx context.Context,
+	id int64,
+) (PurchasableItem, error) {
+	q := sqlcgen.New(r.pool)
 
-	var item PurchasableItem
-	err := r.db.QueryRowContext(ctx, query, code).Scan(
-		&item.ID,
-		&item.ItemCode,
-		&item.ItemTypeCode,
-		&item.Name,
-		&item.Description,
-		&item.PlanID,
-		&item.IsActive,
-		&item.Metadata,
-		&item.CreatedAt,
-		&item.UpdatedAt,
-	)
+	row, err := q.GetPurchasableItemByID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PurchasableItem{}, ErrPurchasableItemNotFound
+	}
+
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return PurchasableItem{}, fmt.Errorf("purchasable item %s not found", code)
-		}
-		return PurchasableItem{}, fmt.Errorf("failed to query purchasable item: %w", err)
+		return PurchasableItem{}, fmt.Errorf(
+			"get purchasable item: %w",
+			err,
+		)
 	}
 
-	return item, nil
+	return toModel(row)
 }
 
-func (r *postgresRepository) GetByID(ctx context.Context, id int64) (PurchasableItem, error) {
-	query := `
-		SELECT 
-			item_id, item_code, item_type_code, name, description, plan_id, is_active, metadata, created_at, updated_at
-		FROM purchasable_items
-		WHERE item_id = $1;
-	`
+func (r *PostgresRepository) GetByCode(
+	ctx context.Context,
+	code string,
+) (PurchasableItem, error) {
+	q := sqlcgen.New(r.pool)
 
-	var item PurchasableItem
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&item.ID,
-		&item.ItemCode,
-		&item.ItemTypeCode,
-		&item.Name,
-		&item.Description,
-		&item.PlanID,
-		&item.IsActive,
-		&item.Metadata,
-		&item.CreatedAt,
-		&item.UpdatedAt,
-	)
+	row, err := q.GetPurchasableItemByCode(ctx, code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PurchasableItem{}, ErrPurchasableItemNotFound
+	}
+
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return PurchasableItem{}, fmt.Errorf("purchasable item with id %d not found", id)
-		}
-		return PurchasableItem{}, fmt.Errorf("failed to query purchasable item: %w", err)
+		return PurchasableItem{}, fmt.Errorf(
+			"get purchasable item by code: %w",
+			err,
+		)
 	}
 
-	return item, nil
+	return toModel(row)
 }
+
+func toModel(row sqlcgen.PurchasableItem) (PurchasableItem, error) {
+	var description *string
+
+	if row.Description.Valid {
+		value := row.Description.String
+		description = &value
+	}
+
+	var planID *int64
+
+	if row.PlanID.Valid {
+		value := row.PlanID.Int64
+		planID = &value
+	}
+
+	metadata := row.Metadata
+	if len(metadata) == 0 {
+		metadata = json.RawMessage(`{}`)
+	}
+
+	return PurchasableItem{
+		ID:           row.ItemID,
+		ItemCode:     row.ItemCode,
+		ItemTypeCode: ItemTypeCode(row.ItemTypeCode),
+		Name:         row.Name,
+		Description:  description,
+		PlanID:       planID,
+		IsActive:     row.IsActive,
+		Metadata:     metadata,
+		CreatedAt:    row.CreatedAt,
+	}, nil
+}
+

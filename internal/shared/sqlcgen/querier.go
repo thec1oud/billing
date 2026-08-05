@@ -14,6 +14,8 @@ type Querier interface {
 	CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error
 	CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error)
 	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
+	CreatePurchasableItem(ctx context.Context, arg CreatePurchasableItemParams) (PurchasableItem, error)
+	CreateTariff(ctx context.Context, arg CreateTariffParams) (Tariff, error)
 	// ============================================================================
 	// FINE-GRAINED STATE & BALANCE TRANSITIONS
 	// ============================================================================
@@ -21,15 +23,24 @@ type Querier interface {
 	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (int64, error)
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
+	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
 	GetPlanByCodeAndVersion(ctx context.Context, arg GetPlanByCodeAndVersionParams) (Plan, error)
-	GetPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
+	GetPlanDuration(ctx context.Context, planDurationID int64) (PlanDuration, error)
+	GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetPlanDurationByPlanAndDurationParams) (PlanDuration, error)
+	GetPurchasableItemByCode(ctx context.Context, itemCode string) (PurchasableItem, error)
+	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
+	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
+	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
+	ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error)
+	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
 	ReadStream(ctx context.Context, arg ReadStreamParams) ([]ReadStreamRow, error)
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.
 	UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error)
+	UpdatePlanDurationTariff(ctx context.Context, arg UpdatePlanDurationTariffParams) (PlanDuration, error)
 	// Transitions -> VOID. Leaves balances intact for historical audit.
 	VoidInvoice(ctx context.Context, arg VoidInvoiceParams) (int64, error)
 }

@@ -21,10 +21,26 @@ INSERT INTO plans (
     legacy_price_policy_code,
     migration_path,
     metadata
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING plan_id, plan_code, version, effective_from, effective_until, legacy_price_policy_code, migration_path, metadata, created_at
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7
+)
+RETURNING
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
 `
 
 type CreatePlanParams struct {
@@ -68,10 +84,20 @@ INSERT INTO plan_durations (
     tariff_id,
     duration,
     is_active
-) VALUES (
-    $1, $2, $3, $4
 )
-RETURNING plan_duration_id, plan_id, tariff_id, duration, is_active, created_at
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4
+)
+RETURNING
+    plan_duration_id,
+    plan_id,
+    tariff_id,
+    duration,
+    is_active,
+    created_at
 `
 
 type CreatePlanDurationParams struct {
@@ -101,20 +127,29 @@ func (q *Queries) CreatePlanDuration(ctx context.Context, arg CreatePlanDuration
 }
 
 const getLatestPlanVersion = `-- name: GetLatestPlanVersion :one
-SELECT COALESCE(MAX(version), 0)::int AS version
+SELECT COALESCE(MAX(version), 0)::int
 FROM plans
 WHERE plan_code = $1
 `
 
 func (q *Queries) GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error) {
 	row := q.db.QueryRow(ctx, getLatestPlanVersion, planCode)
-	var version int32
-	err := row.Scan(&version)
-	return version, err
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const getPlanByCodeAndVersion = `-- name: GetPlanByCodeAndVersion :one
-SELECT plan_id, plan_code, version, effective_from, effective_until, legacy_price_policy_code, migration_path, metadata, created_at
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
 FROM plans
 WHERE plan_code = $1
   AND version = $2
@@ -142,15 +177,79 @@ func (q *Queries) GetPlanByCodeAndVersion(ctx context.Context, arg GetPlanByCode
 	return i, err
 }
 
-const getPlanDurations = `-- name: GetPlanDurations :many
-SELECT plan_duration_id, plan_id, tariff_id, duration, is_active, created_at
+const getPlanDuration = `-- name: GetPlanDuration :one
+SELECT
+    plan_duration_id,
+    plan_id,
+    tariff_id,
+    duration,
+    is_active,
+    created_at
 FROM plan_durations
-WHERE plan_id = $1
-ORDER BY duration
+WHERE plan_duration_id = $1
 `
 
-func (q *Queries) GetPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error) {
-	rows, err := q.db.Query(ctx, getPlanDurations, planID)
+func (q *Queries) GetPlanDuration(ctx context.Context, planDurationID int64) (PlanDuration, error) {
+	row := q.db.QueryRow(ctx, getPlanDuration, planDurationID)
+	var i PlanDuration
+	err := row.Scan(
+		&i.PlanDurationID,
+		&i.PlanID,
+		&i.TariffID,
+		&i.Duration,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlanDurationByPlanAndDuration = `-- name: GetPlanDurationByPlanAndDuration :one
+SELECT
+    plan_duration_id,
+    plan_id,
+    tariff_id,
+    duration,
+    is_active,
+    created_at
+FROM plan_durations
+WHERE plan_id = $1
+  AND duration = $2
+`
+
+type GetPlanDurationByPlanAndDurationParams struct {
+	PlanID   int64  `json:"plan_id"`
+	Duration string `json:"duration"`
+}
+
+func (q *Queries) GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetPlanDurationByPlanAndDurationParams) (PlanDuration, error) {
+	row := q.db.QueryRow(ctx, getPlanDurationByPlanAndDuration, arg.PlanID, arg.Duration)
+	var i PlanDuration
+	err := row.Scan(
+		&i.PlanDurationID,
+		&i.PlanID,
+		&i.TariffID,
+		&i.Duration,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listPlanDurations = `-- name: ListPlanDurations :many
+SELECT
+    plan_duration_id,
+    plan_id,
+    tariff_id,
+    duration,
+    is_active,
+    created_at
+FROM plan_durations
+WHERE plan_id = $1
+ORDER BY plan_duration_id
+`
+
+func (q *Queries) ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error) {
+	rows, err := q.db.Query(ctx, listPlanDurations, planID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,4 +273,85 @@ func (q *Queries) GetPlanDurations(ctx context.Context, planID int64) ([]PlanDur
 		return nil, err
 	}
 	return items, nil
+}
+
+const listPlanVersions = `-- name: ListPlanVersions :many
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+WHERE plan_code = $1
+ORDER BY version DESC
+`
+
+func (q *Queries) ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, listPlanVersions, planCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.PlanID,
+			&i.PlanCode,
+			&i.Version,
+			&i.EffectiveFrom,
+			&i.EffectiveUntil,
+			&i.LegacyPricePolicyCode,
+			&i.MigrationPath,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updatePlanDurationTariff = `-- name: UpdatePlanDurationTariff :one
+UPDATE plan_durations
+SET
+    tariff_id = $2,
+    is_active = $3
+WHERE plan_duration_id = $1
+RETURNING
+    plan_duration_id,
+    plan_id,
+    tariff_id,
+    duration,
+    is_active,
+    created_at
+`
+
+type UpdatePlanDurationTariffParams struct {
+	PlanDurationID int64 `json:"plan_duration_id"`
+	TariffID       int64 `json:"tariff_id"`
+	IsActive       bool  `json:"is_active"`
+}
+
+func (q *Queries) UpdatePlanDurationTariff(ctx context.Context, arg UpdatePlanDurationTariffParams) (PlanDuration, error) {
+	row := q.db.QueryRow(ctx, updatePlanDurationTariff, arg.PlanDurationID, arg.TariffID, arg.IsActive)
+	var i PlanDuration
+	err := row.Scan(
+		&i.PlanDurationID,
+		&i.PlanID,
+		&i.TariffID,
+		&i.Duration,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
 }

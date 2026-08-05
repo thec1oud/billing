@@ -2,6 +2,8 @@ package purchasable_item
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 )
 
@@ -13,6 +15,17 @@ const (
 	ItemTypeProduct        ItemTypeCode = "PRODUCT"
 )
 
+func (t ItemTypeCode) Valid() bool {
+	switch t {
+	case ItemTypePlan,
+		ItemTypeOneTimeService,
+		ItemTypeProduct:
+		return true
+	default:
+		return false
+	}
+}
+
 type PurchasableItem struct {
 	ID           int64           `json:"item_id"`
 	ItemCode     string          `json:"item_code"`
@@ -23,5 +36,24 @@ type PurchasableItem struct {
 	IsActive     bool            `json:"is_active"`
 	Metadata     json.RawMessage `json:"metadata"`
 	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
 }
+
+func (i PurchasableItem) Validate() error {
+	if i.ItemCode == "" {
+		return errors.New("item code is required")
+	}
+
+	if !i.ItemTypeCode.Valid() {
+		return fmt.Errorf(
+			"unsupported item type %q",
+			i.ItemTypeCode,
+		)
+	}
+
+	if i.Name == "" {
+		return errors.New("item name is required")
+	}
+
+	return nil
+}
+
