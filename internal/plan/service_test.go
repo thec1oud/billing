@@ -275,7 +275,7 @@ func TestCreatePlanDuration(t *testing.T) {
 	duration := PlanDuration{
 		PlanID:   1,
 		TariffID: 10,
-		Duration: PlanDurationMonthly,
+		Duration: PlanDurationCode("MONTHLY"),
 	}
 
 	created, err := service.CreatePlanDuration(
@@ -288,7 +288,7 @@ func TestCreatePlanDuration(t *testing.T) {
 	require.Equal(t, int64(1), created.ID)
 	require.Equal(t, int64(1), created.PlanID)
 	require.Equal(t, int64(10), created.TariffID)
-	require.Equal(t, PlanDurationMonthly, created.Duration)
+	require.Equal(t, PlanDurationCode("MONTHLY"), created.Duration)
 	require.True(t, created.IsActive)
 }
 
@@ -351,7 +351,7 @@ func TestGetDurationByPlanAndCode(t *testing.T) {
 		ID:       1,
 		PlanID:   10,
 		TariffID: 20,
-		Duration: PlanDurationMonthly,
+		Duration: PlanDurationCode("MONTHLY"),
 		IsActive: true,
 	}
 
@@ -364,7 +364,7 @@ func TestGetDurationByPlanAndCode(t *testing.T) {
 	result, err := service.GetDurationByPlanAndCode(
 		context.Background(),
 		10,
-		PlanDurationMonthly,
+		PlanDurationCode("MONTHLY"),
 	)
 
 	require.NoError(t, err)
@@ -378,13 +378,13 @@ func TestListDurations(t *testing.T) {
 				ID:       1,
 				PlanID:   10,
 				TariffID: 20,
-				Duration: PlanDurationMonthly,
+				Duration: PlanDurationCode("MONTHLY"),
 			},
 			{
 				ID:       2,
 				PlanID:   10,
 				TariffID: 30,
-				Duration: PlanDurationYearly,
+				Duration: PlanDurationCode("YEARLY"),
 			},
 		},
 	}
@@ -407,7 +407,7 @@ func TestUpdateDurationTariff(t *testing.T) {
 				ID:       1,
 				PlanID:   10,
 				TariffID: 20,
-				Duration: PlanDurationMonthly,
+				Duration: PlanDurationCode("MONTHLY"),
 				IsActive: true,
 			},
 		},

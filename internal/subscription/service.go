@@ -165,7 +165,7 @@ func (s *Service) CreateSubscription(
 				ctx,
 				events.AppendRequest{
 					AggregateType: events.AggregateSubscription,
-					AggregateID:   subscriptionID,
+					AggregateID:   subscriptionID.String(),
 					Sequence:      1,
 					EventType:     events.SubscriptionCreated,
 					EventVersion:  1,
