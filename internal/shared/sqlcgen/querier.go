@@ -6,6 +6,8 @@ package sqlcgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -16,11 +18,7 @@ type Querier interface {
 	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
 	CreatePurchasableItem(ctx context.Context, arg CreatePurchasableItemParams) (PurchasableItem, error)
 	CreateTariff(ctx context.Context, arg CreateTariffParams) (Tariff, error)
-	// ============================================================================
-	// FINE-GRAINED STATE & BALANCE TRANSITIONS
-	// ============================================================================
-	// Transitions DRAFT -> OPEN. Sets finalized_at timestamp.
-	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (int64, error)
+	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error)
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
 	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
@@ -42,7 +40,7 @@ type Querier interface {
 	UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error)
 	UpdatePlanDurationTariff(ctx context.Context, arg UpdatePlanDurationTariffParams) (PlanDuration, error)
 	// Transitions -> VOID. Leaves balances intact for historical audit.
-	VoidInvoice(ctx context.Context, arg VoidInvoiceParams) (int64, error)
+	VoidInvoice(ctx context.Context, invoiceID int64) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -21,12 +21,11 @@ INSERT INTO invoices (
     discount_amount,
     total_amount,
     amount_paid,
-    amount_due,
-    version
+    amount_due
 ) VALUES (
     $1, $2, $3,
     $4, $5, $6, $7,
-    $8, $9, 1
+    $8, $9
 )
 RETURNING invoice_id
 `
@@ -105,31 +104,47 @@ func (q *Queries) CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLi
 	return err
 }
 
-const finalizeInvoice = `-- name: FinalizeInvoice :execrows
-
+const finalizeInvoice = `-- name: FinalizeInvoice :one
 UPDATE invoices
 SET invoice_status_code = 'OPEN',
-    finalized_at = $1,
-    version = version + 1
-WHERE invoice_id = $2 AND version = $3
+    invoice_number = CONCAT('INV-', TO_CHAR(CURRENT_DATE, 'YYYY'), '-', LPAD(nextval('invoice_number_seq')::text, 6, '0')),
+    subtotal_amount = $1,
+    tax_amount = $2,
+    discount_amount = $3,
+    total_amount = $4,
+    amount_due = $5,
+    due_at = $6,
+    finalized_at = $7
+WHERE invoice_id = $8
+  AND invoice_status_code = 'DRAFT'
+RETURNING invoice_number
 `
 
 type FinalizeInvoiceParams struct {
-	FinalizedAt pgtype.Timestamptz `json:"finalized_at"`
-	InvoiceID   int64              `json:"invoice_id"`
-	Version     int64              `json:"version"`
+	SubtotalAmount int64              `json:"subtotal_amount"`
+	TaxAmount      int64              `json:"tax_amount"`
+	DiscountAmount int64              `json:"discount_amount"`
+	TotalAmount    int64              `json:"total_amount"`
+	AmountDue      int64              `json:"amount_due"`
+	DueAt          pgtype.Timestamptz `json:"due_at"`
+	FinalizedAt    pgtype.Timestamptz `json:"finalized_at"`
+	InvoiceID      int64              `json:"invoice_id"`
 }
 
-// ============================================================================
-// FINE-GRAINED STATE & BALANCE TRANSITIONS
-// ============================================================================
-// Transitions DRAFT -> OPEN. Sets finalized_at timestamp.
-func (q *Queries) FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, finalizeInvoice, arg.FinalizedAt, arg.InvoiceID, arg.Version)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, finalizeInvoice,
+		arg.SubtotalAmount,
+		arg.TaxAmount,
+		arg.DiscountAmount,
+		arg.TotalAmount,
+		arg.AmountDue,
+		arg.DueAt,
+		arg.FinalizedAt,
+		arg.InvoiceID,
+	)
+	var invoice_number pgtype.Text
+	err := row.Scan(&invoice_number)
+	return invoice_number, err
 }
 
 const getInvoice = `-- name: GetInvoice :one
@@ -147,8 +162,7 @@ SELECT
     amount_due,
     due_at,
     finalized_at,
-    paid_at,
-    version
+    paid_at
 FROM invoices
 WHERE invoice_id = $1
 `
@@ -168,7 +182,6 @@ type GetInvoiceRow struct {
 	DueAt             pgtype.Timestamptz `json:"due_at"`
 	FinalizedAt       pgtype.Timestamptz `json:"finalized_at"`
 	PaidAt            pgtype.Timestamptz `json:"paid_at"`
-	Version           int64              `json:"version"`
 }
 
 func (q *Queries) GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error) {
@@ -189,7 +202,6 @@ func (q *Queries) GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRo
 		&i.DueAt,
 		&i.FinalizedAt,
 		&i.PaidAt,
-		&i.Version,
 	)
 	return i, err
 }
@@ -260,9 +272,8 @@ UPDATE invoices
 SET invoice_status_code = 'PAID',
     amount_paid = $1,
     amount_due = $2,
-    paid_at = $3,
-    version = version + 1
-WHERE invoice_id = $4 AND version = $5
+    paid_at = $3
+WHERE invoice_id = $4
 `
 
 type MarkInvoicePaidParams struct {
@@ -270,7 +281,6 @@ type MarkInvoicePaidParams struct {
 	AmountDue  int64              `json:"amount_due"`
 	PaidAt     pgtype.Timestamptz `json:"paid_at"`
 	InvoiceID  int64              `json:"invoice_id"`
-	Version    int64              `json:"version"`
 }
 
 // Transitions -> PAID. Updates amounts and sets paid_at timestamp.
@@ -280,7 +290,6 @@ func (q *Queries) MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams
 		arg.AmountDue,
 		arg.PaidAt,
 		arg.InvoiceID,
-		arg.Version,
 	)
 	if err != nil {
 		return 0, err
@@ -291,26 +300,19 @@ func (q *Queries) MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams
 const updatePaymentBalances = `-- name: UpdatePaymentBalances :execrows
 UPDATE invoices
 SET amount_paid = $1,
-    amount_due = $2,
-    version = version + 1
-WHERE invoice_id = $3 AND version = $4
+    amount_due = $2
+WHERE invoice_id = $3
 `
 
 type UpdatePaymentBalancesParams struct {
 	AmountPaid int64 `json:"amount_paid"`
 	AmountDue  int64 `json:"amount_due"`
 	InvoiceID  int64 `json:"invoice_id"`
-	Version    int64 `json:"version"`
 }
 
 // Updates balance details (partial payments, dunning adjustments) without touching status code.
 func (q *Queries) UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updatePaymentBalances,
-		arg.AmountPaid,
-		arg.AmountDue,
-		arg.InvoiceID,
-		arg.Version,
-	)
+	result, err := q.db.Exec(ctx, updatePaymentBalances, arg.AmountPaid, arg.AmountDue, arg.InvoiceID)
 	if err != nil {
 		return 0, err
 	}
@@ -319,19 +321,13 @@ func (q *Queries) UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBa
 
 const voidInvoice = `-- name: VoidInvoice :execrows
 UPDATE invoices
-SET invoice_status_code = 'VOID',
-    version = version + 1
-WHERE invoice_id = $1 AND version = $2
+SET invoice_status_code = 'VOID'
+WHERE invoice_id = $1
 `
 
-type VoidInvoiceParams struct {
-	InvoiceID int64 `json:"invoice_id"`
-	Version   int64 `json:"version"`
-}
-
 // Transitions -> VOID. Leaves balances intact for historical audit.
-func (q *Queries) VoidInvoice(ctx context.Context, arg VoidInvoiceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, voidInvoice, arg.InvoiceID, arg.Version)
+func (q *Queries) VoidInvoice(ctx context.Context, invoiceID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, voidInvoice, invoiceID)
 	if err != nil {
 		return 0, err
 	}

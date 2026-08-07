@@ -45,7 +45,6 @@ type Invoice struct {
 	FinalizedAt   *time.Time     `json:"finalized_at,omitempty"`
 	PaidAt        *time.Time     `json:"paid_at,omitempty"`
 	LineItems     []LineItem     `json:"line_items"`
-	Version       int64          `json:"version"`
 }
 
 type CreatedPayload struct {

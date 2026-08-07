@@ -154,7 +154,7 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 		t.Fatalf("failed to begin finalize tx: %v", err)
 	}
 	finalizedAt := time.Now().UTC()
-	err = repo.Finalize(ctx, tx, invoiceID, finalizedAt)
+	_, err = repo.Finalize(ctx, tx, invoiceID, subtotal, tax, discount, total, amountDue, *inv.DueAt, finalizedAt)
 	if err != nil {
 		tx.Rollback(ctx)
 		t.Fatalf("failed to finalize: %v", err)
