@@ -16,9 +16,9 @@ import (
 const createPaymentAttempt = `-- name: CreatePaymentAttempt :one
 INSERT INTO payment_attempts (
     invoice_id,
+    payment_method_id,
     attempt_number,
     idempotency_key,
-    provider,
     provider_tx_id,
     amount_minor,
     currency,
@@ -31,15 +31,15 @@ RETURNING id, created_at, updated_at
 `
 
 type CreatePaymentAttemptParams struct {
-	InvoiceID      int64       `json:"invoice_id"`
-	AttemptNumber  int32       `json:"attempt_number"`
-	IdempotencyKey string      `json:"idempotency_key"`
-	Provider       string      `json:"provider"`
-	ProviderTxID   pgtype.Text `json:"provider_tx_id"`
-	AmountMinor    int64       `json:"amount_minor"`
-	Currency       string      `json:"currency"`
-	Status         string      `json:"status"`
-	RawResponse    []byte      `json:"raw_response"`
+	InvoiceID       int64       `json:"invoice_id"`
+	PaymentMethodID pgtype.Int8 `json:"payment_method_id"`
+	AttemptNumber   int32       `json:"attempt_number"`
+	IdempotencyKey  string      `json:"idempotency_key"`
+	ProviderTxID    pgtype.Text `json:"provider_tx_id"`
+	AmountMinor     int64       `json:"amount_minor"`
+	Currency        string      `json:"currency"`
+	Status          string      `json:"status"`
+	RawResponse     []byte      `json:"raw_response"`
 }
 
 type CreatePaymentAttemptRow struct {
@@ -48,15 +48,12 @@ type CreatePaymentAttemptRow struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Inserts a new payment attempt.
-// Will fail if another 'PENDING' attempt exists for this invoice_id
-// or if (invoice_id, attempt_number) is duplicated.
 func (q *Queries) CreatePaymentAttempt(ctx context.Context, arg CreatePaymentAttemptParams) (CreatePaymentAttemptRow, error) {
 	row := q.db.QueryRow(ctx, createPaymentAttempt,
 		arg.InvoiceID,
+		arg.PaymentMethodID,
 		arg.AttemptNumber,
 		arg.IdempotencyKey,
-		arg.Provider,
 		arg.ProviderTxID,
 		arg.AmountMinor,
 		arg.Currency,
@@ -74,7 +71,6 @@ FROM payment_attempts
 WHERE invoice_id = $1
 `
 
-// Computes the next attempt_number for an invoice (e.g., 0 -> 1, 1 -> 2).
 func (q *Queries) GetNextAttemptNumber(ctx context.Context, invoiceID int64) (int32, error) {
 	row := q.db.QueryRow(ctx, getNextAttemptNumber, invoiceID)
 	var next_attempt_number int32
@@ -84,23 +80,22 @@ func (q *Queries) GetNextAttemptNumber(ctx context.Context, invoiceID int64) (in
 
 const getPaymentAttemptByID = `-- name: GetPaymentAttemptByID :one
 SELECT 
-    id, invoice_id, attempt_number, idempotency_key,
-    provider, provider_tx_id, amount_minor, currency,
-    status, raw_response, created_at, updated_at
+    id, invoice_id, payment_method_id,
+    attempt_number, idempotency_key, provider_tx_id, amount_minor,
+    currency, status, raw_response, created_at, updated_at
 FROM payment_attempts
 WHERE id = $1
 `
 
-// Fetches a single attempt by its primary UUID.
 func (q *Queries) GetPaymentAttemptByID(ctx context.Context, id uuid.UUID) (PaymentAttempt, error) {
 	row := q.db.QueryRow(ctx, getPaymentAttemptByID, id)
 	var i PaymentAttempt
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,
+		&i.PaymentMethodID,
 		&i.AttemptNumber,
 		&i.IdempotencyKey,
-		&i.Provider,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
@@ -114,23 +109,22 @@ func (q *Queries) GetPaymentAttemptByID(ctx context.Context, id uuid.UUID) (Paym
 
 const getPaymentAttemptByIdempotencyKey = `-- name: GetPaymentAttemptByIdempotencyKey :one
 SELECT 
-    id, invoice_id, attempt_number, idempotency_key,
-    provider, provider_tx_id, amount_minor, currency,
-    status, raw_response, created_at, updated_at
+    id, invoice_id, payment_method_id,
+    attempt_number, idempotency_key, provider_tx_id, amount_minor,
+    currency, status, raw_response, created_at, updated_at
 FROM payment_attempts
 WHERE idempotency_key = $1
 `
 
-// Checks if an attempt with this idempotency key already exists.
 func (q *Queries) GetPaymentAttemptByIdempotencyKey(ctx context.Context, idempotencyKey string) (PaymentAttempt, error) {
 	row := q.db.QueryRow(ctx, getPaymentAttemptByIdempotencyKey, idempotencyKey)
 	var i PaymentAttempt
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,
+		&i.PaymentMethodID,
 		&i.AttemptNumber,
 		&i.IdempotencyKey,
-		&i.Provider,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
@@ -144,28 +138,22 @@ func (q *Queries) GetPaymentAttemptByIdempotencyKey(ctx context.Context, idempot
 
 const getPaymentAttemptByProviderTxID = `-- name: GetPaymentAttemptByProviderTxID :one
 SELECT 
-    id, invoice_id, attempt_number, idempotency_key,
-    provider, provider_tx_id, amount_minor, currency,
-    status, raw_response, created_at, updated_at
+    id, invoice_id, payment_method_id,
+    attempt_number, idempotency_key, provider_tx_id, amount_minor,
+    currency, status, raw_response, created_at, updated_at
 FROM payment_attempts
-WHERE provider = $1 AND provider_tx_id = $2
+WHERE provider_tx_id = $1
 `
 
-type GetPaymentAttemptByProviderTxIDParams struct {
-	Provider     string      `json:"provider"`
-	ProviderTxID pgtype.Text `json:"provider_tx_id"`
-}
-
-// Used by Webhook handlers to find an attempt using the gateway's transaction reference.
-func (q *Queries) GetPaymentAttemptByProviderTxID(ctx context.Context, arg GetPaymentAttemptByProviderTxIDParams) (PaymentAttempt, error) {
-	row := q.db.QueryRow(ctx, getPaymentAttemptByProviderTxID, arg.Provider, arg.ProviderTxID)
+func (q *Queries) GetPaymentAttemptByProviderTxID(ctx context.Context, providerTxID pgtype.Text) (PaymentAttempt, error) {
+	row := q.db.QueryRow(ctx, getPaymentAttemptByProviderTxID, providerTxID)
 	var i PaymentAttempt
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,
+		&i.PaymentMethodID,
 		&i.AttemptNumber,
 		&i.IdempotencyKey,
-		&i.Provider,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
@@ -179,23 +167,22 @@ func (q *Queries) GetPaymentAttemptByProviderTxID(ctx context.Context, arg GetPa
 
 const getPendingPaymentAttemptByInvoiceID = `-- name: GetPendingPaymentAttemptByInvoiceID :one
 SELECT 
-    id, invoice_id, attempt_number, idempotency_key,
-    provider, provider_tx_id, amount_minor, currency,
-    status, raw_response, created_at, updated_at
+    id, invoice_id, payment_method_id,
+    attempt_number, idempotency_key, provider_tx_id, amount_minor,
+    currency, status, raw_response, created_at, updated_at
 FROM payment_attempts
 WHERE invoice_id = $1 AND status = 'PENDING'
 `
 
-// Checks if an invoice currently has an active 'PENDING' attempt.
 func (q *Queries) GetPendingPaymentAttemptByInvoiceID(ctx context.Context, invoiceID int64) (PaymentAttempt, error) {
 	row := q.db.QueryRow(ctx, getPendingPaymentAttemptByInvoiceID, invoiceID)
 	var i PaymentAttempt
 	err := row.Scan(
 		&i.ID,
 		&i.InvoiceID,
+		&i.PaymentMethodID,
 		&i.AttemptNumber,
 		&i.IdempotencyKey,
-		&i.Provider,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
@@ -209,15 +196,14 @@ func (q *Queries) GetPendingPaymentAttemptByInvoiceID(ctx context.Context, invoi
 
 const listPaymentAttemptsByInvoiceID = `-- name: ListPaymentAttemptsByInvoiceID :many
 SELECT 
-    id, invoice_id, attempt_number, idempotency_key,
-    provider, provider_tx_id, amount_minor, currency,
-    status, raw_response, created_at, updated_at
+    id, invoice_id, payment_method_id,
+    attempt_number, idempotency_key, provider_tx_id, amount_minor,
+    currency, status, raw_response, created_at, updated_at
 FROM payment_attempts
 WHERE invoice_id = $1
 ORDER BY attempt_number ASC
 `
 
-// Retrieves the full history of payment attempts for an invoice, ordered sequentially.
 func (q *Queries) ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error) {
 	rows, err := q.db.Query(ctx, listPaymentAttemptsByInvoiceID, invoiceID)
 	if err != nil {
@@ -230,9 +216,52 @@ func (q *Queries) ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID 
 		if err := rows.Scan(
 			&i.ID,
 			&i.InvoiceID,
+			&i.PaymentMethodID,
 			&i.AttemptNumber,
 			&i.IdempotencyKey,
-			&i.Provider,
+			&i.ProviderTxID,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.Status,
+			&i.RawResponse,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPaymentAttemptsByPaymentMethodID = `-- name: ListPaymentAttemptsByPaymentMethodID :many
+SELECT 
+    id, invoice_id, payment_method_id,
+    attempt_number, idempotency_key, provider_tx_id, amount_minor,
+    currency, status, raw_response, created_at, updated_at
+FROM payment_attempts
+WHERE payment_method_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListPaymentAttemptsByPaymentMethodID(ctx context.Context, paymentMethodID pgtype.Int8) ([]PaymentAttempt, error) {
+	rows, err := q.db.Query(ctx, listPaymentAttemptsByPaymentMethodID, paymentMethodID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PaymentAttempt
+	for rows.Next() {
+		var i PaymentAttempt
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvoiceID,
+			&i.PaymentMethodID,
+			&i.AttemptNumber,
+			&i.IdempotencyKey,
 			&i.ProviderTxID,
 			&i.AmountMinor,
 			&i.Currency,
@@ -268,8 +297,6 @@ type UpdatePaymentAttemptStatusParams struct {
 	RawResponse  []byte      `json:"raw_response"`
 }
 
-// Updates status, provider transaction ID, and optional raw payload response.
-// Transitioning from 'PENDING' -> 'SUCCESS'/'FAILED' removes the row from the partial unique index.
 func (q *Queries) UpdatePaymentAttemptStatus(ctx context.Context, arg UpdatePaymentAttemptStatusParams) error {
 	_, err := q.db.Exec(ctx, updatePaymentAttemptStatus,
 		arg.ID,

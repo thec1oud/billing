@@ -15,9 +15,6 @@ type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
 	CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error
-	// Inserts a new payment attempt.
-	// Will fail if another 'PENDING' attempt exists for this invoice_id
-	// or if (invoice_id, attempt_number) is duplicated.
 	CreatePaymentAttempt(ctx context.Context, arg CreatePaymentAttemptParams) (CreatePaymentAttemptRow, error)
 	CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error)
 	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
@@ -27,15 +24,10 @@ type Querier interface {
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
 	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
-	// Computes the next attempt_number for an invoice (e.g., 0 -> 1, 1 -> 2).
 	GetNextAttemptNumber(ctx context.Context, invoiceID int64) (int32, error)
-	// Fetches a single attempt by its primary UUID.
 	GetPaymentAttemptByID(ctx context.Context, id uuid.UUID) (PaymentAttempt, error)
-	// Checks if an attempt with this idempotency key already exists.
 	GetPaymentAttemptByIdempotencyKey(ctx context.Context, idempotencyKey string) (PaymentAttempt, error)
-	// Used by Webhook handlers to find an attempt using the gateway's transaction reference.
-	GetPaymentAttemptByProviderTxID(ctx context.Context, arg GetPaymentAttemptByProviderTxIDParams) (PaymentAttempt, error)
-	// Checks if an invoice currently has an active 'PENDING' attempt.
+	GetPaymentAttemptByProviderTxID(ctx context.Context, providerTxID pgtype.Text) (PaymentAttempt, error)
 	GetPendingPaymentAttemptByInvoiceID(ctx context.Context, invoiceID int64) (PaymentAttempt, error)
 	GetPlanByCodeAndVersion(ctx context.Context, arg GetPlanByCodeAndVersionParams) (Plan, error)
 	GetPlanDuration(ctx context.Context, planDurationID int64) (PlanDuration, error)
@@ -44,8 +36,8 @@ type Querier interface {
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
 	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
-	// Retrieves the full history of payment attempts for an invoice, ordered sequentially.
 	ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error)
+	ListPaymentAttemptsByPaymentMethodID(ctx context.Context, paymentMethodID pgtype.Int8) ([]PaymentAttempt, error)
 	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
 	ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error)
 	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
@@ -53,8 +45,6 @@ type Querier interface {
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
 	ReadStream(ctx context.Context, arg ReadStreamParams) ([]ReadStreamRow, error)
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
-	// Updates status, provider transaction ID, and optional raw payload response.
-	// Transitioning from 'PENDING' -> 'SUCCESS'/'FAILED' removes the row from the partial unique index.
 	UpdatePaymentAttemptStatus(ctx context.Context, arg UpdatePaymentAttemptStatusParams) error
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.
 	UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error)

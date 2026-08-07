@@ -128,18 +128,18 @@ type LedgerPartyType struct {
 }
 
 type PaymentAttempt struct {
-	ID             uuid.UUID   `json:"id"`
-	InvoiceID      int64       `json:"invoice_id"`
-	AttemptNumber  int32       `json:"attempt_number"`
-	IdempotencyKey string      `json:"idempotency_key"`
-	Provider       string      `json:"provider"`
-	ProviderTxID   pgtype.Text `json:"provider_tx_id"`
-	AmountMinor    int64       `json:"amount_minor"`
-	Currency       string      `json:"currency"`
-	Status         string      `json:"status"`
-	RawResponse    []byte      `json:"raw_response"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
+	ID              uuid.UUID   `json:"id"`
+	InvoiceID       int64       `json:"invoice_id"`
+	PaymentMethodID pgtype.Int8 `json:"payment_method_id"`
+	AttemptNumber   int32       `json:"attempt_number"`
+	IdempotencyKey  string      `json:"idempotency_key"`
+	ProviderTxID    pgtype.Text `json:"provider_tx_id"`
+	AmountMinor     int64       `json:"amount_minor"`
+	Currency        string      `json:"currency"`
+	Status          string      `json:"status"`
+	RawResponse     []byte      `json:"raw_response"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
 type PaymentMethod struct {
