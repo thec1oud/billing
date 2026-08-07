@@ -5,27 +5,27 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
-type PaymentStatus string
+type Status string
 
 const (
-	PaymentStatusPending  PaymentStatus = "PENDING"
-	PaymentStatusSuccess  PaymentStatus = "SUCCESS"
-	PaymentStatusFailed   PaymentStatus = "FAILED"
-	PaymentStatusRefunded PaymentStatus = "REFUNDED"
+	StatusPending  Status = "PENDING"
+	StatusSuccess  Status = "SUCCESS"
+	StatusFailed   Status = "FAILED"
+	StatusRefunded Status = "REFUNDED"
 )
 
-type Payment struct {
+type PaymentAttempt struct {
 	ID             uuid.UUID       `json:"id"`
 	InvoiceID      int64           `json:"invoice_id"`
-	IdempotencyKey string          `json:"idempotency_key"`
 	AttemptNumber  int             `json:"attempt_number"`
+	IdempotencyKey string          `json:"idempotency_key"`
 	Provider       string          `json:"provider"`
 	ProviderTxID   *string         `json:"provider_tx_id,omitempty"`
-	AmountMinor    int64           `json:"amount_minor"`
-	Currency       string          `json:"currency"`
-	Status         PaymentStatus   `json:"status"`
+	Amount         money.Money     `json:"amount"`
+	Status         Status          `json:"status"`
 	RawResponse    json.RawMessage `json:"raw_response,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`

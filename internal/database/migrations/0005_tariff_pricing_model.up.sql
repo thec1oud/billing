@@ -24,18 +24,3 @@ ALTER TABLE tariffs
         OR
         (amount IS NOT NULL AND currency IS NOT NULL)
     );
-
-ALTER TABLE tariffs
-    ADD CONSTRAINT chk_tariff_interval_count_positive
-    CHECK (
-        interval_count IS NULL
-        OR interval_count > 0
-    );
-
-ALTER TABLE tariffs
-    ADD CONSTRAINT chk_tariff_interval_consistency
-    CHECK (
-        billing_interval_code IS NULL
-        OR interval_count IS NOT NULL
-    );
-    
