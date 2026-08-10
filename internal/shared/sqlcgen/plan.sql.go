@@ -101,10 +101,10 @@ RETURNING
 `
 
 type CreatePlanDurationParams struct {
-	PlanID   int64  `json:"plan_id"`
-	TariffID int64  `json:"tariff_id"`
-	Duration string `json:"duration"`
-	IsActive bool   `json:"is_active"`
+	PlanID   int64 `json:"plan_id"`
+	TariffID int64 `json:"tariff_id"`
+	Duration int64 `json:"duration"`
+	IsActive bool  `json:"is_active"`
 }
 
 func (q *Queries) CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error) {
@@ -217,8 +217,8 @@ WHERE plan_id = $1
 `
 
 type GetPlanDurationByPlanAndDurationParams struct {
-	PlanID   int64  `json:"plan_id"`
-	Duration string `json:"duration"`
+	PlanID   int64 `json:"plan_id"`
+	Duration int64 `json:"duration"`
 }
 
 func (q *Queries) GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetPlanDurationByPlanAndDurationParams) (PlanDuration, error) {

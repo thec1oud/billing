@@ -137,7 +137,7 @@ CREATE TABLE plan_durations (
     tariff_id BIGINT NOT NULL
         REFERENCES tariffs(tariff_id),
 
-    duration VARCHAR(32) NOT NULL,
+    duration BIGINT NOT NULL,
 
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
 

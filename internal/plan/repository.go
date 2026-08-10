@@ -51,10 +51,10 @@ type Repository interface {
 		id int64,
 	) (PlanDuration, error)
 
-	GetDurationByPlanAndCode(
+	GetDurationByPlanAndDuration(
 		ctx context.Context,
 		planID int64,
-		duration PlanDurationCode,
+		duration time.Duration,
 	) (PlanDuration, error)
 
 	ListDurations(
@@ -149,7 +149,7 @@ func (r *PostgresRepository) CreateDuration(
 		sqlcgen.CreatePlanDurationParams{
 			PlanID:   duration.PlanID,
 			TariffID: duration.TariffID,
-			Duration: string(duration.Duration),
+			Duration: int64(duration.Duration),
 			IsActive: duration.IsActive,
 		},
 	)
@@ -253,10 +253,10 @@ func (r *PostgresRepository) GetDuration(
 	return toPlanDurationModel(row), nil
 }
 
-func (r *PostgresRepository) GetDurationByPlanAndCode(
+func (r *PostgresRepository) GetDurationByPlanAndDuration(
 	ctx context.Context,
 	planID int64,
-	duration PlanDurationCode,
+	duration time.Duration,
 ) (PlanDuration, error) {
 	q := sqlcgen.New(r.pool)
 
@@ -264,7 +264,7 @@ func (r *PostgresRepository) GetDurationByPlanAndCode(
 		ctx,
 		sqlcgen.GetPlanDurationByPlanAndDurationParams{
 			PlanID:   planID,
-			Duration: string(duration),
+			Duration: int64(duration),
 		},
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -386,7 +386,7 @@ func toPlanDurationModel(row sqlcgen.PlanDuration) PlanDuration {
 		ID:        row.PlanDurationID,
 		PlanID:    row.PlanID,
 		TariffID:  row.TariffID,
-		Duration:  PlanDurationCode(row.Duration),
+		Duration:  time.Duration(row.Duration),
 		IsActive:  row.IsActive,
 		CreatedAt: row.CreatedAt,
 	}

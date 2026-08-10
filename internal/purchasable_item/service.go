@@ -23,7 +23,7 @@ func (s *Service) Create(
 	tx pgx.Tx,
 	item PurchasableItem,
 ) (PurchasableItem, error) {
-	if err := item.Validate(); err != nil {
+	if err := validatePurchasableItem(item); err != nil {
 		return PurchasableItem{}, fmt.Errorf(
 			"validate purchasable item: %w",
 			err,

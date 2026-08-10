@@ -174,7 +174,7 @@ type PlanDuration struct {
 	PlanDurationID int64     `json:"plan_duration_id"`
 	PlanID         int64     `json:"plan_id"`
 	TariffID       int64     `json:"tariff_id"`
-	Duration       string    `json:"duration"`
+	Duration       int64     `json:"duration"`
 	IsActive       bool      `json:"is_active"`
 	CreatedAt      time.Time `json:"created_at"`
 }
