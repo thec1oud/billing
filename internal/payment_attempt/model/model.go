@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
@@ -19,31 +17,29 @@ const (
 )
 
 type PaymentAttempt struct {
-	ID                  uuid.UUID
-	InvoiceID           int64
-	PaymentMethodID     *int64
-	PaymentProviderCode string
-	AttemptNumber       int
-	IdempotencyKey      string
-	ProviderTxID        *string
-	Amount              money.Money
-	Status              Status
-	RawResponse         json.RawMessage
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	AttemptID    int64
+	InvoiceID    int64
+	ProviderCode string
+	InternalTxID string
+	ProviderTxID *string
+	Amount       money.Money
+	Status       Status
+	RawResponse  json.RawMessage
+	RawRequest   json.RawMessage
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type CreatePaymentAttemptInput struct {
-	InvoiceID       int64
-	PaymentMethodID int64
-	IdempotencyKey  string
-	Amount          money.Money
-	ProviderTxID    *string
-	RawResponse     json.RawMessage
+	InvoiceID    int64
+	ProviderCode string
+	InternalTxID string
+	Amount       money.Money
+	RawRequest   json.RawMessage
 }
 
-type UpdatePaymentAttemptStatusInput struct {
-	ID           uuid.UUID
+type UpdatePaymentAttemptResultInput struct {
+	AttemptID    int64
 	Status       Status
 	ProviderTxID *string
 	RawResponse  json.RawMessage

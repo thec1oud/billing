@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/thec1oud/billing/internal/payment_attempt/model"
 	"github.com/thec1oud/billing/internal/payment_attempt/repository"
 )
@@ -18,14 +17,13 @@ var (
 
 type PaymentRepository interface {
 	Create(ctx context.Context, db repository.DBTX, attempt model.PaymentAttempt) (model.PaymentAttempt, error)
-	GetNextAttemptNumber(ctx context.Context, db repository.DBTX, invoiceID int64) (int, error)
-	GetByID(ctx context.Context, db repository.DBTX, id uuid.UUID) (model.PaymentAttempt, error)
-	GetByIdempotencyKey(ctx context.Context, db repository.DBTX, key string) (model.PaymentAttempt, error)
+	GetByID(ctx context.Context, db repository.DBTX, attemptID int64) (model.PaymentAttempt, error)
+	GetByInternalTxID(ctx context.Context, db repository.DBTX, internalTxID string) (model.PaymentAttempt, error)
 	GetByProviderTxID(ctx context.Context, db repository.DBTX, providerTxID string) (model.PaymentAttempt, error)
 	GetPendingByInvoiceID(ctx context.Context, db repository.DBTX, invoiceID int64) (model.PaymentAttempt, error)
-	UpdateStatus(ctx context.Context, db repository.DBTX, id uuid.UUID, status model.Status, providerTxID *string, rawResponse json.RawMessage) error
+	UpdateResult(ctx context.Context, db repository.DBTX, attemptID int64, status model.Status, providerTxID *string, rawResponse json.RawMessage) error
 	ListByInvoiceID(ctx context.Context, db repository.DBTX, invoiceID int64) ([]model.PaymentAttempt, error)
-	ListByPaymentMethodID(ctx context.Context, db repository.DBTX, paymentMethodID int64) ([]model.PaymentAttempt, error)
+	DeleteByAttemptID(ctx context.Context, db repository.DBTX, attemptID int64) error
 }
 
 type Service struct {
@@ -41,42 +39,72 @@ func (s *Service) CreatePaymentAttempt(
 	db repository.DBTX,
 	input model.CreatePaymentAttemptInput,
 ) (model.PaymentAttempt, error) {
-	existing, err := s.repo.GetByIdempotencyKey(ctx, db, input.IdempotencyKey)
+	existing, err := s.repo.GetByInternalTxID(ctx, db, input.InternalTxID)
 	if err == nil {
 		return existing, nil
 	}
 	if !errors.Is(err, repository.ErrPaymentAttemptNotFound) {
-		return model.PaymentAttempt{}, fmt.Errorf("check idempotency key: %w", err)
-	}
-
-	_, err = s.repo.GetPendingByInvoiceID(ctx, db, input.InvoiceID)
-	if err == nil {
-		return model.PaymentAttempt{}, repository.ErrPendingAttemptExists
-	}
-	if !errors.Is(err, repository.ErrPaymentAttemptNotFound) {
-		return model.PaymentAttempt{}, fmt.Errorf("check pending attempts: %w", err)
-	}
-
-	nextAttemptNum, err := s.repo.GetNextAttemptNumber(ctx, db, input.InvoiceID)
-	if err != nil {
-		return model.PaymentAttempt{}, fmt.Errorf("calculate next attempt number: %w", err)
+		return model.PaymentAttempt{}, fmt.Errorf("check internal tx id idempotency: %w", err)
 	}
 
 	attempt := model.PaymentAttempt{
-		InvoiceID:       input.InvoiceID,
-		PaymentMethodID: &input.PaymentMethodID,
-		AttemptNumber:   nextAttemptNum,
-		IdempotencyKey:  input.IdempotencyKey,
-		ProviderTxID:    input.ProviderTxID,
-		Amount:          input.Amount,
-		Status:          model.StatusPending,
-		RawResponse:     input.RawResponse,
+		InvoiceID:    input.InvoiceID,
+		ProviderCode: input.ProviderCode,
+		InternalTxID: input.InternalTxID,
+		Amount:       input.Amount,
+		Status:       model.StatusPending,
+		RawRequest:   input.RawRequest,
 	}
 
 	created, err := s.repo.Create(ctx, db, attempt)
 	if err != nil {
-		return model.PaymentAttempt{}, fmt.Errorf("persist payment attempt: %w", err)
+		if errors.Is(err, repository.ErrPendingAttemptExists) {
+			return model.PaymentAttempt{}, repository.ErrPendingAttemptExists
+		}
+		if errors.Is(err, repository.ErrDuplicateInternalTxID) {
+			return model.PaymentAttempt{}, repository.ErrDuplicateInternalTxID
+		}
+		return model.PaymentAttempt{}, fmt.Errorf("persist initial payment attempt: %w", err)
 	}
 
 	return created, nil
+}
+
+func (s *Service) UpdatePaymentAttemptResult(
+	ctx context.Context,
+	db repository.DBTX,
+	input model.UpdatePaymentAttemptResultInput,
+) error {
+	err := s.repo.UpdateResult(
+		ctx,
+		db,
+		input.AttemptID,
+		input.Status,
+		input.ProviderTxID,
+		input.RawResponse,
+	)
+	if err != nil {
+		if errors.Is(err, repository.ErrPaymentAttemptNotFound) {
+			return repository.ErrPaymentAttemptNotFound
+		}
+		return fmt.Errorf("update payment attempt result: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) DeletePaymentAttempt(
+	ctx context.Context,
+	db repository.DBTX,
+	attemptID int64,
+) error {
+	err := s.repo.DeleteByAttemptID(ctx, db, attemptID)
+	if err != nil {
+		if errors.Is(err, repository.ErrPaymentAttemptNotFound) {
+			return repository.ErrPaymentAttemptNotFound
+		}
+		return fmt.Errorf("delete payment attempt %d: %w", attemptID, err)
+	}
+
+	return nil
 }

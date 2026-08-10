@@ -9,41 +9,37 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createPaymentAttempt = `-- name: CreatePaymentAttempt :one
 INSERT INTO payment_attempts (
     invoice_id,
-    payment_method_id,
-    attempt_number,
-    idempotency_key,
-    provider_tx_id,
+    provider_code,
+    internal_tx_id,
     amount_minor,
     currency,
     status,
-    raw_response
+    raw_request
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, created_at, updated_at
+RETURNING attempt_id, created_at, updated_at
 `
 
 type CreatePaymentAttemptParams struct {
-	InvoiceID       int64       `json:"invoice_id"`
-	PaymentMethodID pgtype.Int8 `json:"payment_method_id"`
-	AttemptNumber   int32       `json:"attempt_number"`
-	IdempotencyKey  string      `json:"idempotency_key"`
-	ProviderTxID    pgtype.Text `json:"provider_tx_id"`
-	AmountMinor     int64       `json:"amount_minor"`
-	Currency        string      `json:"currency"`
-	Status          string      `json:"status"`
-	RawResponse     []byte      `json:"raw_response"`
+	InvoiceID    int64  `json:"invoice_id"`
+	ProviderCode string `json:"provider_code"`
+	InternalTxID string `json:"internal_tx_id"`
+	AmountMinor  int64  `json:"amount_minor"`
+	Currency     string `json:"currency"`
+	Status       string `json:"status"`
+	RawRequest   []byte `json:"raw_request"`
 }
 
 type CreatePaymentAttemptRow struct {
-	ID        uuid.UUID `json:"id"`
+	AttemptID int64     `json:"attempt_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -51,85 +47,77 @@ type CreatePaymentAttemptRow struct {
 func (q *Queries) CreatePaymentAttempt(ctx context.Context, arg CreatePaymentAttemptParams) (CreatePaymentAttemptRow, error) {
 	row := q.db.QueryRow(ctx, createPaymentAttempt,
 		arg.InvoiceID,
-		arg.PaymentMethodID,
-		arg.AttemptNumber,
-		arg.IdempotencyKey,
-		arg.ProviderTxID,
+		arg.ProviderCode,
+		arg.InternalTxID,
 		arg.AmountMinor,
 		arg.Currency,
 		arg.Status,
-		arg.RawResponse,
+		arg.RawRequest,
 	)
 	var i CreatePaymentAttemptRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
+	err := row.Scan(&i.AttemptID, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
 
-const getNextAttemptNumber = `-- name: GetNextAttemptNumber :one
-SELECT COALESCE(MAX(attempt_number), 0) + 1 AS next_attempt_number
-FROM payment_attempts
-WHERE invoice_id = $1
+const deletePaymentAttempt = `-- name: DeletePaymentAttempt :execresult
+DELETE FROM payment_attempts
+WHERE attempt_id = $1
 `
 
-func (q *Queries) GetNextAttemptNumber(ctx context.Context, invoiceID int64) (int32, error) {
-	row := q.db.QueryRow(ctx, getNextAttemptNumber, invoiceID)
-	var next_attempt_number int32
-	err := row.Scan(&next_attempt_number)
-	return next_attempt_number, err
+func (q *Queries) DeletePaymentAttempt(ctx context.Context, attemptID int64) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, deletePaymentAttempt, attemptID)
 }
 
 const getPaymentAttemptByID = `-- name: GetPaymentAttemptByID :one
 SELECT 
-    id, invoice_id, payment_method_id,
-    attempt_number, idempotency_key, provider_tx_id, amount_minor,
-    currency, status, raw_response, created_at, updated_at
+    attempt_id, invoice_id, provider_code, internal_tx_id, provider_tx_id, 
+    amount_minor, currency, status, raw_response, raw_request, created_at, updated_at
 FROM payment_attempts
-WHERE id = $1
+WHERE attempt_id = $1
 `
 
-func (q *Queries) GetPaymentAttemptByID(ctx context.Context, id uuid.UUID) (PaymentAttempt, error) {
-	row := q.db.QueryRow(ctx, getPaymentAttemptByID, id)
+func (q *Queries) GetPaymentAttemptByID(ctx context.Context, attemptID int64) (PaymentAttempt, error) {
+	row := q.db.QueryRow(ctx, getPaymentAttemptByID, attemptID)
 	var i PaymentAttempt
 	err := row.Scan(
-		&i.ID,
+		&i.AttemptID,
 		&i.InvoiceID,
-		&i.PaymentMethodID,
-		&i.AttemptNumber,
-		&i.IdempotencyKey,
+		&i.ProviderCode,
+		&i.InternalTxID,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
 		&i.Status,
 		&i.RawResponse,
+		&i.RawRequest,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getPaymentAttemptByIdempotencyKey = `-- name: GetPaymentAttemptByIdempotencyKey :one
+const getPaymentAttemptByInternalTxID = `-- name: GetPaymentAttemptByInternalTxID :one
 SELECT 
-    id, invoice_id, payment_method_id,
-    attempt_number, idempotency_key, provider_tx_id, amount_minor,
-    currency, status, raw_response, created_at, updated_at
+    attempt_id, invoice_id, provider_code, internal_tx_id, provider_tx_id, 
+    amount_minor, currency, status, raw_response, raw_request, created_at, updated_at
 FROM payment_attempts
-WHERE idempotency_key = $1
+WHERE internal_tx_id = $1
 `
 
-func (q *Queries) GetPaymentAttemptByIdempotencyKey(ctx context.Context, idempotencyKey string) (PaymentAttempt, error) {
-	row := q.db.QueryRow(ctx, getPaymentAttemptByIdempotencyKey, idempotencyKey)
+func (q *Queries) GetPaymentAttemptByInternalTxID(ctx context.Context, internalTxID string) (PaymentAttempt, error) {
+	row := q.db.QueryRow(ctx, getPaymentAttemptByInternalTxID, internalTxID)
 	var i PaymentAttempt
 	err := row.Scan(
-		&i.ID,
+		&i.AttemptID,
 		&i.InvoiceID,
-		&i.PaymentMethodID,
-		&i.AttemptNumber,
-		&i.IdempotencyKey,
+		&i.ProviderCode,
+		&i.InternalTxID,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
 		&i.Status,
 		&i.RawResponse,
+		&i.RawRequest,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -138,9 +126,8 @@ func (q *Queries) GetPaymentAttemptByIdempotencyKey(ctx context.Context, idempot
 
 const getPaymentAttemptByProviderTxID = `-- name: GetPaymentAttemptByProviderTxID :one
 SELECT 
-    id, invoice_id, payment_method_id,
-    attempt_number, idempotency_key, provider_tx_id, amount_minor,
-    currency, status, raw_response, created_at, updated_at
+    attempt_id, invoice_id, provider_code, internal_tx_id, provider_tx_id, 
+    amount_minor, currency, status, raw_response, raw_request, created_at, updated_at
 FROM payment_attempts
 WHERE provider_tx_id = $1
 `
@@ -149,16 +136,16 @@ func (q *Queries) GetPaymentAttemptByProviderTxID(ctx context.Context, providerT
 	row := q.db.QueryRow(ctx, getPaymentAttemptByProviderTxID, providerTxID)
 	var i PaymentAttempt
 	err := row.Scan(
-		&i.ID,
+		&i.AttemptID,
 		&i.InvoiceID,
-		&i.PaymentMethodID,
-		&i.AttemptNumber,
-		&i.IdempotencyKey,
+		&i.ProviderCode,
+		&i.InternalTxID,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
 		&i.Status,
 		&i.RawResponse,
+		&i.RawRequest,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -167,9 +154,8 @@ func (q *Queries) GetPaymentAttemptByProviderTxID(ctx context.Context, providerT
 
 const getPendingPaymentAttemptByInvoiceID = `-- name: GetPendingPaymentAttemptByInvoiceID :one
 SELECT 
-    id, invoice_id, payment_method_id,
-    attempt_number, idempotency_key, provider_tx_id, amount_minor,
-    currency, status, raw_response, created_at, updated_at
+    attempt_id, invoice_id, provider_code, internal_tx_id, provider_tx_id, 
+    amount_minor, currency, status, raw_response, raw_request, created_at, updated_at
 FROM payment_attempts
 WHERE invoice_id = $1 AND status = 'PENDING'
 `
@@ -178,16 +164,16 @@ func (q *Queries) GetPendingPaymentAttemptByInvoiceID(ctx context.Context, invoi
 	row := q.db.QueryRow(ctx, getPendingPaymentAttemptByInvoiceID, invoiceID)
 	var i PaymentAttempt
 	err := row.Scan(
-		&i.ID,
+		&i.AttemptID,
 		&i.InvoiceID,
-		&i.PaymentMethodID,
-		&i.AttemptNumber,
-		&i.IdempotencyKey,
+		&i.ProviderCode,
+		&i.InternalTxID,
 		&i.ProviderTxID,
 		&i.AmountMinor,
 		&i.Currency,
 		&i.Status,
 		&i.RawResponse,
+		&i.RawRequest,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -196,12 +182,11 @@ func (q *Queries) GetPendingPaymentAttemptByInvoiceID(ctx context.Context, invoi
 
 const listPaymentAttemptsByInvoiceID = `-- name: ListPaymentAttemptsByInvoiceID :many
 SELECT 
-    id, invoice_id, payment_method_id,
-    attempt_number, idempotency_key, provider_tx_id, amount_minor,
-    currency, status, raw_response, created_at, updated_at
+    attempt_id, invoice_id, provider_code, internal_tx_id, provider_tx_id, 
+    amount_minor, currency, status, raw_response, raw_request, created_at, updated_at
 FROM payment_attempts
 WHERE invoice_id = $1
-ORDER BY attempt_number ASC
+ORDER BY created_at ASC
 `
 
 func (q *Queries) ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error) {
@@ -214,16 +199,16 @@ func (q *Queries) ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID 
 	for rows.Next() {
 		var i PaymentAttempt
 		if err := rows.Scan(
-			&i.ID,
+			&i.AttemptID,
 			&i.InvoiceID,
-			&i.PaymentMethodID,
-			&i.AttemptNumber,
-			&i.IdempotencyKey,
+			&i.ProviderCode,
+			&i.InternalTxID,
 			&i.ProviderTxID,
 			&i.AmountMinor,
 			&i.Currency,
 			&i.Status,
 			&i.RawResponse,
+			&i.RawRequest,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -237,69 +222,26 @@ func (q *Queries) ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID 
 	return items, nil
 }
 
-const listPaymentAttemptsByPaymentMethodID = `-- name: ListPaymentAttemptsByPaymentMethodID :many
-SELECT 
-    id, invoice_id, payment_method_id,
-    attempt_number, idempotency_key, provider_tx_id, amount_minor,
-    currency, status, raw_response, created_at, updated_at
-FROM payment_attempts
-WHERE payment_method_id = $1
-ORDER BY created_at DESC
-`
-
-func (q *Queries) ListPaymentAttemptsByPaymentMethodID(ctx context.Context, paymentMethodID pgtype.Int8) ([]PaymentAttempt, error) {
-	rows, err := q.db.Query(ctx, listPaymentAttemptsByPaymentMethodID, paymentMethodID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []PaymentAttempt
-	for rows.Next() {
-		var i PaymentAttempt
-		if err := rows.Scan(
-			&i.ID,
-			&i.InvoiceID,
-			&i.PaymentMethodID,
-			&i.AttemptNumber,
-			&i.IdempotencyKey,
-			&i.ProviderTxID,
-			&i.AmountMinor,
-			&i.Currency,
-			&i.Status,
-			&i.RawResponse,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const updatePaymentAttemptStatus = `-- name: UpdatePaymentAttemptStatus :exec
+const updatePaymentAttemptResult = `-- name: UpdatePaymentAttemptResult :exec
 UPDATE payment_attempts
 SET 
     status = $2,
     provider_tx_id = COALESCE($3, provider_tx_id),
     raw_response = COALESCE($4, raw_response),
     updated_at = NOW()
-WHERE id = $1
+WHERE attempt_id = $1
 `
 
-type UpdatePaymentAttemptStatusParams struct {
-	ID           uuid.UUID   `json:"id"`
+type UpdatePaymentAttemptResultParams struct {
+	AttemptID    int64       `json:"attempt_id"`
 	Status       string      `json:"status"`
 	ProviderTxID pgtype.Text `json:"provider_tx_id"`
 	RawResponse  []byte      `json:"raw_response"`
 }
 
-func (q *Queries) UpdatePaymentAttemptStatus(ctx context.Context, arg UpdatePaymentAttemptStatusParams) error {
-	_, err := q.db.Exec(ctx, updatePaymentAttemptStatus,
-		arg.ID,
+func (q *Queries) UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error {
+	_, err := q.db.Exec(ctx, updatePaymentAttemptResult,
+		arg.AttemptID,
 		arg.Status,
 		arg.ProviderTxID,
 		arg.RawResponse,
