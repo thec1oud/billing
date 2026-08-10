@@ -27,7 +27,7 @@ func TestService_CreateDraftInvoice_Validation(t *testing.T) {
 	eStore := eventrepo.NewPostgresEventStore(pool)
 	eSvc := eventservice.NewService(eStore)
 	repo := invoicerepo.NewPostgresRepository(pool)
-	svc := invoiceservice.NewService(pool, eSvc, nil, nil, nil, repo)
+	svc := invoiceservice.NewService(pool, eSvc, nil, repo)
 
 	actor := eventmodel.Actor{Type: "USER", ID: "usr_test"}
 	usd := money.Currency("USD")
@@ -72,7 +72,7 @@ func TestService_DraftAndFinalize_Lifecycle(t *testing.T) {
 	eStore := eventrepo.NewPostgresEventStore(pool)
 	eSvc := eventservice.NewService(eStore)
 	repo := invoicerepo.NewPostgresRepository(pool)
-	svc := invoiceservice.NewService(pool, eSvc, nil, nil, nil, repo)
+	svc := invoiceservice.NewService(pool, eSvc, nil, repo)
 
 	actor := eventmodel.Actor{Type: "SYSTEM", ID: "billing_test"}
 	accountID := int64(1)

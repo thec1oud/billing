@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"time"
 
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -71,7 +70,3 @@ type PaymentFailedPayload struct {
 }
 
 type InvoicePaidPayload struct{}
-
-type AccountLookup interface {
-	DefaultPaymentMethodID(ctx context.Context, accountID int64) (string, error)
-}

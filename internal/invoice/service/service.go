@@ -16,22 +16,9 @@ import (
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
-type PlanLookup interface {
-	FlatFeeForSubscription(
-		ctx context.Context,
-		subscriptionID int64,
-	) (accountID int64, fee money.Money, periodStart, periodEnd time.Time, err error)
-}
-
-type AccountLookup interface {
-	DefaultPaymentMethodID(ctx context.Context, accountID int64) (string, error)
-}
-
 type Service struct {
 	db           *pgxpool.Pool
 	eventService *eventservice.Service
-	plans        PlanLookup
-	accounts     AccountLookup
 	ppi          ppi.PPI
 	repo         *repository.PostgresRepository
 }
@@ -39,16 +26,12 @@ type Service struct {
 func NewService(
 	db *pgxpool.Pool,
 	eventService *eventservice.Service,
-	plans PlanLookup,
-	accounts AccountLookup,
 	ppi ppi.PPI,
 	repo *repository.PostgresRepository,
 ) *Service {
 	return &Service{
 		db:           db,
 		eventService: eventService,
-		plans:        plans,
-		accounts:     accounts,
 		ppi:          ppi,
 		repo:         repo,
 	}

@@ -118,8 +118,15 @@ func Rebuild[State any](initial State, events []Event, reduce Reducer[State]) (S
 	return state, nil
 }
 
+type ActorType string
+
+const (
+	ActorTypeUser   ActorType = "USER"
+	ActorTypeSystem ActorType = "SYSTEM"
+)
+
 type Actor struct {
-	ID   string `json:"id"`             // e.g., "system", "usr_12345", "cron_job"
-	Type string `json:"type"`           // e.g., "SYSTEM", "USER", "SERVICE"
-	Name string `json:"name,omitempty"` // e.g., "Invoice Auto-Drafter"
+	ID   string    `json:"id"`
+	Type ActorType `json:"type"`
+	Name string    `json:"name,omitempty"`
 }

@@ -14,12 +14,15 @@ var (
 	ErrOverflow         = errors.New("money amount exceeds int64 range")
 )
 
+// enums will later be populated
 type Currency string
 
 type Money struct {
 	AmountMinor int64    `json:"amount_minor"`
 	Currency    Currency `json:"currency"`
 }
+
+const DefaultCurrency Currency = "USD"
 
 func New(amountMinor int64, currency string) (Money, error) {
 	parsed, ok := ParseCurrency(currency)
@@ -29,6 +32,9 @@ func New(amountMinor int64, currency string) (Money, error) {
 	return Money{AmountMinor: amountMinor, Currency: parsed}, nil
 }
 
+func DefaultZero() (Money, error) {
+	return Zero(DefaultCurrency)
+}
 func (m Money) Add(other Money) (Money, error) {
 	if err := requireSameCurrency(m, other); err != nil {
 		return Money{}, err
