@@ -29,8 +29,11 @@ func NewService(
 
 // CreateAccount creates a new billing account.
 //
-// Milestone 1 deliberately skips the PENDING_VERIFICATION state.
-// Every account becomes ACTIVE immediately.
+// Account creation produces AccountCreated and leaves the
+// account in PENDING_VERIFICATION.
+//
+// A separate ActivateAccount operation is responsible for
+// transitioning the account to ACTIVE.
 func (s *Service) CreateAccount(
 	ctx context.Context,
 	currency string,
@@ -41,35 +44,139 @@ func (s *Service) CreateAccount(
 		[]byte(fmt.Sprintf("%s:%s", currency, timezone)),
 	)
 
-	return idempotency.Execute(ctx, s.idem, idempotencyKey, "account.create", requestHash, func() (*Account, error) {
-		accountID, err := sharedUUID.New()
-		if err != nil {
-			return nil, err
-		}
+	return idempotency.Execute(
+		ctx,
+		s.idem,
+		idempotencyKey,
+		"account.create",
+		requestHash,
+		func() (*Account, error) {
+			accountID, err := sharedUUID.New()
+			if err != nil {
+				return nil, err
+			}
 
-		event := AccountCreated{
-			AccountID: accountID,
-			Currency:  currency,
-			Timezone:  timezone,
-		}
+			event := AccountCreated{
+				AccountID: accountID,
+				Currency:  currency,
+				Timezone:  timezone,
+			}
 
-		err = s.repository.Append(ctx, events.AppendRequest{
-			AggregateType: events.AggregateAccount,
-			AggregateID:   accountID.String(),
-			Sequence:      1,
-			EventType:     events.AccountCreated,
-			EventVersion:  1,
-			Actor:         "account.service",
-			Payload:       event,
-		})
-		if err != nil {
-			return nil, err
-		}
+			err = s.repository.Append(ctx, events.AppendRequest{
+				AggregateType: events.AggregateAccount,
+				AggregateID:   accountID.String(),
+				Sequence:      1,
+				EventType:     events.AccountCreated,
+				EventVersion:  1,
+				Actor:         "account.service",
+				Payload:       event,
+			})
+			if err != nil {
+				return nil, err
+			}
 
-		return s.repository.Get(ctx, accountID)
-	})
+			return s.repository.Get(ctx, accountID)
+		},
+	)
 }
 
+// ActivateAccount transitions an account from
+// PENDING_VERIFICATION to ACTIVE.
+func (s *Service) ActivateAccount(
+	ctx context.Context,
+	accountID uuid.UUID,
+) (*Account, error) {
+	account, err := s.repository.Get(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	event := AccountActivated{
+		AccountID: accountID,
+	}
+
+	err = s.repository.Append(ctx, events.AppendRequest{
+		AggregateType: events.AggregateAccount,
+		AggregateID:   accountID.String(),
+		Sequence:      account.Version + 1,
+		EventType:     events.AccountActivated,
+		EventVersion:  1,
+		Actor:         "account.service",
+		Payload:       event,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repository.Get(ctx, accountID)
+}
+
+// SuspendAccount transitions an ACTIVE account to SUSPENDED.
+func (s *Service) SuspendAccount(
+	ctx context.Context,
+	accountID uuid.UUID,
+	reason string,
+) (*Account, error) {
+	account, err := s.repository.Get(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	event := AccountSuspended{
+		AccountID: accountID,
+		Reason:    reason,
+	}
+
+	err = s.repository.Append(ctx, events.AppendRequest{
+		AggregateType: events.AggregateAccount,
+		AggregateID:   accountID.String(),
+		Sequence:      account.Version + 1,
+		EventType:     events.AccountSuspended,
+		EventVersion:  1,
+		Actor:         "account.service",
+		Payload:       event,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repository.Get(ctx, accountID)
+}
+
+// CloseAccount transitions an ACTIVE or SUSPENDED account to CLOSED.
+func (s *Service) CloseAccount(
+	ctx context.Context,
+	accountID uuid.UUID,
+	reason string,
+) (*Account, error) {
+	account, err := s.repository.Get(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	event := AccountClosed{
+		AccountID: accountID,
+		Reason:    reason,
+	}
+
+	err = s.repository.Append(ctx, events.AppendRequest{
+		AggregateType: events.AggregateAccount,
+		AggregateID:   accountID.String(),
+		Sequence:      account.Version + 1,
+		EventType:     events.AccountClosed,
+		EventVersion:  1,
+		Actor:         "account.service",
+		Payload:       event,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repository.Get(ctx, accountID)
+}
+
+// AddPaymentMethod attaches a valid payment method to
+// an ACTIVE account.
 func (s *Service) AddPaymentMethod(
 	ctx context.Context,
 	accountID uuid.UUID,
@@ -84,8 +191,6 @@ func (s *Service) AddPaymentMethod(
 		return nil, err
 	}
 
-	nextSequence := account.Version + 1
-
 	event := PaymentMethodAdded{
 		AccountID:       accountID,
 		PaymentMethodID: paymentMethodID,
@@ -94,7 +199,7 @@ func (s *Service) AddPaymentMethod(
 	err = s.repository.Append(ctx, events.AppendRequest{
 		AggregateType: events.AggregateAccount,
 		AggregateID:   accountID.String(),
-		Sequence:      nextSequence,
+		Sequence:      account.Version + 1,
 		EventType:     events.PaymentMethodAdded,
 		EventVersion:  1,
 		Actor:         "account.service",
@@ -105,9 +210,11 @@ func (s *Service) AddPaymentMethod(
 	}
 
 	return s.repository.Get(ctx, accountID)
-
 }
 
-func (s *Service) GetAccount(ctx context.Context, accountID uuid.UUID) (*Account, error) {
+func (s *Service) GetAccount(
+	ctx context.Context,
+	accountID uuid.UUID,
+) (*Account, error) {
 	return s.repository.Get(ctx, accountID)
 }

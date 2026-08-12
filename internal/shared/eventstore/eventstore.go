@@ -18,7 +18,11 @@ var (
 type EventType string
 
 const (
-	AccountCreated      EventType = "billing.account.created"
+	AccountCreated   EventType = "billing.account.created"
+	AccountActivated EventType = "billing.account.activated"
+	AccountSuspended EventType = "billing.account.suspended"
+	AccountClosed    EventType = "billing.account.closed"
+
 	PaymentMethodAdded  EventType = "billing.account.payment_method_added"
 	SubscriptionCreated EventType = "billing.subscription.created"
 	InvoiceCreated      EventType = "billing.invoice.created"

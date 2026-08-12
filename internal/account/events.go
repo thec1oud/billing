@@ -2,53 +2,56 @@ package account
 
 import "github.com/google/uuid"
 
-// AccountCreated is emitted when a billing account is created.
+// AccountCreated represents the payload stored when an
+// account aggregate is created.
 //
-// According to the account state machine, a newly created
-// account starts in PENDING_VERIFICATION.
+// Creation starts the account in PENDING_VERIFICATION.
+// Activation happens through a separate AccountActivated event.
 type AccountCreated struct {
-	AccountID  uuid.UUID `json:"account_id"`
-	ExternalID string    `json:"external_id"`
+	AccountID uuid.UUID `json:"account_id"`
+
+	ExternalID string `json:"external_id,omitempty"`
 
 	Currency string `json:"currency"`
 	Timezone string `json:"timezone"`
-	Locale   string `json:"locale"`
 
-	NetTerms int16 `json:"net_terms"`
+	Locale   string `json:"locale,omitempty"`
+	NetTerms int16  `json:"net_terms,omitempty"`
 
-	DunningProfileID *int64 `json:"dunning_profile_id"`
+	DunningProfileID *int64 `json:"dunning_profile_id,omitempty"`
 
-	TaxIdentifiers  map[string]string `json:"tax_identifiers"`
-	BillingAddress  map[string]string `json:"billing_address"`
-	ComplianceFlags map[string]bool   `json:"compliance_flags"`
-	Metadata        map[string]string `json:"metadata"`
+	TaxIdentifiers  []byte `json:"tax_identifiers,omitempty"`
+	BillingAddress  []byte `json:"billing_address,omitempty"`
+	ComplianceFlags []byte `json:"compliance_flags,omitempty"`
+	Metadata        []byte `json:"metadata,omitempty"`
 }
 
-// AccountActivated is emitted when an account moves
-// from PENDING_VERIFICATION to ACTIVE.
+// AccountActivated represents:
+//
+// PENDING_VERIFICATION -> ACTIVE
 type AccountActivated struct {
 	AccountID uuid.UUID `json:"account_id"`
 }
 
-// AccountSuspended is emitted when an account moves
-// from ACTIVE to SUSPENDED.
+// AccountSuspended represents:
+//
+// ACTIVE -> SUSPENDED
 type AccountSuspended struct {
 	AccountID uuid.UUID `json:"account_id"`
 	Reason    string    `json:"reason"`
 }
 
-// AccountClosed is emitted when an account moves
-// to CLOSED.
+// AccountClosed represents:
 //
-// CLOSED is a terminal state. Once an account is closed,
-// it must not return to ACTIVE or SUSPENDED.
+// ACTIVE -> CLOSED
+// SUSPENDED -> CLOSED
 type AccountClosed struct {
 	AccountID uuid.UUID `json:"account_id"`
 	Reason    string    `json:"reason"`
 }
 
-// PaymentMethodAdded records that a payment method
-// was associated with an account.
+// PaymentMethodAdded represents a payment method attached
+// to an existing Account aggregate.
 type PaymentMethodAdded struct {
 	AccountID       uuid.UUID `json:"account_id"`
 	PaymentMethodID string    `json:"payment_method_id"`

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -21,40 +20,18 @@ const (
 )
 
 var (
-	// ErrInvalidStateTransition is returned when an event attempts
-	// to move an account from its current state to an invalid state.
 	ErrInvalidStateTransition = errors.New("invalid account state transition")
-
-	// ErrAccountClosed is returned when an operation attempts to
-	// modify an account that has already been closed.
-	ErrAccountClosed = errors.New("account is closed")
-
-	// ErrAccountNotFound is returned when an account aggregate has
-	// not been created yet.
-	ErrAccountNotFound = errors.New("account not found")
-
-	// ErrAccountIDMismatch is returned when an event belongs to a
-	// different account than the aggregate being rebuilt.
-	ErrAccountIDMismatch = errors.New("account id mismatch")
-
-	// ErrInvalidAccountEvent is returned when an account event
-	// cannot be applied to the current aggregate state.
-	ErrInvalidAccountEvent = errors.New("invalid account event")
+	ErrAccountClosed          = errors.New("account is closed")
+	ErrAccountNotFound        = errors.New("account not found")
+	ErrAccountIDMismatch      = errors.New("account id mismatch")
+	ErrInvalidAccountEvent    = errors.New("invalid account event")
+	ErrInvalidSequence        = errors.New("invalid account event sequence")
 )
 
 // Account is the Account aggregate.
 //
-// An Account represents a billing relationship and is the root
-// aggregate to which billing activity is associated.
-//
-// The Account lifecycle follows the RFC/schema state machine:
-//
-//	PENDING_VERIFICATION -> ACTIVE
-//	ACTIVE                -> SUSPENDED
-//	ACTIVE                -> CLOSED
-//	SUSPENDED             -> CLOSED
-//
-// CLOSED is terminal.
+// The aggregate is reconstructed exclusively by replaying its
+// event stream.
 type Account struct {
 	// Identity
 	AccountID  uuid.UUID
@@ -69,41 +46,47 @@ type Account struct {
 	Locale   string
 	NetTerms int16
 
-	// Dunning
+	// Compliance
+	TaxIdentifiers  json.RawMessage
+	ComplianceFlags json.RawMessage
+
+	// Billing
+	BillingAddress   json.RawMessage
 	DunningProfileID *int64
 
-	// Compliance
-	TaxIdentifiers  map[string]string
-	ComplianceFlags map[string]bool
+	// Additional information
+	Metadata json.RawMessage
 
-	// Billing information
-	BillingAddress map[string]string
-
-	// Provider/payment references
+	// Payment methods attached to the account.
 	PaymentMethods []string
 
-	// Arbitrary application metadata
-	Metadata map[string]string
-
-	// Event-sourcing version.
-	//
-	// This corresponds to the latest sequence number that has
-	// already been applied to this aggregate.
+	// Number of the last applied event.
 	Version int64
-
-	// Creation timestamp
-	CreatedAt time.Time
 }
 
-// Apply updates the Account aggregate by applying one event.
-//
-// IMPORTANT:
-// This function is the state-machine enforcement point for the
-// event-sourced aggregate. We do not simply assign a status.
-// Each state-changing event must be valid for the current state.
+// Apply applies exactly one event to the Account aggregate.
 func (a *Account) Apply(event events.Event) error {
-	switch event.EventType {
+	if event.Sequence <= 0 {
+		return ErrInvalidSequence
+	}
 
+	// Every event after creation must belong to the same aggregate.
+	if a.Version > 0 && a.AccountID != uuid.Nil {
+		if event.AggregateID != a.AccountID.String() {
+			return ErrAccountIDMismatch
+		}
+
+		if event.Sequence != a.Version+1 {
+			return fmt.Errorf(
+				"%w: expected %d, got %d",
+				ErrInvalidSequence,
+				a.Version+1,
+				event.Sequence,
+			)
+		}
+	}
+
+	switch event.EventType {
 	case events.AccountCreated:
 		return a.applyAccountCreated(event)
 
@@ -128,43 +111,33 @@ func (a *Account) Apply(event events.Event) error {
 	}
 }
 
-// applyAccountCreated applies the initial AccountCreated event.
-//
-// Valid initial state:
-//
-//	PENDING_VERIFICATION
-//
-// AccountCreated must be the first event in the account stream.
 func (a *Account) applyAccountCreated(event events.Event) error {
-	if a.Version != 0 || a.AccountID != uuid.Nil {
+	if a.Version != 0 {
 		return fmt.Errorf(
-			"%w: account can only be created once",
-			ErrInvalidStateTransition,
+			"%w: account already created",
+			ErrInvalidAccountEvent,
 		)
 	}
 
 	var payload AccountCreated
 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return fmt.Errorf("decode AccountCreated event: %w", err)
+		return fmt.Errorf("decode account.created: %w", err)
 	}
 
 	if payload.AccountID == uuid.Nil {
 		return fmt.Errorf(
-			"%w: AccountCreated contains empty account id",
+			"%w: account id cannot be empty",
 			ErrInvalidAccountEvent,
 		)
 	}
 
+	if event.AggregateID != payload.AccountID.String() {
+		return ErrAccountIDMismatch
+	}
+
 	a.AccountID = payload.AccountID
 	a.ExternalID = payload.ExternalID
-
-	// IMPORTANT:
-	// Account creation does NOT activate the account.
-	//
-	// The RFC/schema state machine requires verification before
-	// the account can become ACTIVE.
-	a.Status = StatusPendingVerification
 
 	a.Currency = payload.Currency
 	a.Timezone = payload.Timezone
@@ -173,29 +146,21 @@ func (a *Account) applyAccountCreated(event events.Event) error {
 
 	a.DunningProfileID = payload.DunningProfileID
 
-	a.TaxIdentifiers = cloneStringMap(payload.TaxIdentifiers)
-	a.BillingAddress = cloneStringMap(payload.BillingAddress)
-	a.ComplianceFlags = cloneBoolMap(payload.ComplianceFlags)
-	a.Metadata = cloneStringMap(payload.Metadata)
+	a.TaxIdentifiers = cloneJSON(payload.TaxIdentifiers)
+	a.BillingAddress = cloneJSON(payload.BillingAddress)
+	a.ComplianceFlags = cloneJSON(payload.ComplianceFlags)
+	a.Metadata = cloneJSON(payload.Metadata)
 
 	a.PaymentMethods = []string{}
 
+	// Creation starts the lifecycle here.
+	a.Status = StatusPendingVerification
 	a.Version = event.Sequence
-	a.CreatedAt = event.OccurredAt
 
 	return nil
 }
 
-// applyAccountActivated applies the transition:
-//
-//	PENDING_VERIFICATION -> ACTIVE
-//
-// Activation is intentionally a separate event from account creation.
 func (a *Account) applyAccountActivated(event events.Event) error {
-	if a.AccountID == uuid.Nil {
-		return ErrAccountNotFound
-	}
-
 	if a.Status != StatusPendingVerification {
 		return fmt.Errorf(
 			"%w: cannot activate account from %s",
@@ -207,11 +172,11 @@ func (a *Account) applyAccountActivated(event events.Event) error {
 	var payload AccountActivated
 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return fmt.Errorf("decode AccountActivated event: %w", err)
+		return fmt.Errorf("decode account.activated: %w", err)
 	}
 
-	if err := a.validateEventAccountID(payload.AccountID); err != nil {
-		return err
+	if payload.AccountID != a.AccountID {
+		return ErrAccountIDMismatch
 	}
 
 	a.Status = StatusActive
@@ -220,14 +185,7 @@ func (a *Account) applyAccountActivated(event events.Event) error {
 	return nil
 }
 
-// applyAccountSuspended applies the transition:
-//
-//	ACTIVE -> SUSPENDED
 func (a *Account) applyAccountSuspended(event events.Event) error {
-	if a.AccountID == uuid.Nil {
-		return ErrAccountNotFound
-	}
-
 	if a.Status != StatusActive {
 		return fmt.Errorf(
 			"%w: cannot suspend account from %s",
@@ -239,11 +197,11 @@ func (a *Account) applyAccountSuspended(event events.Event) error {
 	var payload AccountSuspended
 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return fmt.Errorf("decode AccountSuspended event: %w", err)
+		return fmt.Errorf("decode account.suspended: %w", err)
 	}
 
-	if err := a.validateEventAccountID(payload.AccountID); err != nil {
-		return err
+	if payload.AccountID != a.AccountID {
+		return ErrAccountIDMismatch
 	}
 
 	a.Status = StatusSuspended
@@ -252,17 +210,7 @@ func (a *Account) applyAccountSuspended(event events.Event) error {
 	return nil
 }
 
-// applyAccountClosed applies the transition:
-//
-//	ACTIVE -> CLOSED
-//	SUSPENDED -> CLOSED
-//
-// CLOSED is terminal and cannot transition back to another state.
 func (a *Account) applyAccountClosed(event events.Event) error {
-	if a.AccountID == uuid.Nil {
-		return ErrAccountNotFound
-	}
-
 	if a.Status != StatusActive && a.Status != StatusSuspended {
 		return fmt.Errorf(
 			"%w: cannot close account from %s",
@@ -274,11 +222,11 @@ func (a *Account) applyAccountClosed(event events.Event) error {
 	var payload AccountClosed
 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return fmt.Errorf("decode AccountClosed event: %w", err)
+		return fmt.Errorf("decode account.closed: %w", err)
 	}
 
-	if err := a.validateEventAccountID(payload.AccountID); err != nil {
-		return err
+	if payload.AccountID != a.AccountID {
+		return ErrAccountIDMismatch
 	}
 
 	a.Status = StatusClosed
@@ -287,55 +235,26 @@ func (a *Account) applyAccountClosed(event events.Event) error {
 	return nil
 }
 
-// applyPaymentMethodAdded applies a payment-method association.
-//
-// Payment methods may only be added to an ACTIVE account.
-//
-// We deliberately do not allow payment-method mutations against
-// PENDING_VERIFICATION, SUSPENDED, or CLOSED accounts.
 func (a *Account) applyPaymentMethodAdded(event events.Event) error {
-	if a.AccountID == uuid.Nil {
-		return ErrAccountNotFound
-	}
-
 	if a.Status == StatusClosed {
 		return ErrAccountClosed
 	}
 
 	if a.Status != StatusActive {
 		return fmt.Errorf(
-			"%w: payment method cannot be added while account is %s",
+			"%w: payment method requires ACTIVE account",
 			ErrInvalidStateTransition,
-			a.Status,
 		)
 	}
 
 	var payload PaymentMethodAdded
 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return fmt.Errorf("decode PaymentMethodAdded event: %w", err)
+		return fmt.Errorf("decode payment_method_added: %w", err)
 	}
 
-	if err := a.validateEventAccountID(payload.AccountID); err != nil {
-		return err
-	}
-
-	if payload.PaymentMethodID == "" {
-		return fmt.Errorf(
-			"%w: payment method id cannot be empty",
-			ErrInvalidAccountEvent,
-		)
-	}
-
-	// Prevent duplicate payment-method associations.
-	for _, existingID := range a.PaymentMethods {
-		if existingID == payload.PaymentMethodID {
-			return fmt.Errorf(
-				"%w: payment method %q already exists",
-				ErrInvalidAccountEvent,
-				payload.PaymentMethodID,
-			)
-		}
+	if payload.AccountID != a.AccountID {
+		return ErrAccountIDMismatch
 	}
 
 	a.PaymentMethods = append(
@@ -348,100 +267,30 @@ func (a *Account) applyPaymentMethodAdded(event events.Event) error {
 	return nil
 }
 
-// validateEventAccountID makes sure an event belongs to the
-// aggregate currently being rebuilt.
-func (a *Account) validateEventAccountID(eventAccountID uuid.UUID) error {
-	if eventAccountID == uuid.Nil {
-		return fmt.Errorf(
-			"%w: event contains empty account id",
-			ErrInvalidAccountEvent,
-		)
-	}
-
-	if eventAccountID != a.AccountID {
-		return fmt.Errorf(
-			"%w: aggregate=%s event=%s",
-			ErrAccountIDMismatch,
-			a.AccountID,
-			eventAccountID,
-		)
-	}
-
-	return nil
-}
-
-// CanActivate reports whether the account can transition to ACTIVE.
-func (a *Account) CanActivate() bool {
-	return a.Status == StatusPendingVerification
-}
-
-// CanSuspend reports whether the account can transition to SUSPENDED.
-func (a *Account) CanSuspend() bool {
-	return a.Status == StatusActive
-}
-
-// CanClose reports whether the account can transition to CLOSED.
-func (a *Account) CanClose() bool {
-	return a.Status == StatusActive || a.Status == StatusSuspended
-}
-
-// IsClosed reports whether the account has reached its terminal state.
-func (a *Account) IsClosed() bool {
-	return a.Status == StatusClosed
-}
-
-// Rebuild reconstructs an Account aggregate by replaying its
-// event stream from the beginning.
-//
-// Event sourcing rule:
-// The event stream is authoritative. The current Account state
-// is derived by applying the events in sequence.
+// Rebuild reconstructs the Account aggregate from its event stream.
 func Rebuild(stream []events.Event) (*Account, error) {
 	account := &Account{}
 
 	for _, event := range stream {
 		if err := account.Apply(event); err != nil {
-			return nil, fmt.Errorf(
-				"rebuild account failed at sequence %d (%s): %w",
-				event.Sequence,
-				event.EventType,
-				err,
-			)
+			return nil, err
 		}
+	}
+
+	if account.Version == 0 {
+		return nil, ErrAccountNotFound
 	}
 
 	return account, nil
 }
 
-// cloneStringMap creates a copy of a string map.
-//
-// This prevents the aggregate from accidentally sharing mutable
-// map storage with an event payload.
-func cloneStringMap(source map[string]string) map[string]string {
-	if source == nil {
+func cloneJSON(value json.RawMessage) json.RawMessage {
+	if value == nil {
 		return nil
 	}
 
-	result := make(map[string]string, len(source))
-
-	for key, value := range source {
-		result[key] = value
-	}
-
-	return result
-}
-
-// cloneBoolMap creates a copy of a bool map.
-func cloneBoolMap(source map[string]bool) map[string]bool {
-	if source == nil {
-		return nil
-	}
-
-	result := make(map[string]bool, len(source))
-
-	for key, value := range source {
-		result[key] = value
-	}
+	result := make([]byte, len(value))
+	copy(result, value)
 
 	return result
 }
