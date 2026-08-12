@@ -58,13 +58,7 @@ func (s *Service) CreatePaymentAttempt(
 
 	created, err := s.repo.Create(ctx, db, attempt)
 	if err != nil {
-		if errors.Is(err, repository.ErrPendingAttemptExists) {
-			return model.PaymentAttempt{}, repository.ErrPendingAttemptExists
-		}
-		if errors.Is(err, repository.ErrDuplicateInternalTxID) {
-			return model.PaymentAttempt{}, repository.ErrDuplicateInternalTxID
-		}
-		return model.PaymentAttempt{}, fmt.Errorf("persist initial payment attempt: %w", err)
+		return model.PaymentAttempt{}, err
 	}
 
 	return created, nil
@@ -84,26 +78,7 @@ func (s *Service) UpdatePaymentAttemptResult(
 		input.RawResponse,
 	)
 	if err != nil {
-		if errors.Is(err, repository.ErrPaymentAttemptNotFound) {
-			return repository.ErrPaymentAttemptNotFound
-		}
-		return fmt.Errorf("update payment attempt result: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) DeletePaymentAttempt(
-	ctx context.Context,
-	db repository.DBTX,
-	attemptID int64,
-) error {
-	err := s.repo.DeleteByAttemptID(ctx, db, attemptID)
-	if err != nil {
-		if errors.Is(err, repository.ErrPaymentAttemptNotFound) {
-			return repository.ErrPaymentAttemptNotFound
-		}
-		return fmt.Errorf("delete payment attempt %d: %w", attemptID, err)
+		return err
 	}
 
 	return nil
