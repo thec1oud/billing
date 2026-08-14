@@ -1,1 +1,10 @@
 .env
+
+# Ignore specific binary extensions (Windows/Cross-platform)
+*.exe
+*.dll
+*.so
+*.dylib
+
+build/
+bin/
