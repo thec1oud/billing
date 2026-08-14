@@ -18,6 +18,7 @@ type WebhookRepository interface {
 	SaveWebhook(ctx context.Context, db DBTX, payload ppi.ProviderWebhookPayload) error
 	GetWebhookByID(ctx context.Context, db DBTX, webhookID string) (ppi.ProviderWebhookPayload, error)
 	IsDuplicate(ctx context.Context, db DBTX, providerCode, providerTxID string) (bool, error)
+	MarkPublished(ctx context.Context, db DBTX, webhookID string) error
 }
 
 type PostgresRepository struct{}
@@ -80,6 +81,14 @@ func (r *PostgresRepository) IsDuplicate(ctx context.Context, db DBTX, providerC
 		return false, fmt.Errorf("check ppi webhook duplicate failed: %w", err)
 	}
 	return exists, nil
+}
+
+func (r *PostgresRepository) MarkPublished(ctx context.Context, db DBTX, webhookID string) error {
+	q := r.getQuerier(db)
+	if err := q.MarkPPIWebhookPublished(ctx, webhookID); err != nil {
+		return fmt.Errorf("mark ppi webhook published failed: %w", err)
+	}
+	return nil
 }
 
 var _ WebhookRepository = (*PostgresRepository)(nil)

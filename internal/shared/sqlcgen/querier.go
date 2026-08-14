@@ -44,6 +44,7 @@ type Querier interface {
 	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
+	MarkPPIWebhookPublished(ctx context.Context, webhookID string) error
 	ReadStream(ctx context.Context, arg ReadStreamParams) ([]ReadStreamRow, error)
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
 	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error

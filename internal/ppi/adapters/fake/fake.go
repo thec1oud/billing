@@ -158,4 +158,27 @@ func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload,
 	return payload, nil
 }
 
+func (a *FakeAdapter) RespondWebhook(w http.ResponseWriter, r *http.Request, code ppi.WebhookResponseCode, payload ppi.ProviderWebhookPayload) {
+	w.Header().Set("Content-Type", "application/json")
+	switch code {
+	case ppi.WebhookResponseIgnored:
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status": "ignored",
+			"reason": "duplicate_event",
+		})
+	case ppi.WebhookResponseError:
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+		})
+	default:
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status":     "processed",
+			"webhook_id": payload.WebhookID,
+		})
+	}
+}
+
 var _ ppi.Provider = (*FakeAdapter)(nil)

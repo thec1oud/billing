@@ -13,7 +13,7 @@ import (
 )
 
 const getPPIWebhookByID = `-- name: GetPPIWebhookByID :one
-SELECT webhook_id, provider_code, event_type, internal_tx_id, provider_tx_id, status, payload, processed_at
+SELECT webhook_id, provider_code, event_type, internal_tx_id, provider_tx_id, status, payload, published_at, processed_at
 FROM ppi_webhooks
 WHERE webhook_id = $1
 `
@@ -29,6 +29,7 @@ func (q *Queries) GetPPIWebhookByID(ctx context.Context, webhookID string) (PpiW
 		&i.ProviderTxID,
 		&i.Status,
 		&i.Payload,
+		&i.PublishedAt,
 		&i.ProcessedAt,
 	)
 	return i, err
@@ -37,7 +38,7 @@ func (q *Queries) GetPPIWebhookByID(ctx context.Context, webhookID string) (PpiW
 const isPPIWebhookDuplicate = `-- name: IsPPIWebhookDuplicate :one
 SELECT EXISTS (
     SELECT 1 FROM ppi_webhooks
-    WHERE provider_code = $1 AND provider_tx_id = $2
+    WHERE provider_code = $1 AND provider_tx_id = $2 AND published_at IS NOT NULL
 )
 `
 
@@ -51,6 +52,17 @@ func (q *Queries) IsPPIWebhookDuplicate(ctx context.Context, arg IsPPIWebhookDup
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const markPPIWebhookPublished = `-- name: MarkPPIWebhookPublished :exec
+UPDATE ppi_webhooks
+SET published_at = NOW()
+WHERE webhook_id = $1
+`
+
+func (q *Queries) MarkPPIWebhookPublished(ctx context.Context, webhookID string) error {
+	_, err := q.db.Exec(ctx, markPPIWebhookPublished, webhookID)
+	return err
 }
 
 const savePPIWebhook = `-- name: SavePPIWebhook :exec

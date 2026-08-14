@@ -200,14 +200,15 @@ type PlanLegacyPricePolicy struct {
 }
 
 type PpiWebhook struct {
-	WebhookID    string      `json:"webhook_id"`
-	ProviderCode string      `json:"provider_code"`
-	EventType    string      `json:"event_type"`
-	InternalTxID pgtype.Text `json:"internal_tx_id"`
-	ProviderTxID pgtype.Text `json:"provider_tx_id"`
-	Status       string      `json:"status"`
-	Payload      []byte      `json:"payload"`
-	ProcessedAt  time.Time   `json:"processed_at"`
+	WebhookID    string             `json:"webhook_id"`
+	ProviderCode string             `json:"provider_code"`
+	EventType    string             `json:"event_type"`
+	InternalTxID pgtype.Text        `json:"internal_tx_id"`
+	ProviderTxID pgtype.Text        `json:"provider_tx_id"`
+	Status       string             `json:"status"`
+	Payload      []byte             `json:"payload"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+	ProcessedAt  time.Time          `json:"processed_at"`
 }
 
 type PricingRule struct {
