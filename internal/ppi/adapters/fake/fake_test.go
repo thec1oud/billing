@@ -21,7 +21,7 @@ func TestChargePaymentMethod_Success(t *testing.T) {
 	ctx := context.Background()
 	amount, _ := money.New(1000, "USD")
 
-	result, err := adapter.ChargePaymentMethod(ctx, amount, "pm_card_123", "tx_inv_100")
+	result, err := adapter.ChargePaymentMethod(ctx, amount, "card", "tx_inv_100")
 	if err != nil {
 		t.Fatalf("unexpected error on charge call: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestChargePaymentMethod_PendingWithCheckoutURL(t *testing.T) {
 	ctx := context.Background()
 	amount, _ := money.New(5000, "ETB")
 
-	result, err := adapter.ChargePaymentMethod(ctx, amount, "pm_chapa_mobile", "tx_inv_101")
+	result, err := adapter.ChargePaymentMethod(ctx, amount, "fake", "tx_inv_101")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestParseWebhook_ProviderSpecificJSON(t *testing.T) {
 	if payload.ProviderTxID != "fake_ref_999" {
 		t.Errorf("expected ProviderTxID 'fake_ref_999', got %q", payload.ProviderTxID)
 	}
-	if payload.Status != ppi.ChargeStatusSuccess {
+	if payload.Status != ppi.WebhookPaymentSucceeded {
 		t.Errorf("expected SUCCESS status, got %q", payload.Status)
 	}
 }

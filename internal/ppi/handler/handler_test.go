@@ -7,11 +7,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/handler"
+	"github.com/thec1oud/billing/internal/ppi/service"
 )
 
 type mockBroker struct {
@@ -41,56 +43,50 @@ func (m *mockBroker) Close() error {
 	return nil
 }
 
-type mockRepo struct {
-	saved         []ppi.ProviderWebhookPayload
-	published     map[string]bool
-	forceErrOnDup bool
+type mockService struct {
+	adapters     map[string]ppi.Provider
+	processed    []ppi.ProviderWebhookPayload
+	published    map[string]bool
+	forceErrOnProc bool
 }
 
-func newMockRepo() *mockRepo {
-	return &mockRepo{
+func newMockService() *mockService {
+	return &mockService{
+		adapters:  make(map[string]ppi.Provider),
 		published: make(map[string]bool),
 	}
 }
 
-func (r *mockRepo) SaveWebhook(ctx context.Context, db ppi.DBTX, payload ppi.ProviderWebhookPayload) error {
-	r.saved = append(r.saved, payload)
+func (s *mockService) GetAdapter(providerCode string) (ppi.Provider, bool) {
+	a, ok := s.adapters[strings.ToLower(providerCode)]
+	return a, ok
+}
+
+func (s *mockService) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) error {
+	if s.forceErrOnProc {
+		return errors.New("db query error")
+	}
+	for _, p := range s.processed {
+		if p.ProviderCode == payload.ProviderCode && p.ProviderTxID == payload.ProviderTxID && s.published[p.WebhookID] {
+			return service.ErrDuplicateWebhook
+		}
+	}
+	s.processed = append(s.processed, payload)
 	return nil
 }
 
-func (r *mockRepo) GetWebhookByID(ctx context.Context, db ppi.DBTX, webhookID string) (ppi.ProviderWebhookPayload, error) {
-	for _, p := range r.saved {
-		if p.WebhookID == webhookID {
-			return p, nil
-		}
-	}
-	return ppi.ProviderWebhookPayload{}, nil
-}
-
-func (r *mockRepo) IsDuplicate(ctx context.Context, db ppi.DBTX, providerCode, providerTxID string) (bool, error) {
-	if r.forceErrOnDup {
-		return false, errors.New("db connection failure")
-	}
-	for _, p := range r.saved {
-		if p.ProviderCode == providerCode && p.ProviderTxID == providerTxID && r.published[p.WebhookID] {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (r *mockRepo) MarkPublished(ctx context.Context, db ppi.DBTX, webhookID string) error {
-	r.published[webhookID] = true
+func (s *mockService) MarkWebhookPublished(ctx context.Context, webhookID string) error {
+	s.published[webhookID] = true
 	return nil
 }
 
 func TestWebhookHandler_SuccessFlow(t *testing.T) {
-	repo := newMockRepo()
-	broker := &mockBroker{}
-	h := handler.NewWebhookHandler(repo, nil, broker)
-
+	svc := newMockService()
 	fakeAdapter := fake.NewFakeAdapter()
-	h.RegisterAdapter(fakeAdapter)
+	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
+
+	broker := &mockBroker{}
+	h := handler.NewWebhookHandler(svc, broker)
 
 	body := []byte(`{
 		"event_id": "evt_test_100",
@@ -125,16 +121,18 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 		t.Fatalf("expected 1 published event to broker, got %d", len(broker.publishedKeys))
 	}
 
-	if broker.publishedKeys[0] != "ppi.webhook.payment.success" {
-		t.Errorf("expected routing key 'ppi.webhook.payment.success', got %q", broker.publishedKeys[0])
+	if broker.publishedKeys[0] != "ppi.webhook.payment.succeeded" {
+		t.Errorf("expected routing key 'ppi.webhook.payment.succeeded', got %q", broker.publishedKeys[0])
 	}
 }
 
 func TestWebhookHandler_BrokerPublishFailureRetriesOnNextRequest(t *testing.T) {
-	repo := newMockRepo()
+	svc := newMockService()
+	fakeAdapter := fake.NewFakeAdapter()
+	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
+
 	broker := &mockBroker{}
-	h := handler.NewWebhookHandler(repo, nil, broker)
-	h.RegisterAdapter(fake.NewFakeAdapter())
+	h := handler.NewWebhookHandler(svc, broker)
 
 	body := []byte(`{
 		"event_id": "evt_test_retry",
@@ -172,10 +170,12 @@ func TestWebhookHandler_BrokerPublishFailureRetriesOnNextRequest(t *testing.T) {
 }
 
 func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
-	repo := newMockRepo()
+	svc := newMockService()
+	fakeAdapter := fake.NewFakeAdapter()
+	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
+
 	broker := &mockBroker{}
-	h := handler.NewWebhookHandler(repo, nil, broker)
-	h.RegisterAdapter(fake.NewFakeAdapter())
+	h := handler.NewWebhookHandler(svc, broker)
 
 	body := []byte(`{
 		"event_id": "evt_test_dup",

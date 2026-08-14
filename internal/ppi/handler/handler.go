@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,31 +11,27 @@ import (
 
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/ppi"
+	"github.com/thec1oud/billing/internal/ppi/service"
 )
 
+type WebhookService interface {
+	GetAdapter(providerCode string) (ppi.Provider, bool)
+	ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) error
+	MarkWebhookPublished(ctx context.Context, webhookID string) error
+}
+
 type WebhookHandler struct {
-	parsers map[string]ppi.WebhookParser
-	repo    ppi.WebhookRepository
-	db      ppi.DBTX
-	broker  messaging.Broker
+	svc    WebhookService
+	broker messaging.Broker
 }
 
 func NewWebhookHandler(
-	repo ppi.WebhookRepository,
-	db ppi.DBTX,
+	svc WebhookService,
 	broker messaging.Broker,
 ) *WebhookHandler {
 	return &WebhookHandler{
-		parsers: make(map[string]ppi.WebhookParser),
-		repo:    repo,
-		db:      db,
-		broker:  broker,
-	}
-}
-
-func (h *WebhookHandler) RegisterAdapter(parser ppi.WebhookParser) {
-	if parser != nil {
-		h.parsers[strings.ToLower(parser.ProviderCode())] = parser
+		svc:    svc,
+		broker: broker,
 	}
 }
 
@@ -49,7 +47,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parser, exists := h.parsers[strings.ToLower(providerCode)]
+	parser, exists := h.svc.GetAdapter(providerCode)
 	if !exists {
 		http.Error(w, fmt.Sprintf("Unsupported payment provider: %s", providerCode), http.StatusNotFound)
 		return
@@ -65,30 +63,22 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// 2. State-Aware Idempotency Check: Ignored ONLY if event was already published successfully
-	if h.repo != nil {
-		isDup, err := h.repo.IsDuplicate(ctx, h.db, payload.ProviderCode, payload.ProviderTxID)
-		if err != nil {
-			slog.Error("Idempotency check query failed; rejecting process to prevent duplicate execution", "provider", payload.ProviderCode, "err", err)
-			parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
-			return
-		}
+	// 2. Delegate DB Idempotency check & Audit logging to Service layer
+	if h.svc != nil {
+		if err := h.svc.ProcessWebhook(ctx, payload); err != nil {
+			if errors.Is(err, service.ErrDuplicateWebhook) {
+				slog.Info("Duplicate published webhook event ignored", "provider", payload.ProviderCode, "provider_tx_id", payload.ProviderTxID)
+				parser.RespondWebhook(w, r, ppi.WebhookResponseIgnored, payload)
+				return
+			}
 
-		if isDup {
-			slog.Info("Duplicate published webhook event ignored", "provider", payload.ProviderCode, "provider_tx_id", payload.ProviderTxID)
-			parser.RespondWebhook(w, r, ppi.WebhookResponseIgnored, payload)
-			return
-		}
-
-		// 3. Persist Webhook Audit Record in DB (published_at = NULL initially)
-		if err := h.repo.SaveWebhook(ctx, h.db, payload); err != nil {
-			slog.Error("Failed to persist webhook audit record to DB", "provider", payload.ProviderCode, "err", err)
+			slog.Error("Service failed to process webhook; returning HTTP 500", "provider", payload.ProviderCode, "err", err)
 			parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
 			return
 		}
 	}
 
-	// 4. Synchronously Publish to RabbitMQ Message Broker
+	// 3. Synchronously Publish to RabbitMQ Message Broker
 	if h.broker != nil {
 		routingKey := DetermineRoutingKey(payload)
 		msgBytes, err := json.Marshal(payload)
@@ -104,15 +94,15 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 5. Mark as published in DB so subsequent retries are safely ignored as duplicate
-		if h.repo != nil {
-			if err := h.repo.MarkPublished(ctx, h.db, payload.WebhookID); err != nil {
+		// 4. Mark as published in Service layer so subsequent retries are safely ignored as duplicate
+		if h.svc != nil {
+			if err := h.svc.MarkWebhookPublished(ctx, payload.WebhookID); err != nil {
 				slog.Warn("Failed to mark webhook as published in DB; broker publish succeeded", "webhook_id", payload.WebhookID, "err", err)
 			}
 		}
 	}
 
-	// 6. Respond HTTP 200 OK to payment provider
+	// 5. Respond HTTP 200 OK to payment provider
 	parser.RespondWebhook(w, r, ppi.WebhookResponseProcessed, payload)
 }
 
@@ -124,9 +114,12 @@ func extractProviderCode(r *http.Request) string {
 }
 
 func DetermineRoutingKey(p ppi.ProviderWebhookPayload) string {
-	statusStr := strings.ToLower(string(p.Status))
-	if statusStr == "" {
-		statusStr = "pending"
+	switch p.Status {
+	case ppi.WebhookPaymentSucceeded:
+		return "ppi.webhook.payment.succeeded"
+	case ppi.WebhookPaymentFailed:
+		return "ppi.webhook.payment.failed"
+	default:
+		return "ppi.webhook.payment.pending"
 	}
-	return fmt.Sprintf("ppi.webhook.payment.%s", statusStr)
 }

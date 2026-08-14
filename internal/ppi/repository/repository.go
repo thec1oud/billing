@@ -10,16 +10,7 @@ import (
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
-type DBTX interface {
-	sqlcgen.DBTX
-}
-
-type WebhookRepository interface {
-	SaveWebhook(ctx context.Context, db DBTX, payload ppi.ProviderWebhookPayload) error
-	GetWebhookByID(ctx context.Context, db DBTX, webhookID string) (ppi.ProviderWebhookPayload, error)
-	IsDuplicate(ctx context.Context, db DBTX, providerCode, providerTxID string) (bool, error)
-	MarkPublished(ctx context.Context, db DBTX, webhookID string) error
-}
+type DBTX = ppi.DBTX
 
 type PostgresRepository struct{}
 
@@ -62,7 +53,7 @@ func (r *PostgresRepository) GetWebhookByID(ctx context.Context, db DBTX, webhoo
 		EventType:    row.EventType,
 		InternalTxID: row.InternalTxID.String,
 		ProviderTxID: row.ProviderTxID.String,
-		Status:       ppi.ChargeStatus(row.Status),
+		Status:       ppi.WebhookPaymentStatus(row.Status),
 		RawPayload:   row.Payload,
 		OccurredAt:   row.ProcessedAt,
 	}, nil
@@ -91,4 +82,4 @@ func (r *PostgresRepository) MarkPublished(ctx context.Context, db DBTX, webhook
 	return nil
 }
 
-var _ WebhookRepository = (*PostgresRepository)(nil)
+var _ ppi.WebhookRepository = (*PostgresRepository)(nil)

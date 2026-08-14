@@ -42,7 +42,7 @@ func (a *FakeAdapter) ProviderCode() string {
 func (a *FakeAdapter) ChargePaymentMethod(
 	ctx context.Context,
 	amount money.Money,
-	paymentMethodID, idempotencyKey string,
+	providerCode, idempotencyKey string,
 ) (ppi.ChargeResult, error) {
 	if amount.AmountMinor <= 0 {
 		resBody, _ := json.Marshal(map[string]string{"error": "INVALID_AMOUNT"})
@@ -54,12 +54,12 @@ func (a *FakeAdapter) ChargePaymentMethod(
 		}, nil
 	}
 
-	if paymentMethodID == "" {
-		resBody, _ := json.Marshal(map[string]string{"error": "MISSING_PAYMENT_METHOD"})
+	if providerCode == "" {
+		resBody, _ := json.Marshal(map[string]string{"error": "MISSING_PROVIDER_CODE"})
 		return ppi.ChargeResult{
 			Status:         ppi.ChargeStatusFailed,
 			IdempotencyKey: idempotencyKey,
-			FailureCode:    "MISSING_PAYMENT_METHOD",
+			FailureCode:    "MISSING_PROVIDER_CODE",
 			RawResponse:    resBody,
 		}, nil
 	}
@@ -67,7 +67,7 @@ func (a *FakeAdapter) ChargePaymentMethod(
 	providerRef := fmt.Sprintf("fake_ref_%s", uuid.NewString())
 
 	// Hosted / mobile money checkout flow (returns PENDING with CheckoutURL)
-	if strings.Contains(paymentMethodID, "mobile") || strings.Contains(paymentMethodID, "chapa") {
+	if strings.Contains(providerCode, "mobile") || strings.Contains(providerCode, "chapa") || providerCode == "fake" {
 		checkoutURL := fmt.Sprintf("https://checkout.fake-provider.com/pay/%s", providerRef)
 		resBody, _ := json.Marshal(map[string]string{
 			"status":       "PENDING",
@@ -117,15 +117,15 @@ func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload,
 		return ppi.ProviderWebhookPayload{}, fmt.Errorf("failed to decode fake provider webhook json: %w", err)
 	}
 
-	// 2. Map provider-specific status to system ChargeStatus
-	var status ppi.ChargeStatus
+	// 2. Map provider-specific status to system WebhookPaymentStatus
+	var status ppi.WebhookPaymentStatus
 	switch strings.ToLower(evt.Status) {
 	case "success", "charge.success":
-		status = ppi.ChargeStatusSuccess
+		status = ppi.WebhookPaymentSucceeded
 	case "failed", "charge.failed":
-		status = ppi.ChargeStatusFailed
+		status = ppi.WebhookPaymentFailed
 	default:
-		status = ppi.ChargeStatusPending
+		status = ppi.WebhookPaymentPending
 	}
 
 	// 3. Map currency & amount

@@ -10,10 +10,17 @@ import (
 type ChargeStatus string
 
 const (
-	ChargeStatusSuccess        ChargeStatus = "SUCCESS"
-	ChargeStatusPending        ChargeStatus = "PENDING"
-	ChargeStatusFailed         ChargeStatus = "FAILED"
-	ChargeStatusRequiresAction ChargeStatus = "REQUIRES_ACTION"
+	ChargeStatusSuccess ChargeStatus = "SUCCESS"
+	ChargeStatusPending ChargeStatus = "PENDING"
+	ChargeStatusFailed  ChargeStatus = "FAILED"
+)
+
+type WebhookPaymentStatus string
+
+const (
+	WebhookPaymentSucceeded WebhookPaymentStatus = "SUCCEEDED"
+	WebhookPaymentFailed    WebhookPaymentStatus = "FAILED"
+	WebhookPaymentPending   WebhookPaymentStatus = "PENDING"
 )
 
 type ChargeResult struct {
@@ -26,14 +33,14 @@ type ChargeResult struct {
 }
 
 type ProviderWebhookPayload struct {
-	WebhookID    string          `json:"webhook_id"`
-	ProviderCode string          `json:"provider_code"`
-	EventType    string          `json:"event_type"`
-	InternalTxID string          `json:"internal_tx_id"`
-	ProviderTxID string          `json:"provider_tx_id"`
-	Status       ChargeStatus    `json:"status"`
-	Amount       money.Money     `json:"amount"`
-	FailureCode  string          `json:"failure_code,omitempty"`
-	RawPayload   json.RawMessage `json:"raw_payload"`
-	OccurredAt   time.Time       `json:"occurred_at"`
+	WebhookID    string               `json:"webhook_id"`
+	ProviderCode string               `json:"provider_code"`
+	EventType    string               `json:"event_type"`
+	InternalTxID string               `json:"internal_tx_id"`
+	ProviderTxID string               `json:"provider_tx_id"`
+	Status       WebhookPaymentStatus `json:"status"`
+	Amount       money.Money          `json:"amount"`
+	FailureCode  string               `json:"failure_code,omitempty"`
+	RawPayload   json.RawMessage      `json:"raw_payload"`
+	OccurredAt   time.Time            `json:"occurred_at"`
 }
