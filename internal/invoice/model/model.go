@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"time"
 
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -18,34 +17,33 @@ const (
 )
 
 type LineItem struct {
-	LineItemID    int64          `json:"line_item_id,omitempty"`
-	ItemID        int64          `json:"item_id"`
-	Description   string         `json:"description"`
-	QuantityValue float64        `json:"quantity_value"`
-	QuantityUnit  string         `json:"quantity_unit"`
-	UnitAmount    money.Money    `json:"unit_amount"`
-	TotalAmount   money.Money    `json:"total_amount"`
-	Metadata      map[string]any `json:"metadata,omitempty"`
+	LineItemID     int64          `json:"line_item_id,omitempty"`
+	ItemID         int64          `json:"item_id"`
+	Description    string         `json:"description"`
+	QuantityValue  float64        `json:"quantity_value"`
+	QuantityUnit   string         `json:"quantity_unit"`
+	UnitAmount     money.Money    `json:"unit_amount"`
+	TotalAmount    money.Money    `json:"total_amount"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	SubscriptionID int64          `json:"subscription_id,omitempty"`
 }
 
 type Invoice struct {
-	InvoiceID      int64       `json:"invoice_id"`
-	AccountID      int64       `json:"account_id"`
-	SubscriptionID int64       `json:"subscription_id,omitempty"`
-	InvoiceNumber  string      `json:"invoice_number,omitempty"`
-	Status         Status      `json:"status"`
-	Currency       string      `json:"currency"`
-	Subtotal       money.Money `json:"subtotal"`
-	Tax            money.Money `json:"tax"`
-	Discount       money.Money `json:"discount"`
-	Total          money.Money `json:"total"`
-	AmountPaid     money.Money `json:"amount_paid"`
-	AmountDue      money.Money `json:"amount_due"`
-	DueAt          *time.Time  `json:"due_at,omitempty"`
-	FinalizedAt    *time.Time  `json:"finalized_at,omitempty"`
-	PaidAt         *time.Time  `json:"paid_at,omitempty"`
-	LineItems      []LineItem  `json:"line_items"`
-	Version        int64       `json:"version"`
+	InvoiceID     int64          `json:"invoice_id"`
+	AccountID     int64          `json:"account_id"`
+	InvoiceNumber string         `json:"invoice_number,omitempty"`
+	Status        Status         `json:"status"`
+	Currency      money.Currency `json:"currency"`
+	Subtotal      money.Money    `json:"subtotal"`
+	Tax           money.Money    `json:"tax"`
+	Discount      money.Money    `json:"discount"`
+	Total         money.Money    `json:"total"`
+	AmountPaid    money.Money    `json:"amount_paid"`
+	AmountDue     money.Money    `json:"amount_due"`
+	DueAt         *time.Time     `json:"due_at,omitempty"`
+	FinalizedAt   *time.Time     `json:"finalized_at,omitempty"`
+	PaidAt        *time.Time     `json:"paid_at,omitempty"`
+	LineItems     []LineItem     `json:"line_items"`
 }
 
 type CreatedPayload struct {
@@ -72,7 +70,3 @@ type PaymentFailedPayload struct {
 }
 
 type InvoicePaidPayload struct{}
-
-type AccountLookup interface {
-	DefaultPaymentMethodID(ctx context.Context, accountID int64) (string, error)
-}

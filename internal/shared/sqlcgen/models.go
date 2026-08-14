@@ -87,7 +87,6 @@ type Invoice struct {
 	IdempotencyKey         pgtype.Text        `json:"idempotency_key"`
 	Metadata               []byte             `json:"metadata"`
 	CreatedAt              time.Time          `json:"created_at"`
-	Version                int64              `json:"version"`
 }
 
 type InvoiceLineItem struct {
@@ -126,6 +125,21 @@ type LedgerPartyType struct {
 	LedgerPartyTypeCode string      `json:"ledger_party_type_code"`
 	Description         pgtype.Text `json:"description"`
 	CreatedAt           time.Time   `json:"created_at"`
+}
+
+type PaymentAttempt struct {
+	AttemptID    int64       `json:"attempt_id"`
+	InvoiceID    int64       `json:"invoice_id"`
+	ProviderCode string      `json:"provider_code"`
+	InternalTxID string      `json:"internal_tx_id"`
+	ProviderTxID pgtype.Text `json:"provider_tx_id"`
+	AmountMinor  int64       `json:"amount_minor"`
+	Currency     string      `json:"currency"`
+	Status       string      `json:"status"`
+	RawResponse  []byte      `json:"raw_response"`
+	RawRequest   []byte      `json:"raw_request"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type PaymentMethod struct {

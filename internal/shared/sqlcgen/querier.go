@@ -6,24 +6,29 @@ package sqlcgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
 	CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error
+	CreatePaymentAttempt(ctx context.Context, arg CreatePaymentAttemptParams) (CreatePaymentAttemptRow, error)
 	CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error)
 	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
 	CreatePurchasableItem(ctx context.Context, arg CreatePurchasableItemParams) (PurchasableItem, error)
 	CreateTariff(ctx context.Context, arg CreateTariffParams) (Tariff, error)
-	// ============================================================================
-	// FINE-GRAINED STATE & BALANCE TRANSITIONS
-	// ============================================================================
-	// Transitions DRAFT -> OPEN. Sets finalized_at timestamp.
-	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (int64, error)
+	DeletePaymentAttempt(ctx context.Context, attemptID int64) (pgconn.CommandTag, error)
+	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error)
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
 	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
+	GetPaymentAttemptByID(ctx context.Context, attemptID int64) (PaymentAttempt, error)
+	GetPaymentAttemptByInternalTxID(ctx context.Context, internalTxID string) (PaymentAttempt, error)
+	GetPaymentAttemptByProviderTxID(ctx context.Context, providerTxID pgtype.Text) (PaymentAttempt, error)
+	GetPendingPaymentAttemptByInvoiceID(ctx context.Context, invoiceID int64) (PaymentAttempt, error)
 	GetPlanByCodeAndVersion(ctx context.Context, arg GetPlanByCodeAndVersionParams) (Plan, error)
 	GetPlanDuration(ctx context.Context, planDurationID int64) (PlanDuration, error)
 	GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetPlanDurationByPlanAndDurationParams) (PlanDuration, error)
@@ -31,6 +36,7 @@ type Querier interface {
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
 	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
+	ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error)
 	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
 	ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error)
 	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
@@ -38,11 +44,12 @@ type Querier interface {
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
 	ReadStream(ctx context.Context, arg ReadStreamParams) ([]ReadStreamRow, error)
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
+	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.
 	UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error)
 	UpdatePlanDurationTariff(ctx context.Context, arg UpdatePlanDurationTariffParams) (PlanDuration, error)
 	// Transitions -> VOID. Leaves balances intact for historical audit.
-	VoidInvoice(ctx context.Context, arg VoidInvoiceParams) (int64, error)
+	VoidInvoice(ctx context.Context, invoiceID int64) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

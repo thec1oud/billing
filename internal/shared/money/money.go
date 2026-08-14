@@ -14,12 +14,15 @@ var (
 	ErrOverflow         = errors.New("money amount exceeds int64 range")
 )
 
+// enums will later be populated
 type Currency string
 
 type Money struct {
 	AmountMinor int64    `json:"amount_minor"`
 	Currency    Currency `json:"currency"`
 }
+
+const DefaultCurrency Currency = "USD"
 
 func New(amountMinor int64, currency string) (Money, error) {
 	parsed, ok := ParseCurrency(currency)
@@ -29,6 +32,9 @@ func New(amountMinor int64, currency string) (Money, error) {
 	return Money{AmountMinor: amountMinor, Currency: parsed}, nil
 }
 
+func DefaultZero() (Money, error) {
+	return Zero(DefaultCurrency)
+}
 func (m Money) Add(other Money) (Money, error) {
 	if err := requireSameCurrency(m, other); err != nil {
 		return Money{}, err
@@ -86,4 +92,32 @@ func isCurrencyCode(currency string) bool {
 		}
 	}
 	return true
+}
+func Zero(currency Currency) (Money, error) {
+	parsed, ok := ParseCurrency(string(currency))
+	if !ok {
+		return Money{}, ErrInvalidCurrency
+	}
+	return Money{AmountMinor: 0, Currency: parsed}, nil
+}
+
+// Panicking versions of the above helpers
+// only for tests and seeding scripts
+
+func MustNew(amountMinor int64, currency Currency) Money {
+	m, err := New(amountMinor, string(currency))
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+func (m Money) MustAdd(other Money) Money {
+	res, err := m.Add(other)
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
+func MustZero(currency Currency) Money {
+	return MustNew(0, currency)
 }
