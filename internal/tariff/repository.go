@@ -119,6 +119,10 @@ func (r *PostgresRepository) LatestVersion(
 	q := sqlcgen.New(r.pool)
 
 	version, err := q.GetLatestTariffVersion(ctx, code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrTariffNotFound
+	}
+
 	if err != nil {
 		return 0, fmt.Errorf(
 			"get latest tariff version: %w",

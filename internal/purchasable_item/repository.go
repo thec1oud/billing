@@ -48,21 +48,11 @@ func (r *PostgresRepository) Create(
 	tx pgx.Tx,
 	item PurchasableItem,
 ) (PurchasableItem, error) {
-if err := validatePurchasableItem(item); err != nil {
+	if err := item.Validate(); err != nil {
 		return PurchasableItem{}, fmt.Errorf(
 			"validate purchasable item: %w",
 			err,
 		)
-	}
-	if !item.ItemTypeCode.Valid() {
-		return PurchasableItem{}, fmt.Errorf(
-			"unsupported item type %q",
-			item.ItemTypeCode,
-		)
-	}
-
-	if item.Name == "" {
-		return PurchasableItem{}, errors.New("item name is required")
 	}
 
 	metadata := item.Metadata
@@ -183,23 +173,4 @@ func toModel(row sqlcgen.PurchasableItem) (PurchasableItem, error) {
 		Metadata:     metadata,
 		CreatedAt:    row.CreatedAt,
 	}, nil
-}
-
-func validatePurchasableItem(item PurchasableItem) error {
-	if item.ItemCode == "" {
-		return errors.New("item code is required")
-	}
-
-	if !item.ItemTypeCode.Valid() {
-		return fmt.Errorf(
-			"unsupported item type %q",
-			item.ItemTypeCode,
-		)
-	}
-
-	if item.Name == "" {
-		return errors.New("item name is required")
-	}
-
-	return nil
 }

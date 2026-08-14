@@ -51,10 +51,14 @@ func (s *Service) CreateTariff(
 	for attempt := 0; attempt < 3; attempt++ {
 		latest, err := s.repository.LatestVersion(ctx, code)
 		if err != nil {
-			return Tariff{}, fmt.Errorf(
-				"get latest tariff version: %w",
-				err,
-			)
+			if errors.Is(err, ErrTariffNotFound) {
+				latest = 0
+			} else {
+				return Tariff{}, fmt.Errorf(
+					"get latest tariff version: %w",
+					err,
+				)
+			}
 		}
 
 		tariff := Tariff{

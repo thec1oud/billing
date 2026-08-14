@@ -2,6 +2,8 @@ package purchasable_item
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 )
 
@@ -36,3 +38,21 @@ type PurchasableItem struct {
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
+func (i PurchasableItem) Validate() error {
+	if i.ItemCode == "" {
+		return errors.New("item code is required")
+	}
+
+	if !i.ItemTypeCode.Valid() {
+		return fmt.Errorf(
+			"unsupported item type %q",
+			i.ItemTypeCode,
+		)
+	}
+
+	if i.Name == "" {
+		return errors.New("item name is required")
+	}
+
+	return nil
+}

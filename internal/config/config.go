@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type LogTarget string
@@ -34,20 +36,31 @@ type Config struct {
 	RabbitMQUser string
 	RabbitMQPass string
 
-	// logging
+	// Logging
 	LogTargets []LogTarget
 }
 
 func GetEnv(envKey string) (string, error) {
 	val, exists := os.LookupEnv(envKey)
 	if !exists || val == "" {
-		return "", fmt.Errorf("%s environment variable is required", envKey)
+		return "", fmt.Errorf(
+			"%s environment variable is required",
+			envKey,
+		)
 	}
+
 	return val, nil
 }
 
-// Load reads environment variables and parses them into the Config struct.
+// Load reads the .env file and environment variables
+// into the Config struct.
 func Load() (*Config, error) {
+	if err := godotenv.Load(); err != nil {
+		// .env is optional.
+		// Environment variables may be provided directly
+		// by the operating system or deployment environment.
+	}
+
 	appEnv, err := GetEnv("APP_ENV")
 	if err != nil {
 		return nil, err
@@ -58,7 +71,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// Database Validations
+	// Database
 	dbHost, err := GetEnv("DB_HOST")
 	if err != nil {
 		return nil, err
@@ -84,7 +97,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// Redis Validations
+	// Redis
 	redisHost, err := GetEnv("REDIS_HOST")
 	if err != nil {
 		return nil, err
@@ -100,7 +113,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// RabbitMQ Validations
+	// RabbitMQ
 	rabbitMQHost, err := GetEnv("RABBITMQ_HOST")
 	if err != nil {
 		return nil, err
@@ -124,17 +137,20 @@ func Load() (*Config, error) {
 	return &Config{
 		AppEnv:        appEnv,
 		AppPort:       appPort,
-		DBHost:        dbHost,
-		DBPort:        dbPort,
-		DBUser:        dbUser,
-		DBPassword:    dbPassword,
-		DBName:        dbName,
+
+		DBHost:     dbHost,
+		DBPort:     dbPort,
+		DBUser:     dbUser,
+		DBPassword: dbPassword,
+		DBName:     dbName,
+
 		RedisHost:     redisHost,
 		RedisPort:     redisPort,
 		RedisPassword: redisPassword,
-		RabbitMQHost:  rabbitMQHost,
-		RabbitMQPort:  rabbitMQPort,
-		RabbitMQUser:  rabbitMQUser,
-		RabbitMQPass:  rabbitMQPass,
+
+		RabbitMQHost: rabbitMQHost,
+		RabbitMQPort: rabbitMQPort,
+		RabbitMQUser: rabbitMQUser,
+		RabbitMQPass: rabbitMQPass,
 	}, nil
 }

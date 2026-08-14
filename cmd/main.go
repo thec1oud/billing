@@ -3,13 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/joho/godotenv"
 
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
@@ -18,12 +15,6 @@ import (
 )
 
 func main() {
-	fmt.Println("----> STARTING BILLING SERVICE <----")
-
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found; using system environment variables")
-	}
-
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL ERROR: %v\n", err)
 		os.Exit(1)
