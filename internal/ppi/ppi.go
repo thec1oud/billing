@@ -2,30 +2,30 @@ package ppi
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
-type ChargeStatus string
-
-const (
-	ChargeStatusSuccess        ChargeStatus = "SUCCESS"
-	ChargeStatusPending        ChargeStatus = "PENDING"
-	ChargeStatusFailed         ChargeStatus = "FAILED"
-	ChargeStatusUnsupported    ChargeStatus = "UNSUPPORTED"
-	ChargeStatusRequiresAction ChargeStatus = "REQUIRES_ACTION"
-)
-
-type ChargeResult struct {
-	Status            ChargeStatus
-	ProviderReference string
-	FailureCode       string
-}
-
-type PPI interface {
+type ChargeProvider interface {
 	ChargePaymentMethod(
 		ctx context.Context,
 		amount money.Money,
 		paymentMethodID, idempotencyKey string,
 	) (ChargeResult, error)
+}
+
+type WebhookParser interface {
+	ProviderCode() string
+	ParseWebhook(r *http.Request) (ProviderWebhookPayload, error)
+}
+
+type Provider interface {
+	ChargeProvider
+	WebhookParser
+}
+
+// Backward compatibility alias for PPI interface
+type PPI interface {
+	ChargeProvider
 }
