@@ -10,15 +10,19 @@ import (
 type ChargeStatus string
 
 const (
-	ChargeStatusSuccess ChargeStatus = "SUCCESS"
-	ChargeStatusPending ChargeStatus = "PENDING"
-	ChargeStatusFailed  ChargeStatus = "FAILED"
+	ChargeStatusSuccess        ChargeStatus = "SUCCESS"
+	ChargeStatusPending        ChargeStatus = "PENDING"
+	ChargeStatusFailed         ChargeStatus = "FAILED"
+	ChargeStatusRequiresAction ChargeStatus = "REQUIRES_ACTION"
 )
 
 type ChargeResult struct {
-	Status            ChargeStatus
-	ProviderReference string
-	FailureCode       string
+	Status            ChargeStatus    `json:"status"`
+	IdempotencyKey    string          `json:"idempotency_key"`    // internal_tx_id from payment attempt
+	ProviderReference string          `json:"provider_reference"` // provider_tx_id from payment provider
+	CheckoutURL       string          `json:"checkout_url,omitempty"`
+	FailureCode       string          `json:"failure_code,omitempty"`
+	RawResponse       json.RawMessage `json:"raw_response,omitempty"`
 }
 
 type ProviderWebhookPayload struct {
