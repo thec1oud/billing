@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 
@@ -14,7 +15,8 @@ import (
 )
 
 type Dependencies struct {
-	DB     *pgx.Conn
+	DB     *pgx.Conn     // single connection, used for migrations
+	Pool   *pgxpool.Pool // pooled connections, used by repositories that compose transactions
 	Redis  *redis.Client
 	Rabbit *amqp091.Connection
 }
@@ -26,6 +28,11 @@ func InitDependencies(ctx context.Context, cfg *config.Config) (*Dependencies, e
 		return nil, fmt.Errorf("postgres connection failed: %w", err)
 	}
 	slog.Info("Successfully connected to PostgreSQL!")
+
+	dbPool, err := storage.NewPostgresPool(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("postgres pool connection failed: %w", err)
+	}
 
 	slog.Info("Attempting to connect to Redis...", "host", cfg.RedisHost, "port", cfg.RedisPort)
 	redisClient, err := storage.NewRedisClient(ctx, cfg)
@@ -43,6 +50,7 @@ func InitDependencies(ctx context.Context, cfg *config.Config) (*Dependencies, e
 
 	return &Dependencies{
 		DB:     dbConn,
+		Pool:   dbPool,
 		Redis:  redisClient,
 		Rabbit: rabbitConn,
 	}, nil

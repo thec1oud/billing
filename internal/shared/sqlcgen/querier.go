@@ -7,12 +7,16 @@ package sqlcgen
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
+	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error)
+	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
+	CreateInstance(ctx context.Context, arg CreateInstanceParams) (CreateInstanceRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
 	CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error
 	CreatePaymentAttempt(ctx context.Context, arg CreatePaymentAttemptParams) (CreatePaymentAttemptRow, error)
@@ -20,8 +24,15 @@ type Querier interface {
 	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
 	CreatePurchasableItem(ctx context.Context, arg CreatePurchasableItemParams) (PurchasableItem, error)
 	CreateTariff(ctx context.Context, arg CreateTariffParams) (Tariff, error)
+	DeactivateDefinitionsForMachineType(ctx context.Context, machineType string) error
 	DeletePaymentAttempt(ctx context.Context, attemptID int64) (pgconn.CommandTag, error)
 	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error)
+	FinalizeTransitionHistory(ctx context.Context, arg FinalizeTransitionHistoryParams) error
+	GetActiveDefinition(ctx context.Context, machineType string) (SmDefinition, error)
+	GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (SmDefinition, error)
+	GetInstanceByID(ctx context.Context, instanceID uuid.UUID) (SmInstance, error)
+	GetInstanceBySubject(ctx context.Context, arg GetInstanceBySubjectParams) (SmInstance, error)
+	GetInstanceForUpdate(ctx context.Context, instanceID uuid.UUID) (SmInstance, error)
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
 	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
@@ -35,15 +46,36 @@ type Querier interface {
 	GetPurchasableItemByCode(ctx context.Context, itemCode string) (PurchasableItem, error)
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
 	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
+	InsertActionBinding(ctx context.Context, arg InsertActionBindingParams) (uuid.UUID, error)
+	InsertDefinition(ctx context.Context, arg InsertDefinitionParams) (InsertDefinitionRow, error)
+	InsertGuardBinding(ctx context.Context, arg InsertGuardBindingParams) error
+	InsertOutboxRow(ctx context.Context, arg InsertOutboxRowParams) error
+	InsertScheduledTransition(ctx context.Context, arg InsertScheduledTransitionParams) (uuid.UUID, error)
+	InsertState(ctx context.Context, arg InsertStateParams) error
+	InsertTransition(ctx context.Context, arg InsertTransitionParams) (uuid.UUID, error)
+	InsertTransitionHistoryPending(ctx context.Context, arg InsertTransitionHistoryPendingParams) (InsertTransitionHistoryPendingRow, error)
+	ListActionBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmActionBinding, error)
+	ListGuardBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmGuardBinding, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
 	ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error)
 	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
 	ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error)
+	ListStatesByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmState, error)
 	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
+	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
+	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) error
+	MarkOutboxPublished(ctx context.Context, outboxID int64) error
+	MarkOutboxRetry(ctx context.Context, arg MarkOutboxRetryParams) error
+	MarkScheduleFailed(ctx context.Context, arg MarkScheduleFailedParams) error
+	MarkScheduleFired(ctx context.Context, scheduleID uuid.UUID) error
+	MarkScheduleRetry(ctx context.Context, arg MarkScheduleRetryParams) error
 	ReadStream(ctx context.Context, arg ReadStreamParams) ([]ReadStreamRow, error)
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
+	ReapStuckOutbox(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
+	ReapStuckSchedules(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
+	UpdateInstanceState(ctx context.Context, arg UpdateInstanceStateParams) (int64, error)
 	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.
 	UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error)

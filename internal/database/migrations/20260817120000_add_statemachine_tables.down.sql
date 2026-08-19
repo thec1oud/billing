@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS sm_action_outbox CASCADE;
+DROP TABLE IF EXISTS sm_scheduled_transitions CASCADE;
+DROP TABLE IF EXISTS sm_transition_history CASCADE;
+DROP TABLE IF EXISTS sm_instances CASCADE;
+DROP TABLE IF EXISTS sm_action_bindings CASCADE;
+DROP TABLE IF EXISTS sm_guard_bindings CASCADE;
+DROP TABLE IF EXISTS sm_transitions CASCADE;
+DROP TABLE IF EXISTS sm_states CASCADE;
+DROP TABLE IF EXISTS sm_definitions CASCADE;
