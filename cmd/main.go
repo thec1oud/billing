@@ -22,6 +22,12 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/handler"
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
+	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
+	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
+	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
 )
 
 func main() {
@@ -58,7 +64,7 @@ func run() error {
 		return fmt.Errorf("infrastructure: %w", err)
 	}
 
-	// 4. Deferred resource teardown (LIFO order: Rabbit -> Redis -> DB)
+	// 4. Deferred resource teardown (LIFO order: Rabbit -> Redis -> Pool -> DB)
 	defer func() {
 		if deps.Rabbit != nil {
 			_ = deps.Rabbit.Close()
@@ -67,6 +73,11 @@ func run() error {
 	defer func() {
 		if deps.Redis != nil {
 			_ = deps.Redis.Close()
+		}
+	}()
+	defer func() {
+		if deps.Pool != nil {
+			deps.Pool.Close()
 		}
 	}()
 	defer func() {
@@ -80,7 +91,24 @@ func run() error {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	// 6. Initialize Messaging Broker Topology
+	// 6. Block process until SIGINT/SIGTERM for background contexts
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// 7. Wire the state machine engine's background workers.
+	smRegistry := registry.New()
+	smRepository := smRepo.NewPostgresRepository(deps.Pool)
+	smEngine := engine.NewEngine(deps.Pool, smRepository, smRegistry, engine.WithScripting(scripting.NewPool(0, 0)))
+
+	smPublisher := outbox.NewPublisher(deps.Pool, smRepository, smRegistry, outbox.Config{})
+	smPublisher.Start(sigCtx)
+	defer smPublisher.Stop()
+
+	smScheduler := scheduler.NewPoller(smEngine, smRepository, scheduler.Config{})
+	smScheduler.Start(sigCtx)
+	defer smScheduler.Stop()
+
+	// 8. Initialize Messaging Broker Topology
 	rabbitBroker, err := messaging.NewRabbitBroker(deps.Rabbit)
 	if err != nil {
 		return fmt.Errorf("messaging broker: %w", err)
@@ -90,18 +118,18 @@ func run() error {
 	}
 	defer rabbitBroker.Close()
 
-	// 7. Initialize Payment Attempt Repository & Service
+	// 9. Initialize Payment Attempt Repository & Service
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository()
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
-	// 8. Initialize PPI Webhook Repository, PPIService, and WebhookHandler
+	// 10. Initialize PPI Webhook Repository, PPIService, and WebhookHandler
 	ppiRepo := repository.NewPostgresRepository()
 	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
 	webhookHandler := handler.NewWebhookHandler(ppiService, rabbitBroker)
 
-	// 9. Configure HTTP Router & Mount Webhook Listener
+	// 11. Configure HTTP Router & Mount Webhook Listener
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/v1/webhooks/{provider}", webhookHandler)
 
@@ -113,7 +141,7 @@ func run() error {
 		Handler: logger.RequestLogger(mux),
 	}
 
-	// 10. Start HTTP Server Listener in background goroutine
+	// 12. Start HTTP Server Listener in background goroutine
 	go func() {
 		log.Info("HTTP Webhook server listening", slog.String("addr", srv.Addr), slog.String("endpoint", "POST /api/v1/webhooks/{provider}"))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -122,10 +150,6 @@ func run() error {
 	}()
 
 	log.Info("All background services wired successfully. Application layer online.", slog.Int("port", cfg.AppPort))
-
-	// 11. Block process until SIGINT/SIGTERM for graceful shutdown
-	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	<-sigCtx.Done()
 	log.Info("Shutting down billing service gracefully...")
