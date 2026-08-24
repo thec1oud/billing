@@ -13,7 +13,7 @@ import (
 )
 
 const checkPPIWebhookStatus = `-- name: CheckPPIWebhookStatus :one
-SELECT 
+SELECT
     (EXISTS (SELECT 1 FROM ppi_webhooks w1 WHERE w1.provider_code = $1 AND w1.provider_tx_id = $2))::boolean AS is_duplicate,
     (EXISTS (SELECT 1 FROM ppi_webhooks w2 WHERE w2.provider_code = $1 AND w2.provider_tx_id = $2 AND w2.published_at IS NOT NULL))::boolean AS is_published
 `

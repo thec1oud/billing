@@ -13,7 +13,6 @@ import (
 	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/handler"
-	"github.com/thec1oud/billing/internal/ppi/service"
 )
 
 type mockBroker struct {
@@ -62,17 +61,20 @@ func (s *mockService) GetAdapter(providerCode string) (ppi.Provider, bool) {
 	return a, ok
 }
 
-func (s *mockService) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) error {
+func (s *mockService) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) (bool, error) {
 	if s.forceErrOnProc {
-		return errors.New("db query error")
+		return false, errors.New("db query error")
 	}
 	for _, p := range s.processed {
-		if p.ProviderCode == payload.ProviderCode && p.ProviderTxID == payload.ProviderTxID && s.published[p.WebhookID] {
-			return service.ErrDuplicateWebhook
+		if p.ProviderCode == payload.ProviderCode && p.ProviderTxID == payload.ProviderTxID {
+			if s.published[p.WebhookID] {
+				return true, nil
+			}
+			return false, nil
 		}
 	}
 	s.processed = append(s.processed, payload)
-	return nil
+	return false, nil
 }
 
 func (s *mockService) MarkWebhookPublished(ctx context.Context, webhookID string) error {

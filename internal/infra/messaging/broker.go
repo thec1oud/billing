@@ -152,6 +152,16 @@ func (b *RabbitBroker) PublishEvent(ctx context.Context, routingKey string, body
 	}
 	defer ch.Close()
 
+	// Enable Publisher Confirms to guarantee message durability before acknowledging success.
+	// This puts the channel into confirm mode, meaning RabbitMQ will send an Ack or Nack
+	// once it processes the published message.
+	if err := ch.Confirm(false); err != nil {
+		return fmt.Errorf("failed to put channel in confirm mode: %w", err)
+	}
+
+	// Create a channel to receive the confirmation from RabbitMQ.
+	confirms := ch.NotifyPublish(make(chan amqp091.Confirmation, 1))
+
 	err = ch.PublishWithContext(
 		ctx,
 		b.exchangeName,
@@ -160,12 +170,26 @@ func (b *RabbitBroker) PublishEvent(ctx context.Context, routingKey string, body
 		false, // immediate
 		amqp091.Publishing{
 			ContentType:  "application/json",
-			DeliveryMode: amqp091.Persistent,
+			DeliveryMode: amqp091.Persistent, // Request the message to be saved to disk
 			Body:         body,
 		},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to publish event with routingKey %s: %w", routingKey, err)
+	}
+
+	// Block until we receive an Ack from the broker confirming it has received
+	// and persisted the message, or the context times out.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case confirm, ok := <-confirms:
+		if !ok {
+			return fmt.Errorf("publisher confirm channel closed prematurely")
+		}
+		if !confirm.Ack {
+			return fmt.Errorf("message nacked by rabbitmq broker (delivery tag: %d)", confirm.DeliveryTag)
+		}
 	}
 
 	return nil

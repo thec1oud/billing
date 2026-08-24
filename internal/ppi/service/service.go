@@ -122,26 +122,29 @@ func (s *Service) ChargePaymentMethod(
 	return result, nil
 }
 
-func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) error {
+func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) (bool, error) {
 	if s.repo == nil {
-		return nil
+		return false, nil
 	}
 
 	// 1. Idempotency Check
-	isDup, err := s.repo.IsDuplicate(ctx, s.db, payload.ProviderCode, payload.ProviderTxID)
+	isDup, isPublished, err := s.repo.CheckWebhookStatus(ctx, s.db, payload.ProviderCode, payload.ProviderTxID)
 	if err != nil {
-		return fmt.Errorf("idempotency check query failed: %w", err)
+		return false, fmt.Errorf("idempotency check query failed: %w", err)
 	}
 	if isDup {
-		return fmt.Errorf("Idempotency key already exists:%w", err)
+		if isPublished {
+			return true, nil
+		}
+		return false, nil
 	}
 
 	// 2. Save Webhook Audit Record in DB
 	if err := s.repo.SaveWebhook(ctx, s.db, payload); err != nil {
-		return fmt.Errorf("save webhook record failed: %w", err)
+		return false, fmt.Errorf("save webhook record failed: %w", err)
 	}
 
-	return nil
+	return false, nil
 }
 
 func (s *Service) MarkWebhookPublished(ctx context.Context, webhookID string) error {
