@@ -44,9 +44,9 @@ func (m *mockBroker) Close() error {
 }
 
 type mockService struct {
-	adapters     map[string]ppi.Provider
-	processed    []ppi.ProviderWebhookPayload
-	published    map[string]bool
+	adapters       map[string]ppi.Provider
+	processed      []ppi.ProviderWebhookPayload
+	published      map[string]bool
 	forceErrOnProc bool
 }
 

@@ -59,19 +59,19 @@ func (r *PostgresRepository) GetWebhookByID(ctx context.Context, db DBTX, webhoo
 	}, nil
 }
 
-func (r *PostgresRepository) IsDuplicate(ctx context.Context, db DBTX, providerCode, providerTxID string) (bool, error) {
+func (r *PostgresRepository) CheckWebhookStatus(ctx context.Context, db DBTX, providerCode, providerTxID string) (isDuplicate bool, isPublished bool, err error) {
 	if providerTxID == "" {
-		return false, nil
+		return false, false, nil
 	}
 	q := r.getQuerier(db)
-	exists, err := q.IsPPIWebhookDuplicate(ctx, sqlcgen.IsPPIWebhookDuplicateParams{
+	row, err := q.CheckPPIWebhookStatus(ctx, sqlcgen.CheckPPIWebhookStatusParams{
 		ProviderCode: providerCode,
 		ProviderTxID: pgtype.Text{String: providerTxID, Valid: true},
 	})
 	if err != nil {
-		return false, fmt.Errorf("check ppi webhook duplicate failed: %w", err)
+		return false, false, fmt.Errorf("check ppi webhook status failed: %w", err)
 	}
-	return exists, nil
+	return row.IsDuplicate, row.IsPublished, nil
 }
 
 func (r *PostgresRepository) MarkPublished(ctx context.Context, db DBTX, webhookID string) error {

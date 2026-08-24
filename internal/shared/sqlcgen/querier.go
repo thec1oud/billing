@@ -13,6 +13,7 @@ import (
 
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
+	CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
 	CreateInvoiceLineItem(ctx context.Context, arg CreateInvoiceLineItemParams) error
 	CreatePaymentAttempt(ctx context.Context, arg CreatePaymentAttemptParams) (CreatePaymentAttemptRow, error)
@@ -36,7 +37,6 @@ type Querier interface {
 	GetPurchasableItemByCode(ctx context.Context, itemCode string) (PurchasableItem, error)
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
 	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
-	IsPPIWebhookDuplicate(ctx context.Context, arg IsPPIWebhookDuplicateParams) (bool, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
 	ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error)
 	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)

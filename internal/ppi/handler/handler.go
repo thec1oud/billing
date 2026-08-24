@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,12 +10,11 @@ import (
 
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/ppi"
-	"github.com/thec1oud/billing/internal/ppi/service"
 )
 
 type WebhookService interface {
 	GetAdapter(providerCode string) (ppi.Provider, bool)
-	ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) error
+	ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) (bool, error)
 	MarkWebhookPublished(ctx context.Context, webhookID string) error
 }
 
@@ -63,47 +61,52 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	var isPublished bool
+
 	// 2. Delegate DB Idempotency check & Audit logging to Service layer
 	if h.svc != nil {
-		if err := h.svc.ProcessWebhook(ctx, payload); err != nil {
-			if errors.Is(err, service.ErrDuplicateWebhook) {
-				slog.Info("Duplicate published webhook event ignored", "provider", payload.ProviderCode, "provider_tx_id", payload.ProviderTxID)
-				parser.RespondWebhook(w, r, ppi.WebhookResponseIgnored, payload)
-				return
-			}
-
+		isPublished, err = h.svc.ProcessWebhook(ctx, payload)
+		if err != nil {
 			slog.Error("Service failed to process webhook; returning HTTP 500", "provider", payload.ProviderCode, "err", err)
 			parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
 			return
 		}
 	}
 
-	// 3. Synchronously Publish to RabbitMQ Message Broker
-	if h.broker != nil {
-		routingKey := DetermineRoutingKey(payload)
-		msgBytes, err := json.Marshal(payload)
-		if err != nil {
-			slog.Error("Failed to marshal webhook payload for broker", "err", err)
-			parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
-			return
-		}
+	if isPublished {
+		slog.Info("Duplicate published webhook event ignored", "provider", payload.ProviderCode, "provider_tx_id", payload.ProviderTxID)
+	} else {
+		// 3. Synchronously Publish to RabbitMQ Message Broker
+		if h.broker != nil {
+			routingKey := DetermineRoutingKey(payload)
+			msgBytes, err := json.Marshal(payload)
+			if err != nil {
+				slog.Error("Failed to marshal webhook payload for broker", "err", err)
+				parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
+				return
+			}
 
-		if err := h.broker.PublishEvent(ctx, routingKey, msgBytes); err != nil {
-			slog.Error("Failed to publish webhook payload to broker; returning HTTP 500 for provider retry", "routingKey", routingKey, "err", err)
-			parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
-			return
-		}
+			if err := h.broker.PublishEvent(ctx, routingKey, msgBytes); err != nil {
+				slog.Error("Failed to publish webhook payload to broker; returning HTTP 500 for provider retry", "routingKey", routingKey, "err", err)
+				parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
+				return
+			}
 
-		// 4. Mark as published in Service layer so subsequent retries are safely ignored as duplicate
-		if h.svc != nil {
-			if err := h.svc.MarkWebhookPublished(ctx, payload.WebhookID); err != nil {
-				slog.Warn("Failed to mark webhook as published in DB; broker publish succeeded", "webhook_id", payload.WebhookID, "err", err)
+			// 4. Mark as published in Service layer so subsequent retries are safely ignored as duplicate
+			if h.svc != nil {
+				if err := h.svc.MarkWebhookPublished(ctx, payload.WebhookID); err != nil {
+					slog.Warn("Failed to mark webhook as published in DB; broker publish succeeded", "webhook_id", payload.WebhookID, "err", err)
+				}
 			}
 		}
 	}
 
 	// 5. Respond HTTP 200 OK to payment provider
-	parser.RespondWebhook(w, r, ppi.WebhookResponseProcessed, payload)
+	responseCode := ppi.WebhookResponseProcessed
+	if isPublished {
+		responseCode = ppi.WebhookResponseIgnored
+	}
+	parser.RespondWebhook(w, r, responseCode, payload)
 }
 
 func extractProviderCode(r *http.Request) string {

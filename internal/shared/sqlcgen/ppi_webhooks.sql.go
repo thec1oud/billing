@@ -12,6 +12,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const checkPPIWebhookStatus = `-- name: CheckPPIWebhookStatus :one
+SELECT 
+    (EXISTS (SELECT 1 FROM ppi_webhooks w1 WHERE w1.provider_code = $1 AND w1.provider_tx_id = $2))::boolean AS is_duplicate,
+    (EXISTS (SELECT 1 FROM ppi_webhooks w2 WHERE w2.provider_code = $1 AND w2.provider_tx_id = $2 AND w2.published_at IS NOT NULL))::boolean AS is_published
+`
+
+type CheckPPIWebhookStatusParams struct {
+	ProviderCode string      `json:"provider_code"`
+	ProviderTxID pgtype.Text `json:"provider_tx_id"`
+}
+
+type CheckPPIWebhookStatusRow struct {
+	IsDuplicate bool `json:"is_duplicate"`
+	IsPublished bool `json:"is_published"`
+}
+
+func (q *Queries) CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error) {
+	row := q.db.QueryRow(ctx, checkPPIWebhookStatus, arg.ProviderCode, arg.ProviderTxID)
+	var i CheckPPIWebhookStatusRow
+	err := row.Scan(&i.IsDuplicate, &i.IsPublished)
+	return i, err
+}
+
 const getPPIWebhookByID = `-- name: GetPPIWebhookByID :one
 SELECT webhook_id, provider_code, event_type, internal_tx_id, provider_tx_id, status, payload, published_at, processed_at
 FROM ppi_webhooks
@@ -33,25 +56,6 @@ func (q *Queries) GetPPIWebhookByID(ctx context.Context, webhookID string) (PpiW
 		&i.ProcessedAt,
 	)
 	return i, err
-}
-
-const isPPIWebhookDuplicate = `-- name: IsPPIWebhookDuplicate :one
-SELECT EXISTS (
-    SELECT 1 FROM ppi_webhooks
-    WHERE provider_code = $1 AND provider_tx_id = $2 AND published_at IS NOT NULL
-)
-`
-
-type IsPPIWebhookDuplicateParams struct {
-	ProviderCode string      `json:"provider_code"`
-	ProviderTxID pgtype.Text `json:"provider_tx_id"`
-}
-
-func (q *Queries) IsPPIWebhookDuplicate(ctx context.Context, arg IsPPIWebhookDuplicateParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isPPIWebhookDuplicate, arg.ProviderCode, arg.ProviderTxID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }
 
 const markPPIWebhookPublished = `-- name: MarkPPIWebhookPublished :exec
