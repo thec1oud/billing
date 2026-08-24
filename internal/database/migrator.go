@@ -11,7 +11,10 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/thec1oud/billing/internal/infra/logger"
 )
+
+var log = logger.ForComponent("database_migrator")
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
@@ -20,7 +23,7 @@ func RunMigrations(conn *pgx.Conn) error {
 	sqlDB := stdlib.OpenDB(*conn.Config())
 	defer func() {
 		if err := sqlDB.Close(); err != nil {
-			slog.Error("failed to close sql.DB", "error", err)
+			log.Error("failed to close sql.DB", logger.Err(err))
 		}
 	}()
 
@@ -40,19 +43,19 @@ func RunMigrations(conn *pgx.Conn) error {
 	}
 	defer func() {
 		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
-			slog.Error("failed to close migrator instance", "src_err", srcErr, "db_err", dbErr)
+			log.Error("failed to close migrator instance", slog.Any("src_err", srcErr), slog.Any("db_err", dbErr))
 		}
 	}()
 
-	slog.Info("Applying database migrations...")
+	log.Info("Applying database migrations...")
 	if err := m.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
-			slog.Info("Database schema up to date. No changes applied.")
+			log.Info("Database schema up to date. No changes applied.")
 			return nil
 		}
 		return fmt.Errorf("failed to execute up migrations: %w", err)
 	}
 
-	slog.Info("Database migrations applied successfully")
+	log.Info("Database migrations applied successfully")
 	return nil
 }

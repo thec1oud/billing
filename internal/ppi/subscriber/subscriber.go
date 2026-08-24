@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/ppi"
 )
+
+var log = logger.ForComponent("ppi_subscriber")
 
 type WebhookSubscriberFunc func(ctx context.Context, payload ppi.ProviderWebhookPayload) error
 
@@ -29,12 +32,12 @@ func RegisterModuleSubscriber(
 			return fmt.Errorf("failed to unmarshal ProviderWebhookPayload from message: %w", err)
 		}
 
-		slog.Info("Subscriber received webhook message from queue",
-			"queue", queueName,
-			"webhook_id", payload.WebhookID,
-			"provider_code", payload.ProviderCode,
-			"internal_tx_id", payload.InternalTxID,
-			"status", payload.Status,
+		log.Info("Subscriber received webhook message from queue",
+			slog.String("queue", queueName),
+			slog.String("webhook_id", payload.WebhookID),
+			slog.String("provider_code", payload.ProviderCode),
+			slog.String("internal_tx_id", payload.InternalTxID),
+			slog.String("status", string(payload.Status)),
 		)
 
 		return handler(ctx, payload)

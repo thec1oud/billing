@@ -18,9 +18,13 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/service"
 	"github.com/thec1oud/billing/internal/ppi/subscriber"
 	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/thec1oud/billing/internal/infra/logger"
+	"log/slog"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 )
+
+var log = logger.ForComponent("integration_test")
 
 func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	if testing.Short() {
@@ -30,7 +34,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	t.Log("🚀 [1/5] Spinning up Postgres 16 & RabbitMQ Testcontainers...")
+	log.Info("🚀 [1/5] Spinning up Postgres 16 & RabbitMQ Testcontainers...")
 
 	// 1. Spin up Postgres & RabbitMQ containers with migrations via testcontainers
 	cluster, cleanup, err := testutil.SetupTestCluster(ctx)
@@ -70,7 +74,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 		t.Fatalf("failed to seed invoice in test db: %v", err)
 	}
 
-	t.Logf("🌱 [2/5] Database seeded successfully (account_id=%d, invoice_id=%d, provider=fake)", accountID, invoiceID)
+	log.Info("🌱 [2/5] Database seeded successfully", slog.Int64("account_id", accountID), slog.Int64("invoice_id", invoiceID), slog.String("provider", "fake"))
 
 	// 2. Wire RabbitMQ Broker
 	broker, err := messaging.NewRabbitBroker(cluster.RabbitConn)
@@ -110,8 +114,11 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 		t.Error("expected non-empty CheckoutURL in charge result")
 	}
 
-	t.Logf("💳 [3/5] Charged payment method via PPI Service -> Status: %s, ProviderRef: %s, CheckoutURL: %s",
-		chargeResult.Status, chargeResult.ProviderReference, chargeResult.CheckoutURL)
+	log.Info("💳 [3/5] Charged payment method via PPI Service",
+		slog.String("status", string(chargeResult.Status)),
+		slog.String("provider_ref", chargeResult.ProviderReference),
+		slog.String("checkout_url", chargeResult.CheckoutURL),
+	)
 
 	// Verify PaymentAttempt record was committed in Postgres container
 	var savedInvoiceID int64
@@ -127,7 +134,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 		t.Errorf("expected invoice_id %d, got %d", invoiceID, savedInvoiceID)
 	}
 
-	t.Logf("💾 PaymentAttempt record committed in PostgreSQL DB -> invoice_id: %d, tx_id: %s, status: %s", savedInvoiceID, idempotencyKey, savedStatus)
+	log.Info("💾 PaymentAttempt record committed in PostgreSQL DB", slog.Int64("invoice_id", savedInvoiceID), slog.String("tx_id", idempotencyKey), slog.String("status", savedStatus))
 
 	// 5. Test Inbound Webhook HTTP Callback + RabbitMQ Message Dispatch
 	receivedMsgChan := make(chan ppi.ProviderWebhookPayload, 1)
@@ -161,7 +168,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	req.SetPathValue("provider", "fake")
 	rec := httptest.NewRecorder()
 
-	t.Logf("📩 [4/5] Sending HTTP POST Webhook callback to /api/v1/webhooks/fake...")
+	log.Info("📩 [4/5] Sending HTTP POST Webhook callback to /api/v1/webhooks/fake...")
 
 	webhookHandler.ServeHTTP(rec, req)
 
@@ -175,7 +182,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 		t.Errorf("expected status 'processed', got %q", resp["status"])
 	}
 
-	t.Logf("HTTP Webhook response from handler -> Status: %d OK, Response Body: %s", rec.Code, rec.Body.String())
+	log.Info("HTTP Webhook response from handler", slog.Int("status", rec.Code), slog.String("response_body", rec.Body.String()))
 
 	// Wait for message arrival from RabbitMQ container
 	select {
@@ -186,13 +193,15 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 		if payload.Status != ppi.WebhookPaymentSucceeded {
 			t.Errorf("expected WebhookPaymentSucceeded status, got %q", payload.Status)
 		}
-		t.Logf("🎉 [5/5] Webhook payload successfully received from RabbitMQ broker queue!")
-		t.Logf("   ├── WebhookID:    %s", payload.WebhookID)
-		t.Logf("   ├── ProviderCode: %s", payload.ProviderCode)
-		t.Logf("   ├── InternalTxID: %s", payload.InternalTxID)
-		t.Logf("   ├── ProviderTxID: %s", payload.ProviderTxID)
-		t.Logf("   ├── Status:       %s", payload.Status)
-		t.Logf("   └── Amount:       %s %d", payload.Amount.Currency, payload.Amount.AmountMinor)
+		log.Info("🎉 [5/5] Webhook payload successfully received from RabbitMQ broker queue!",
+			slog.String("webhook_id", payload.WebhookID),
+			slog.String("provider_code", payload.ProviderCode),
+			slog.String("internal_tx_id", payload.InternalTxID),
+			slog.String("provider_tx_id", payload.ProviderTxID),
+			slog.String("status", string(payload.Status)),
+			slog.String("currency", string(payload.Amount.Currency)),
+			slog.Int64("amount_minor", payload.Amount.AmountMinor),
+		)
 	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting for webhook message from RabbitMQ testcontainer")
 	}

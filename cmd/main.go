@@ -105,35 +105,38 @@ func run() error {
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/v1/webhooks/{provider}", webhookHandler)
 
+	// Set up component logger for the main process
+	log := logger.ForComponent("main")
+
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.AppPort),
-		Handler: mux,
+		Handler: logger.RequestLogger(mux),
 	}
 
 	// 10. Start HTTP Server Listener in background goroutine
 	go func() {
-		slog.Info("HTTP Webhook server listening", "addr", srv.Addr, "endpoint", "POST /api/v1/webhooks/{provider}")
+		log.Info("HTTP Webhook server listening", slog.String("addr", srv.Addr), slog.String("endpoint", "POST /api/v1/webhooks/{provider}"))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("HTTP Server crashed", "err", err)
+			log.Error("HTTP Server crashed", logger.Err(err))
 		}
 	}()
 
-	slog.Info("All background services wired successfully. Application layer online.", "port", cfg.AppPort)
+	log.Info("All background services wired successfully. Application layer online.", slog.Int("port", cfg.AppPort))
 
 	// 11. Block process until SIGINT/SIGTERM for graceful shutdown
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	<-sigCtx.Done()
-	slog.Info("Shutting down billing service gracefully...")
+	log.Info("Shutting down billing service gracefully...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("HTTP Server Shutdown error", "err", err)
+		log.Error("HTTP Server Shutdown error", logger.Err(err))
 	}
 
-	slog.Info("Billing service stopped successfully.")
+	log.Info("Billing service stopped successfully.")
 	return nil
 }

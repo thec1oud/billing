@@ -7,7 +7,10 @@ import (
 	"sync"
 
 	"github.com/rabbitmq/amqp091-go"
+	"github.com/thec1oud/billing/internal/infra/logger"
 )
+
+var log = logger.ForComponent("infra_messaging")
 
 const (
 	DefaultExchangeName = "billing.events"
@@ -134,10 +137,10 @@ func (b *RabbitBroker) InitTopology(ctx context.Context) error {
 		return fmt.Errorf("failed to bind dlq %s to dlx %s: %w", b.dlqName, b.dlxName, err)
 	}
 
-	slog.Info("RabbitMQ messaging topology initialized successfully",
-		"exchange", b.exchangeName,
-		"dlx", b.dlxName,
-		"dlq", b.dlqName,
+	log.Info("RabbitMQ messaging topology initialized successfully",
+		slog.String("exchange", b.exchangeName),
+		slog.String("dlx", b.dlxName),
+		slog.String("dlq", b.dlqName),
 	)
 	return nil
 }
@@ -261,20 +264,20 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		for {
 			select {
 			case <-parentCtx.Done():
-				slog.Info("Stopping consumer group (parent context done)", "queue", queueName)
+				log.Info("Stopping consumer group (parent context done)", slog.String("queue", queueName))
 				return
 			case <-b.ctx.Done():
-				slog.Info("Stopping consumer group (broker closed)", "queue", queueName)
+				log.Info("Stopping consumer group (broker closed)", slog.String("queue", queueName))
 				return
 			case d, ok := <-deliveries:
 				if !ok {
-					slog.Warn("Consumer delivery channel closed", "queue", queueName)
+					log.Warn("Consumer delivery channel closed", slog.String("queue", queueName))
 					return
 				}
 
 				// Execute module handler in isolated context
 				if err := handler(parentCtx, d.Body); err != nil {
-					slog.Error("Consumer handler failed; sending message to DLQ", "queue", queueName, "err", err)
+					log.Error("Consumer handler failed; sending message to DLQ", slog.String("queue", queueName), logger.Err(err))
 					// Reject message without requeue -> routes to x-dead-letter-exchange (billing.dlq)
 					_ = d.Nack(false, false)
 				} else {
@@ -284,7 +287,7 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		}
 	}()
 
-	slog.Info("Registered consumer group successfully", "queue", queueName, "routingKeys", routingKeys)
+	log.Info("Registered consumer group successfully", slog.String("queue", queueName), slog.Any("routingKeys", routingKeys))
 	return nil
 }
 

@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/ppi"
 )
+
+var log = logger.ForComponent("ppi_handler")
 
 type WebhookService interface {
 	GetAdapter(providerCode string) (ppi.Provider, bool)
@@ -54,7 +57,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 1. Parse and verify webhook signature using provider adapter
 	payload, err := parser.ParseWebhook(r)
 	if err != nil {
-		slog.Error("Failed to parse/verify webhook payload", "provider", providerCode, "err", err)
+		log.Error("Failed to parse/verify webhook payload", slog.String("provider", providerCode), logger.Err(err))
 		http.Error(w, fmt.Sprintf("Invalid webhook payload or signature: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -67,27 +70,27 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.svc != nil {
 		isPublished, err = h.svc.ProcessWebhook(ctx, payload)
 		if err != nil {
-			slog.Error("Service failed to process webhook; returning HTTP 500", "provider", payload.ProviderCode, "err", err)
+			log.Error("Service failed to process webhook; returning HTTP 500", slog.String("provider", payload.ProviderCode), logger.Err(err))
 			parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
 			return
 		}
 	}
 
 	if isPublished {
-		slog.Info("Duplicate published webhook event ignored", "provider", payload.ProviderCode, "provider_tx_id", payload.ProviderTxID)
+		log.Info("Duplicate published webhook event ignored", slog.String("provider", payload.ProviderCode), slog.String("provider_tx_id", payload.ProviderTxID))
 	} else {
 		// 3. Synchronously Publish to RabbitMQ Message Broker
 		if h.broker != nil {
 			routingKey := DetermineRoutingKey(payload)
 			msgBytes, err := json.Marshal(payload)
 			if err != nil {
-				slog.Error("Failed to marshal webhook payload for broker", "err", err)
+				log.Error("Failed to marshal webhook payload for broker", logger.Err(err))
 				parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
 				return
 			}
 
 			if err := h.broker.PublishEvent(ctx, routingKey, msgBytes); err != nil {
-				slog.Error("Failed to publish webhook payload to broker; returning HTTP 500 for provider retry", "routingKey", routingKey, "err", err)
+				log.Error("Failed to publish webhook payload to broker; returning HTTP 500 for provider retry", slog.String("routingKey", routingKey), logger.Err(err))
 				parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
 				return
 			}
@@ -95,7 +98,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// 4. Mark as published in Service layer so subsequent retries are safely ignored as duplicate
 			if h.svc != nil {
 				if err := h.svc.MarkWebhookPublished(ctx, payload.WebhookID); err != nil {
-					slog.Warn("Failed to mark webhook as published in DB; broker publish succeeded", "webhook_id", payload.WebhookID, "err", err)
+					log.Warn("Failed to mark webhook as published in DB; broker publish succeeded", slog.String("webhook_id", payload.WebhookID), logger.Err(err))
 				}
 			}
 		}
