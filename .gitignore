@@ -1,5 +1,8 @@
 .env
 
+.idea
+.vscode
+
 # Ignore specific binary extensions (Windows/Cross-platform)
 *.exe
 *.dll

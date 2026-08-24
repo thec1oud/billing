@@ -12,6 +12,12 @@ import (
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
+	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
+	"github.com/thec1oud/billing/internal/shared/statemachine/repository"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
 )
 
 func main() {
@@ -49,7 +55,7 @@ func run() error {
 		return fmt.Errorf("infrastructure: %w", err)
 	}
 
-	// 4. Deferred resource teardown (LIFO order: Rabbit -> Redis -> DB)
+	// 4. Deferred resource teardown (LIFO order: Rabbit -> Redis -> Pool -> DB)
 	defer func() {
 		if deps.Rabbit != nil {
 			_ = deps.Rabbit.Close()
@@ -58,6 +64,11 @@ func run() error {
 	defer func() {
 		if deps.Redis != nil {
 			_ = deps.Redis.Close()
+		}
+	}()
+	defer func() {
+		if deps.Pool != nil {
+			deps.Pool.Close()
 		}
 	}()
 	defer func() {
@@ -71,11 +82,28 @@ func run() error {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	slog.Info("All background services wired. Starting application layer...", "port", cfg.AppPort)
-
 	// 6. Block process until SIGINT/SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// 7. Wire the state machine engine's background workers. The guard/action
+	// registry is empty here — no domain (invoice, payment_attempt, subscription)
+	// is wired onto the state machine engine yet; that's follow-up work. A
+	// future domain package registers its guards/actions into this registry at
+	// startup before any definition referencing them is published.
+	smRegistry := registry.New()
+	smRepo := repository.NewPostgresRepository(deps.Pool)
+	smEngine := engine.NewEngine(deps.Pool, smRepo, smRegistry, engine.WithScripting(scripting.NewPool(0, 0)))
+
+	smPublisher := outbox.NewPublisher(deps.Pool, smRepo, smRegistry, outbox.Config{})
+	smPublisher.Start(ctx)
+	defer smPublisher.Stop()
+
+	smScheduler := scheduler.NewPoller(smEngine, smRepo, scheduler.Config{})
+	smScheduler.Start(ctx)
+	defer smScheduler.Stop()
+
+	slog.Info("All background services wired. Starting application layer...", "port", cfg.AppPort)
 
 	// START YOUR SERVER / CONSUMER HERE (e.g. go httpApp.Start(...) or go worker.Listen(ctx))
 
