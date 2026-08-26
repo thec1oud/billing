@@ -104,7 +104,7 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 	req.SetPathValue("provider", "fake")
 	rec := httptest.NewRecorder()
 
-	h.ServeHTTP(rec, req)
+	h.HandleWebhook(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected HTTP 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
@@ -150,7 +150,7 @@ func TestWebhookHandler_BrokerPublishFailureRetriesOnNextRequest(t *testing.T) {
 	req1.SetPathValue("provider", "fake")
 	rec1 := httptest.NewRecorder()
 
-	h.ServeHTTP(rec1, req1)
+	h.HandleWebhook(rec1, req1)
 	if rec1.Code != http.StatusInternalServerError {
 		t.Fatalf("expected HTTP 500 when broker publish fails, got %d", rec1.Code)
 	}
@@ -161,7 +161,7 @@ func TestWebhookHandler_BrokerPublishFailureRetriesOnNextRequest(t *testing.T) {
 	req2.SetPathValue("provider", "fake")
 	rec2 := httptest.NewRecorder()
 
-	h.ServeHTTP(rec2, req2)
+	h.HandleWebhook(rec2, req2)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("expected HTTP 200 on retry after broker recovery, got %d", rec2.Code)
 	}
@@ -191,13 +191,13 @@ func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
 	req1.SetPathValue("provider", "fake")
 	rec1 := httptest.NewRecorder()
-	h.ServeHTTP(rec1, req1)
+	h.HandleWebhook(rec1, req1)
 
 	// 2. Second call: Same payload after successful publish -> ignored as duplicate
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
 	req2.SetPathValue("provider", "fake")
 	rec2 := httptest.NewRecorder()
-	h.ServeHTTP(rec2, req2)
+	h.HandleWebhook(rec2, req2)
 
 	var resp map[string]string
 	_ = json.Unmarshal(rec2.Body.Bytes(), &resp)

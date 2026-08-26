@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,6 +13,7 @@ import (
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
+	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
@@ -22,7 +21,6 @@ import (
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
-	"github.com/thec1oud/billing/internal/ppi/handler"
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
@@ -135,33 +133,20 @@ func run() error {
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
-	// 10. Initialize PPI Webhook Repository, PPIService, and WebhookHandler
+	// 10. Initialize PPI Webhook Repository & Service
 	ppiRepo := repository.NewPostgresRepository()
 	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
-	webhookHandler := handler.NewWebhookHandler(ppiService, rabbitBroker)
-
-	// 11. Configure HTTP Router & Mount Webhook Listener
-	mux := http.NewServeMux()
-	mux.Handle("POST /api/v1/webhooks/{provider}", webhookHandler)
+	// 11. Configure & Start HTTP Server
+	srv := api.NewServer(cfg, api.Deps{
+		PPIService: ppiService,
+		Broker:     rabbitBroker,
+	})
+	srv.Start()
 
 	// Set up component logger for the main process
 	log := logger.ForComponent("main")
-
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", cfg.AppPort),
-		Handler: logger.RequestLogger(mux),
-	}
-
-	// 12. Start HTTP Server Listener in background goroutine
-	go func() {
-		log.Info("HTTP Webhook server listening", slog.String("addr", srv.Addr), slog.String("endpoint", "POST /api/v1/webhooks/{provider}"))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("HTTP Server crashed", logger.Err(err))
-		}
-	}()
-
 	log.Info("All background services wired successfully. Application layer online.", slog.String("port", cfg.AppPort))
 
 	<-sigCtx.Done()

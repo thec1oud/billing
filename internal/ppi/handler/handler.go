@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/thec1oud/billing/internal/infra/api"
+	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/ppi"
@@ -37,21 +37,16 @@ func NewWebhookHandler(
 	}
 }
 
-func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		api.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed")
-		return
-	}
-
+func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	providerCode := extractProviderCode(r)
 	if providerCode == "" {
-		api.WriteError(w, http.StatusBadRequest, "MISSING_PROVIDER_CODE", "Missing provider code in URL path or parameter")
+		response.WriteError(w, http.StatusBadRequest, "MISSING_PROVIDER_CODE", "Missing provider code in URL path or parameter")
 		return
 	}
 
 	parser, exists := h.svc.GetAdapter(providerCode)
 	if !exists {
-		api.WriteError(w, http.StatusNotFound, "UNSUPPORTED_PROVIDER", fmt.Sprintf("Unsupported payment provider: %s", providerCode))
+		response.WriteError(w, http.StatusNotFound, "UNSUPPORTED_PROVIDER", fmt.Sprintf("Unsupported payment provider: %s", providerCode))
 		return
 	}
 
@@ -59,7 +54,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	payload, err := parser.ParseWebhook(r)
 	if err != nil {
 		log.Error("Failed to parse/verify webhook payload", slog.String("provider", providerCode), logger.Err(err))
-		api.WriteError(w, http.StatusBadRequest, "INVALID_SIGNATURE", fmt.Sprintf("Invalid webhook payload or signature: %v", err))
+		response.WriteError(w, http.StatusBadRequest, "INVALID_SIGNATURE", fmt.Sprintf("Invalid webhook payload or signature: %v", err))
 		return
 	}
 
