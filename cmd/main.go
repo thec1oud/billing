@@ -119,7 +119,7 @@ func run() error {
 	defer rabbitBroker.Close()
 
 	// 9. Initialize Payment Attempt Repository & Service
-	paymentAttemptRepo := attemptRepo.NewPostgresRepository()
+	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
 	// 10. Initialize PPI Webhook Repository, PPIService, and WebhookHandler
@@ -137,7 +137,7 @@ func run() error {
 	log := logger.ForComponent("main")
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.AppPort),
+		Addr:    fmt.Sprintf(":%s", cfg.AppPort),
 		Handler: logger.RequestLogger(mux),
 	}
 
@@ -149,7 +149,7 @@ func run() error {
 		}
 	}()
 
-	log.Info("All background services wired successfully. Application layer online.", slog.Int("port", cfg.AppPort))
+	log.Info("All background services wired successfully. Application layer online.", slog.String("port", cfg.AppPort))
 
 	<-sigCtx.Done()
 	log.Info("Shutting down billing service gracefully...")
