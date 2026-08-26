@@ -10,12 +10,15 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"strings"
 
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
+	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
@@ -23,6 +26,7 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
 	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
 	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
 	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
@@ -99,6 +103,15 @@ func run() error {
 	smRegistry := registry.New()
 	smRepository := smRepo.NewPostgresRepository(deps.Pool)
 	smEngine := engine.NewEngine(deps.Pool, smRepository, smRegistry, engine.WithScripting(scripting.NewPool(0, 0)))
+
+	// Register invoice state machine actions & publish definition spec
+	invoiceRepository := invoiceRepo.NewPostgresRepository(deps.Pool)
+	statemachine.RegisterStateMachineActions(smRegistry, invoiceRepository)
+
+	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		return fmt.Errorf("failed to bootstrap invoice state machine: %w", err)
+	}
 
 	smPublisher := outbox.NewPublisher(deps.Pool, smRepository, smRegistry, outbox.Config{})
 	smPublisher.Start(sigCtx)

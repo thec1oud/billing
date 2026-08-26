@@ -2,6 +2,7 @@ package invoice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,10 +11,13 @@ import (
 
 	"github.com/thec1oud/billing/internal/invoice/model"
 	"github.com/thec1oud/billing/internal/invoice/repository"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	"github.com/thec1oud/billing/internal/ppi"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
 )
 
 type Service struct {
@@ -21,6 +25,7 @@ type Service struct {
 	eventService *eventservice.Service
 	ppi          ppi.PPI
 	repo         *repository.PostgresRepository
+	smEngine     *engine.Engine
 }
 
 func NewService(
@@ -28,14 +33,17 @@ func NewService(
 	eventService *eventservice.Service,
 	ppi ppi.PPI,
 	repo *repository.PostgresRepository,
+	smEngine *engine.Engine,
 ) *Service {
 	return &Service{
 		db:           db,
 		eventService: eventService,
 		ppi:          ppi,
 		repo:         repo,
+		smEngine:     smEngine,
 	}
 }
+
 func (s *Service) CreateDraftInvoice(
 	ctx context.Context,
 	actor eventmodel.Actor,
@@ -83,6 +91,18 @@ func (s *Service) CreateDraftInvoice(
 		return model.Invoice{}, fmt.Errorf("create invoice projection: %w", err)
 	}
 
+	// 1. Initialize State Machine Instance (pinned to the active invoice_lifecycle spec)
+	initialContext, _ := json.Marshal(map[string]any{
+		"invoice_id": invoiceID,
+		"account_id": accountID,
+		"currency":   currency,
+	})
+	_, err = s.smEngine.CreateInstance(ctx, sm_model.MachineType(statemachine.InvoiceMachineType), "invoice", fmt.Sprintf("%d", invoiceID), initialContext)
+	if err != nil {
+		return model.Invoice{}, fmt.Errorf("failed to create state machine instance: %w", err)
+	}
+
+	// 2. Append Event
 	payload := map[string]any{
 		"invoice_id": invoiceID,
 		"account_id": accountID,
@@ -115,13 +135,7 @@ func (s *Service) FinalizeInvoice(
 	invoiceID int64,
 	dueDateDays int,
 ) (model.Invoice, error) {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return model.Invoice{}, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	// 1. Fetch draft invoice and line items under transaction (FOR UPDATE lock)
+	// 1. Fetch draft invoice and line items (lock-free read is fine here since state engine locks during Fire)
 	inv, err := s.repo.Get(ctx, invoiceID)
 	if err != nil {
 		return model.Invoice{}, fmt.Errorf("fetch invoice for finalization: %w", err)
@@ -151,7 +165,6 @@ func (s *Service) FinalizeInvoice(
 	}
 
 	// TODO: Replace with dynamic pricing engine / tax provider strategy lookups.
-	// Discounts and taxes will be computed via rule evaluation on line items & account metadata.
 	tax := zeroMoney
 	discount := zeroMoney
 
@@ -168,63 +181,76 @@ func (s *Service) FinalizeInvoice(
 	now := time.Now().UTC()
 	dueAt := now.AddDate(0, 0, dueDateDays)
 
-	// 3. Persist finalization and retrieve the sequentially generated invoice number
-	invoiceNumber, err := s.repo.Finalize(
-		ctx,
-		tx,
-		invoiceID,
-		subtotal,
-		tax,
-		discount,
-		total,
-		amountDue,
-		dueAt,
-		now,
-	)
+	// 3. Resolve the state machine instance
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
 	if err != nil {
-		return model.Invoice{}, fmt.Errorf("repo finalize invoice %d: %w", invoiceID, err)
+		return model.Invoice{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
 
-	// 4. Construct and append domain event
-	payload := map[string]any{
-		"invoice_id":      invoiceID,
-		"invoice_number":  invoiceNumber,
-		"account_id":      inv.AccountID,
-		"currency":        inv.Currency,
-		"subtotal_amount": subtotal,
-		"tax_amount":      tax,
-		"discount_amount": discount,
-		"total_amount":    total,
-		"amount_due":      amountDue,
-		"due_at":          dueAt,
-		"finalized_at":    now,
+	payloadBytes, err := json.Marshal(map[string]any{
+		"subtotal":   subtotal,
+		"tax":        tax,
+		"discount":   discount,
+		"total":      total,
+		"amount_due": amountDue,
+		"due_at":     dueAt,
+		"now":        now,
+	})
+	if err != nil {
+		return model.Invoice{}, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	if _, err := s.eventService.AppendEvent(ctx, tx, eventmodel.AppendRequest{
-		AggregateType: eventmodel.AggregateInvoice,
-		AggregateID:   fmt.Sprintf("%d", invoiceID),
-		EventType:     eventmodel.InvoiceFinalized,
-		EventVersion:  1,
-		Actor:         actor,
-		Payload:       payload,
-	}); err != nil {
-		return model.Invoice{}, fmt.Errorf("append InvoiceFinalized event: %w", err)
+	// 4. Fire the state machine transition
+	_, err = s.smEngine.Fire(ctx, instance.InstanceID, "finalize", payloadBytes, engine.WithEventActor(actor))
+	if err != nil {
+		return model.Invoice{}, fmt.Errorf("failed to fire state machine transition: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return model.Invoice{}, fmt.Errorf("commit finalization transaction: %w", err)
+	// 5. Fetch finalized invoice projection from DB
+	finalizedInv, err := s.repo.Get(ctx, invoiceID)
+	if err != nil {
+		return model.Invoice{}, fmt.Errorf("failed to fetch finalized invoice: %w", err)
 	}
 
-	// 5. Update domain model representation for return
-	inv.Status = model.StatusOpen
-	inv.InvoiceNumber = invoiceNumber
-	inv.Subtotal = subtotal
-	inv.Tax = tax
-	inv.Discount = discount
-	inv.Total = total
-	inv.AmountDue = amountDue
-	inv.FinalizedAt = &now
-	inv.DueAt = &dueAt
+	return finalizedInv, nil
+}
 
-	return inv, nil
+func (s *Service) PayInvoice(
+	ctx context.Context,
+	actor eventmodel.Actor,
+	invoiceID int64,
+	amountPaid money.Money,
+	amountDue money.Money,
+	paidAt time.Time,
+) error {
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	if err != nil {
+		return fmt.Errorf("failed to find state machine instance: %w", err)
+	}
+
+	payloadBytes, err := json.Marshal(map[string]any{
+		"amount_paid": amountPaid,
+		"amount_due":  amountDue,
+		"paid_at":     paidAt,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	_, err = s.smEngine.Fire(ctx, instance.InstanceID, "pay", payloadBytes, engine.WithEventActor(actor))
+	return err
+}
+
+func (s *Service) VoidInvoice(
+	ctx context.Context,
+	actor eventmodel.Actor,
+	invoiceID int64,
+) error {
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	if err != nil {
+		return fmt.Errorf("failed to find state machine instance: %w", err)
+	}
+
+	_, err = s.smEngine.Fire(ctx, instance.InstanceID, "void", nil, engine.WithEventActor(actor))
+	return err
 }
