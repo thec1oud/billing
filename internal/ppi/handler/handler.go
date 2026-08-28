@@ -40,13 +40,19 @@ func NewWebhookHandler(
 func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	providerCode := extractProviderCode(r)
 	if providerCode == "" {
-		response.WriteError(w, http.StatusBadRequest, "MISSING_PROVIDER_CODE", "Missing provider code in URL path or parameter")
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code:    "MISSING_PROVIDER_CODE",
+			Message: "Missing provider code in URL path or parameter",
+		})
 		return
 	}
 
 	parser, exists := h.svc.GetAdapter(providerCode)
 	if !exists {
-		response.WriteError(w, http.StatusNotFound, "UNSUPPORTED_PROVIDER", fmt.Sprintf("Unsupported payment provider: %s", providerCode))
+		response.Write(w, http.StatusNotFound, &response.ErrorResponse{
+			Code:    "UNSUPPORTED_PROVIDER",
+			Message: fmt.Sprintf("Unsupported payment provider: %s", providerCode),
+		})
 		return
 	}
 
@@ -54,7 +60,10 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	payload, err := parser.ParseWebhook(r)
 	if err != nil {
 		log.Error("Failed to parse/verify webhook payload", slog.String("provider", providerCode), logger.Err(err))
-		response.WriteError(w, http.StatusBadRequest, "INVALID_SIGNATURE", fmt.Sprintf("Invalid webhook payload or signature: %v", err))
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code:    "INVALID_SIGNATURE",
+			Message: fmt.Sprintf("Invalid webhook payload or signature: %v", err),
+		})
 		return
 	}
 
