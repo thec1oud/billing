@@ -14,6 +14,7 @@ import (
 
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
+	CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error)
 	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error)
 	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (CreateAccountRow, error)
@@ -40,6 +41,7 @@ type Querier interface {
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
 	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
+	GetPPIWebhookByID(ctx context.Context, webhookID string) (PpiWebhook, error)
 	GetPaymentAttemptByID(ctx context.Context, attemptID int64) (PaymentAttempt, error)
 	GetPaymentAttemptByInternalTxID(ctx context.Context, internalTxID string) (PaymentAttempt, error)
 	GetPaymentAttemptByProviderTxID(ctx context.Context, providerTxID pgtype.Text) (PaymentAttempt, error)
@@ -73,6 +75,8 @@ type Querier interface {
 	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
+	MarkPPIWebhookPublished(ctx context.Context, webhookID string) error
+	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) error
 	MarkOutboxPublished(ctx context.Context, outboxID int64) error
 	MarkOutboxRetry(ctx context.Context, arg MarkOutboxRetryParams) error

@@ -1,0 +1,60 @@
+{
+  "MachineType": "invoice_lifecycle",
+  "Version": 1,
+  "InitialState": "DRAFT",
+  "Activate": true,
+  "States": [
+    { "Name": "DRAFT" },
+    { "Name": "OPEN" },
+    { "Name": "PAID", "IsFinal": true },
+    { "Name": "UNCOLLECTIBLE", "IsFinal": true },
+    { "Name": "VOID", "IsFinal": true }
+  ],
+  "Transitions": [
+    {
+      "FromState": "DRAFT",
+      "EventName": "finalize",
+      "ToState": "OPEN",
+      "EmitEventType": "invoice.finalized",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "invoice.action.finalize",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "OPEN",
+      "EventName": "pay",
+      "ToState": "PAID",
+      "EmitEventType": "invoice.paid",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "invoice.action.mark_paid",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "OPEN",
+      "EventName": "void",
+      "ToState": "VOID",
+      "EmitEventType": "invoice.voided",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "invoice.action.void",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    }
+  ]
+}

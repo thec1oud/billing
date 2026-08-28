@@ -7,11 +7,29 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+	"strings"
 
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
+	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
+	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
+	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
+	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
+	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
+	"github.com/thec1oud/billing/internal/ppi/repository"
+	"github.com/thec1oud/billing/internal/ppi/service"
+	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
+	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
+	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
+	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
 )
 
 func main() {
@@ -75,6 +93,71 @@ func run() error {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
+	// 6. Block process until SIGINT/SIGTERM for background contexts
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// 7. Wire the state machine engine's background workers.
+	smRegistry := registry.New()
+	smRepository := smRepo.NewPostgresRepository(deps.Pool)
+	smEngine := engine.NewEngine(deps.Pool, smRepository, smRegistry, engine.WithScripting(scripting.NewPool(0, 0)))
+
+	// Register invoice state machine actions & publish definition spec
+	invoiceRepository := invoiceRepo.NewPostgresRepository(deps.Pool)
+	statemachine.RegisterStateMachineActions(smRegistry, invoiceRepository)
+
+	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		return fmt.Errorf("failed to bootstrap invoice state machine: %w", err)
+	}
+
+	smPublisher := outbox.NewPublisher(deps.Pool, smRepository, smRegistry, outbox.Config{})
+	smPublisher.Start(sigCtx)
+	defer smPublisher.Stop()
+
+	smScheduler := scheduler.NewPoller(smEngine, smRepository, scheduler.Config{})
+	smScheduler.Start(sigCtx)
+	defer smScheduler.Stop()
+
+	// 8. Initialize Messaging Broker Topology
+	rabbitBroker, err := messaging.NewRabbitBroker(deps.Rabbit)
+	if err != nil {
+		return fmt.Errorf("messaging broker: %w", err)
+	}
+	if err := rabbitBroker.InitTopology(ctx); err != nil {
+		return fmt.Errorf("broker topology init: %w", err)
+	}
+	defer rabbitBroker.Close()
+
+	// 9. Initialize Payment Attempt Repository & Service
+	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
+	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
+
+	// 10. Initialize PPI Webhook Repository & Service
+	ppiRepo := repository.NewPostgresRepository()
+	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
+	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+
+	// 11. Configure & Start HTTP Server
+	srv := api.NewServer(cfg, api.Deps{
+		PPIService: ppiService,
+		Broker:     rabbitBroker,
+	})
+	srv.Start()
+
+	// Set up component logger for the main process
+	log := logger.ForComponent("main")
+	log.Info("All background services wired successfully. Application layer online.", slog.String("port", cfg.AppPort))
+
+	<-sigCtx.Done()
+	log.Info("Shutting down billing service gracefully...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("HTTP Server Shutdown error", logger.Err(err))
+	}
 	slog.Info(
 		"All background services wired. Starting application layer...",
 		"port",
@@ -95,5 +178,6 @@ func run() error {
 
 	slog.Info("Shutting down billing service...")
 
+	log.Info("Billing service stopped successfully.")
 	return nil
 }

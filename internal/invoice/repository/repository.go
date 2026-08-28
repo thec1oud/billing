@@ -22,12 +22,23 @@ var (
 	ErrInvalidStatus   = errors.New("invalid invoice status code")
 )
 
+type DBTX interface {
+	sqlcgen.DBTX
+}
+
 type PostgresRepository struct {
 	pool *pgxpool.Pool
 }
 
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
+}
+
+func (r *PostgresRepository) getQuerier(db DBTX) *sqlcgen.Queries {
+	if db != nil {
+		return sqlcgen.New(db)
+	}
+	return sqlcgen.New(r.pool)
 }
 
 func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.Invoice, error) {
@@ -111,8 +122,8 @@ func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.In
 	}, nil
 }
 
-func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.Invoice) (int64, error) {
-	q := sqlcgen.New(tx)
+func (r *PostgresRepository) Create(ctx context.Context, db DBTX, inv model.Invoice) (int64, error) {
+	q := r.getQuerier(db)
 
 	invoiceID, err := q.CreateInvoice(ctx, sqlcgen.CreateInvoiceParams{
 		AccountID:         inv.AccountID,
@@ -165,12 +176,12 @@ func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.In
 }
 func (r *PostgresRepository) Finalize(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	invoiceID int64,
 	subtotal, tax, discount, total, amountDue money.Money,
 	dueAt, finalizedAt time.Time,
 ) (string, error) {
-	q := sqlcgen.New(tx)
+	q := r.getQuerier(db)
 
 	invoiceNumber, err := q.FinalizeInvoice(ctx, sqlcgen.FinalizeInvoiceParams{
 		SubtotalAmount: subtotal.AmountMinor,
@@ -194,13 +205,13 @@ func (r *PostgresRepository) Finalize(
 
 func (r *PostgresRepository) MarkPaid(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	invoiceID int64,
 	amountPaid money.Money,
 	amountDue money.Money,
 	paidAt time.Time,
 ) error {
-	q := sqlcgen.New(tx)
+	q := r.getQuerier(db)
 
 	if _, err := q.MarkInvoicePaid(ctx, sqlcgen.MarkInvoicePaidParams{
 		AmountPaid: amountPaid.AmountMinor,
@@ -215,10 +226,10 @@ func (r *PostgresRepository) MarkPaid(
 
 func (r *PostgresRepository) MarkVoid(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	invoiceID int64,
 ) error {
-	q := sqlcgen.New(tx)
+	q := r.getQuerier(db)
 
 	if _, err := q.VoidInvoice(ctx, invoiceID); err != nil {
 		return r.handleError(err, "void invoice")
@@ -228,12 +239,12 @@ func (r *PostgresRepository) MarkVoid(
 
 func (r *PostgresRepository) UpdatePaymentBalances(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	invoiceID int64,
 	amountPaid money.Money,
 	amountDue money.Money,
 ) error {
-	q := sqlcgen.New(tx)
+	q := r.getQuerier(db)
 
 	if _, err := q.UpdatePaymentBalances(ctx, sqlcgen.UpdatePaymentBalancesParams{
 		AmountPaid: amountPaid.AmountMinor,
