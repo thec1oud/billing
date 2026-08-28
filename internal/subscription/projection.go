@@ -11,16 +11,16 @@ import (
 // to generate invoice line items.
 type BillingProjection struct {
 	// Subscription identity
-	SubscriptionID string
-	AccountID      string
+	SubscriptionID int64
+	AccountID      int64
 
 	// Selected immutable plan
-	PlanID      string
+	PlanID      int64
 	PlanVersion int
 
 	// Pricing
 	Amount   money.Money
-	Currency string
+	Currency money.Currency
 
 	// Billing period
 	PeriodStart time.Time

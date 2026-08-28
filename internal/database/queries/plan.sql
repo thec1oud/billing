@@ -50,6 +50,12 @@ FROM plans
 WHERE plan_code = $1
   AND version = $2;
 
+-- name: GetPlanByID :one
+SELECT plan_id, plan_code, version, effective_from, effective_until,
+    legacy_price_policy_code, migration_path, metadata, created_at
+FROM plans
+WHERE plan_id = $1;
+
 
 -- name: ListPlanVersions :many
 SELECT

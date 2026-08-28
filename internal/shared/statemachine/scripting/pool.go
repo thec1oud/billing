@@ -78,6 +78,8 @@ func (p *Pool) EvalGuard(ctx context.Context, source string, ec model.ExecutionC
 
 // EvalActionParams compiles and runs source's Params function against ec and
 // params, marshaling its map result back to JSON to become an action's params.
+//
+//nolint:lll // Kept together for readability.
 func (p *Pool) EvalActionParams(ctx context.Context, source string, ec model.ExecutionContext, params json.RawMessage) (json.RawMessage, error) {
 	result, err := p.eval(ctx, source, "Params", ec, params)
 	if err != nil {
@@ -148,6 +150,7 @@ func runScript(source, funcName string, contextMap, payloadMap, paramsMap map[st
 
 	fnVal, err := i.Eval("script." + funcName)
 	if err != nil {
+		//nolint:lll // Kept together for readability.
 		return evalOutcome{nil, fmt.Errorf("resolve script.%s (did the script declare 'package script' and define %s?): %w", funcName, funcName, err)}
 	}
 

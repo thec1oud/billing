@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,6 +76,15 @@ func (f *fakePlanRepository) GetByCodeAndVersion(
 	return Plan{}, ErrPlanNotFound
 }
 
+func (f *fakePlanRepository) GetByID(_ context.Context, id int64) (Plan, error) {
+	for _, plan := range f.plans {
+		if plan.ID == id {
+			return plan, nil
+		}
+	}
+	return Plan{}, ErrPlanNotFound
+}
+
 func (f *fakePlanRepository) LatestVersion(
 	_ context.Context,
 	_ string,
@@ -116,10 +124,10 @@ func (f *fakePlanRepository) GetDuration(
 	return PlanDuration{}, ErrPlanDurationNotFound
 }
 
-func (f *fakePlanRepository) GetDurationByPlanAndCode(
+func (f *fakePlanRepository) GetDurationByPlanAndDuration(
 	_ context.Context,
 	planID int64,
-	code PlanDurationCode,
+	code time.Duration,
 ) (PlanDuration, error) {
 	if f.err != nil {
 		return PlanDuration{}, f.err
@@ -275,7 +283,7 @@ func TestCreatePlanDuration(t *testing.T) {
 	duration := PlanDuration{
 		PlanID:   1,
 		TariffID: 10,
-		Duration: PlanDurationCode("MONTHLY"),
+		Duration: 30 * 24 * time.Hour,
 	}
 
 	created, err := service.CreatePlanDuration(
@@ -288,7 +296,7 @@ func TestCreatePlanDuration(t *testing.T) {
 	require.Equal(t, int64(1), created.ID)
 	require.Equal(t, int64(1), created.PlanID)
 	require.Equal(t, int64(10), created.TariffID)
-	require.Equal(t, PlanDurationCode("MONTHLY"), created.Duration)
+	require.Equal(t, (30 * 24 * time.Hour), created.Duration)
 	require.True(t, created.IsActive)
 }
 
@@ -303,7 +311,7 @@ func TestCreatePlanDurationRejectsInvalidDuration(t *testing.T) {
 		PlanDuration{
 			PlanID:   1,
 			TariffID: 10,
-			Duration: "INVALID",
+			Duration: 0,
 		},
 	)
 
@@ -351,7 +359,7 @@ func TestGetDurationByPlanAndCode(t *testing.T) {
 		ID:       1,
 		PlanID:   10,
 		TariffID: 20,
-		Duration: PlanDurationCode("MONTHLY"),
+		Duration: 30 * 24 * time.Hour,
 		IsActive: true,
 	}
 
@@ -364,7 +372,7 @@ func TestGetDurationByPlanAndCode(t *testing.T) {
 	result, err := service.GetDurationByPlanAndCode(
 		context.Background(),
 		10,
-		PlanDurationCode("MONTHLY"),
+		30*24*time.Hour,
 	)
 
 	require.NoError(t, err)
@@ -378,13 +386,13 @@ func TestListDurations(t *testing.T) {
 				ID:       1,
 				PlanID:   10,
 				TariffID: 20,
-				Duration: PlanDurationCode("MONTHLY"),
+				Duration: 30 * 24 * time.Hour,
 			},
 			{
 				ID:       2,
 				PlanID:   10,
 				TariffID: 30,
-				Duration: PlanDurationCode("YEARLY"),
+				Duration: 12 * 30 * 24 * time.Hour,
 			},
 		},
 	}
@@ -407,7 +415,7 @@ func TestUpdateDurationTariff(t *testing.T) {
 				ID:       1,
 				PlanID:   10,
 				TariffID: 20,
-				Duration: PlanDurationCode("MONTHLY"),
+				Duration: 30 * 24 * time.Hour,
 				IsActive: true,
 			},
 		},

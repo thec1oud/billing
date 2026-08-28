@@ -23,8 +23,23 @@ type Repository interface {
 		code string,
 		version int,
 	) (Tariff, error)
+	GetByID(ctx context.Context, id int64) (Tariff, error)
 	LatestVersion(ctx context.Context, code string) (int, error)
 	ListVersions(ctx context.Context, code string) ([]Tariff, error)
+}
+
+func (r *PostgresRepository) GetByID(ctx context.Context, id int64) (Tariff, error) {
+	if id <= 0 {
+		return Tariff{}, errors.New("tariff id must be greater than zero")
+	}
+	row, err := sqlcgen.New(r.pool).GetTariffByID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Tariff{}, ErrTariffNotFound
+	}
+	if err != nil {
+		return Tariff{}, fmt.Errorf("get tariff by id: %w", err)
+	}
+	return toModel(row)
 }
 
 type PostgresRepository struct {
@@ -119,6 +134,10 @@ func (r *PostgresRepository) LatestVersion(
 	q := sqlcgen.New(r.pool)
 
 	version, err := q.GetLatestTariffVersion(ctx, code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrTariffNotFound
+	}
+
 	if err != nil {
 		return 0, fmt.Errorf(
 			"get latest tariff version: %w",

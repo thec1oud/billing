@@ -71,7 +71,7 @@ func TestPostgresRepository_CreateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to begin tx: %v", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	invoiceID, err := repo.Create(ctx, tx, inv)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 	}
 	invoiceID, err := repo.Create(ctx, tx, inv)
 	if err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		t.Fatalf("failed to create invoice: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -156,7 +156,7 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 	finalizedAt := time.Now().UTC()
 	_, err = repo.Finalize(ctx, tx, invoiceID, subtotal, tax, discount, total, amountDue, *inv.DueAt, finalizedAt)
 	if err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		t.Fatalf("failed to finalize: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -180,7 +180,7 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 	zeroDue, _ := money.New(0, "USD")
 	err = repo.MarkPaid(ctx, tx, invoiceID, fetched.Total, zeroDue, paidAt)
 	if err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		t.Fatalf("failed to mark paid: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

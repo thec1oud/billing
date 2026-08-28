@@ -109,6 +109,7 @@ func (r *PostgresRepository) DeactivateDefinitionsForMachineType(ctx context.Con
 	return nil
 }
 
+//nolint:lll // Kept together for readability.
 func (r *PostgresRepository) GetActiveDefinition(ctx context.Context, db DBTX, machineType model.MachineType) (model.DefinitionMeta, error) {
 	q := r.getQuerier(db)
 
@@ -244,6 +245,7 @@ func (r *PostgresRepository) InsertGuardBinding(ctx context.Context, db DBTX, tr
 	return nil
 }
 
+//nolint:lll // Kept together for readability.
 func (r *PostgresRepository) ListGuardBindingsByDefinition(ctx context.Context, db DBTX, definitionID uuid.UUID) (map[uuid.UUID][]model.GuardBinding, error) {
 	q := r.getQuerier(db)
 
@@ -267,6 +269,7 @@ func (r *PostgresRepository) ListGuardBindingsByDefinition(ctx context.Context, 
 
 // --- Action bindings ---
 
+//nolint:lll // Kept together for readability.
 func (r *PostgresRepository) InsertActionBinding(ctx context.Context, db DBTX, definitionID uuid.UUID, ab model.ActionBinding) (uuid.UUID, error) {
 	q := r.getQuerier(db)
 
@@ -299,6 +302,7 @@ func (r *PostgresRepository) InsertActionBinding(ctx context.Context, db DBTX, d
 	return bindingID, nil
 }
 
+//nolint:lll // Kept together for readability.
 func (r *PostgresRepository) ListActionBindingsByDefinition(ctx context.Context, db DBTX, definitionID uuid.UUID) ([]model.ActionBinding, error) {
 	q := r.getQuerier(db)
 

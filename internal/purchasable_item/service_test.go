@@ -358,7 +358,7 @@ func TestPurchasableItem_Validate(t *testing.T) {
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf(
-					"Validate() error = %v, wantErr = %v",
+					"validatePurchasableItem() error = %v, wantErr = %v",
 					err,
 					tt.wantErr,
 				)

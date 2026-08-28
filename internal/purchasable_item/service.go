@@ -32,10 +32,7 @@ func (s *Service) Create(
 
 	switch item.ItemTypeCode {
 	case ItemTypePlan:
-		// PLAN items are allowed to exist without an attached plan reference.
-		// The database column is nullable, so the service should not reject
-		// a valid plan item solely because the caller did not supply PlanID.
-
+		// A PLAN item may have a nil PlanID.
 	case ItemTypeOneTimeService,
 		ItemTypeProduct:
 		if item.PlanID != nil {
@@ -44,12 +41,6 @@ func (s *Service) Create(
 				item.ItemTypeCode,
 			)
 		}
-
-	default:
-		return PurchasableItem{}, fmt.Errorf(
-			"unsupported item type %q",
-			item.ItemTypeCode,
-		)
 	}
 
 	return s.repository.Create(ctx, tx, item)
