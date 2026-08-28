@@ -9,7 +9,14 @@ import (
 type Response struct {
 	Success bool           `json:"success"`
 	Data    any            `json:"data,omitempty"`
+	Meta    any            `json:"meta,omitempty"`
 	Error   *ErrorResponse `json:"error,omitempty"`
+}
+
+// PaginatedPayload can be used as the payload for Write to include pagination metadata (like page, limit, total).
+type PaginatedPayload struct {
+	Data any
+	Meta any
 }
 
 // ErrorResponse holds standard machine-readable error details.
@@ -59,7 +66,15 @@ func Write(w http.ResponseWriter, status int, payload any, headers ...map[string
 		}
 	} else {
 		resp.Success = true
-		resp.Data = payload
+		if p, ok := payload.(PaginatedPayload); ok {
+			resp.Data = p.Data
+			resp.Meta = p.Meta
+		} else if p, ok := payload.(*PaginatedPayload); ok {
+			resp.Data = p.Data
+			resp.Meta = p.Meta
+		} else {
+			resp.Data = payload
+		}
 	}
 
 	_ = json.NewEncoder(w).Encode(resp)
