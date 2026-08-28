@@ -4,14 +4,26 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
+	"time"
 
+	accountrepository "github.com/thec1oud/billing/internal/account/repository"
+	accountservice "github.com/thec1oud/billing/internal/account/service"
+	"github.com/thec1oud/billing/internal/api"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	"github.com/thec1oud/billing/internal/plan"
+	eventrepository "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	subscriptionrepository "github.com/thec1oud/billing/internal/subscription/repository"
+	subscriptionservice "github.com/thec1oud/billing/internal/subscription/service"
+	"github.com/thec1oud/billing/internal/tariff"
 )
 
 func main() {
@@ -23,14 +35,10 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-
-	// 1. Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-
-	// 2. Initialize global logger FIRST so all downstream logs use the configured pipeline
 	logClosers, err := logger.InitGlobalLogger(cfg)
 	if err != nil {
 		return fmt.Errorf("logger: %w", err)
@@ -41,59 +49,64 @@ func run() error {
 		}
 	}()
 
-	// 3. Initialize infrastructural dependencies
 	deps, err := infra.InitDependencies(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("infrastructure: %w", err)
 	}
-
 	defer func() {
 		if deps.Rabbit != nil {
 			_ = deps.Rabbit.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Redis != nil {
 			_ = deps.Redis.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Pool != nil {
 			deps.Pool.Close()
 		}
-	}()
-	defer func() {
 		if deps.DB != nil {
 			_ = deps.DB.Close(ctx)
 		}
 	}()
-
-	// 4. Run database migrations
 	if err := database.RunMigrations(deps.DB); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	slog.Info(
-		"All background services wired. Starting application layer...",
-		"port",
-		cfg.AppPort,
-	)
+	port, err := strconv.Atoi(cfg.AppPort)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid APP_PORT %q", cfg.AppPort)
+	}
+	accountRepo := accountrepository.New(deps.Pool)
+	events := eventservice.NewService(eventrepository.NewPostgresEventStore(deps.Pool))
+	router := api.NewRouter(api.Services{
+		Accounts: accountservice.NewWithEvents(accountRepo, events),
+		Subscriptions: subscriptionservice.New(
+			subscriptionrepository.New(deps.Pool),
+			accountRepo,
+			plan.NewPostgresRepository(deps.Pool),
+			tariff.NewPostgresRepository(deps.Pool),
+		),
+	})
+	server := api.NewServer(port, router)
+	errCh := make(chan error, 1)
+	go func() {
+		if err := server.Start(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+	}()
+	slog.Info("billing HTTP server started", "port", port)
 
-	// 5. Block process until SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	// START YOUR SERVER / CONSUMER HERE
-
-	<-ctx.Done()
-
-	slog.Info("Shutting down billing service...")
-
+	select {
+	case <-signalCtx.Done():
+	case err := <-errCh:
+		return fmt.Errorf("http server: %w", err)
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown http server: %w", err)
+	}
+	slog.Info("billing service shut down")
 	return nil
 }

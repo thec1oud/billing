@@ -9,7 +9,7 @@ import (
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepository "github.com/thec1oud/billing/internal/account/repository"
 	"github.com/thec1oud/billing/internal/plan"
-	"github.com/thec1oud/billing/internal/shared/money"
+	subscription "github.com/thec1oud/billing/internal/subscription"
 	"github.com/thec1oud/billing/internal/subscription/model"
 	"github.com/thec1oud/billing/internal/subscription/repository"
 	"github.com/thec1oud/billing/internal/tariff"
@@ -109,13 +109,6 @@ func (s *Service) Get(
 	return s.repository.Get(ctx, subscriptionID)
 }
 
-type BillingProjection struct {
-	AccountID   int64
-	Amount      money.Money
-	PeriodStart time.Time
-	PeriodEnd   time.Time
-}
-
 // BillingProjection resolves the current active tariff for the subscription's
 // immutable plan.
 //
@@ -124,14 +117,14 @@ type BillingProjection struct {
 func (s *Service) BillingProjection(
 	ctx context.Context,
 	subscriptionID int64,
-) (BillingProjection, error) {
+) (subscription.BillingProjection, error) {
 	sub, err := s.repository.Get(ctx, subscriptionID)
 	if err != nil {
-		return BillingProjection{}, err
+		return subscription.BillingProjection{}, err
 	}
 
 	if s.plans == nil {
-		return BillingProjection{}, errors.New(
+		return subscription.BillingProjection{}, errors.New(
 			"plan repository is not configured",
 		)
 	}
@@ -143,7 +136,7 @@ func (s *Service) BillingProjection(
 	// must never silently invoice.
 	durations, err := s.plans.ListDurations(ctx, sub.PlanID)
 	if err != nil {
-		return BillingProjection{}, fmt.Errorf(
+		return subscription.BillingProjection{}, fmt.Errorf(
 			"list plan durations: %w",
 			err,
 		)
@@ -158,7 +151,7 @@ func (s *Service) BillingProjection(
 	}
 
 	if active != 1 {
-		return BillingProjection{}, fmt.Errorf(
+		return subscription.BillingProjection{}, fmt.Errorf(
 			"plan %d must have exactly one active billing duration, got %d",
 			sub.PlanID,
 			active,
@@ -171,27 +164,27 @@ func (s *Service) BillingProjection(
 		}
 
 		if s.tariffs == nil {
-			return BillingProjection{}, errors.New(
+			return subscription.BillingProjection{}, errors.New(
 				"tariff repository is not configured",
 			)
 		}
 
 		t, err := s.tariffs.GetByID(ctx, d.TariffID)
 		if err != nil {
-			return BillingProjection{}, fmt.Errorf(
+			return subscription.BillingProjection{}, fmt.Errorf(
 				"get billing tariff: %w",
 				err,
 			)
 		}
 
 		if !t.IsActive {
-			return BillingProjection{}, fmt.Errorf(
+			return subscription.BillingProjection{}, fmt.Errorf(
 				"billing tariff %d is inactive",
 				d.TariffID,
 			)
 		}
 
-		return BillingProjection{
+		return subscription.BillingProjection{
 			AccountID:   sub.AccountID,
 			Amount:      t.Amount,
 			PeriodStart: sub.CurrentPeriodStart,
@@ -199,7 +192,7 @@ func (s *Service) BillingProjection(
 		}, nil
 	}
 
-	return BillingProjection{}, errors.New(
+	return subscription.BillingProjection{}, errors.New(
 		"active billing duration disappeared",
 	)
 }
