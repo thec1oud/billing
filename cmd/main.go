@@ -158,26 +158,6 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("HTTP Server Shutdown error", logger.Err(err))
 	}
-	slog.Info(
-		"All background services wired. Starting application layer...",
-		"port",
-		cfg.AppPort,
-	)
-
-	// 5. Block process until SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
-
-	// START YOUR SERVER / CONSUMER HERE
-
-	<-ctx.Done()
-
-	slog.Info("Shutting down billing service...")
-
 	log.Info("Billing service stopped successfully.")
 	return nil
 }
