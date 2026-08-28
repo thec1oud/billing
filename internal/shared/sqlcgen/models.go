@@ -87,7 +87,6 @@ type Invoice struct {
 	IdempotencyKey         pgtype.Text        `json:"idempotency_key"`
 	Metadata               []byte             `json:"metadata"`
 	CreatedAt              time.Time          `json:"created_at"`
-	Version                int64              `json:"version"`
 }
 
 type InvoiceLineItem struct {
@@ -126,6 +125,21 @@ type LedgerPartyType struct {
 	LedgerPartyTypeCode string      `json:"ledger_party_type_code"`
 	Description         pgtype.Text `json:"description"`
 	CreatedAt           time.Time   `json:"created_at"`
+}
+
+type PaymentAttempt struct {
+	AttemptID    int64       `json:"attempt_id"`
+	InvoiceID    int64       `json:"invoice_id"`
+	ProviderCode string      `json:"provider_code"`
+	InternalTxID string      `json:"internal_tx_id"`
+	ProviderTxID pgtype.Text `json:"provider_tx_id"`
+	AmountMinor  int64       `json:"amount_minor"`
+	Currency     string      `json:"currency"`
+	Status       string      `json:"status"`
+	RawResponse  []byte      `json:"raw_response"`
+	RawRequest   []byte      `json:"raw_request"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type PaymentMethod struct {
@@ -209,6 +223,113 @@ type PurchasableItemPricingRule struct {
 	ItemID    int64     `json:"item_id"`
 	RuleID    int64     `json:"rule_id"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type SmActionBinding struct {
+	BindingID    uuid.UUID   `json:"binding_id"`
+	DefinitionID uuid.UUID   `json:"definition_id"`
+	HookType     string      `json:"hook_type"`
+	StateName    pgtype.Text `json:"state_name"`
+	TransitionID *uuid.UUID  `json:"transition_id"`
+	Seq          int32       `json:"seq"`
+	ActionName   string      `json:"action_name"`
+	ParamsKind   string      `json:"params_kind"`
+	Params       []byte      `json:"params"`
+	ParamsScript pgtype.Text `json:"params_script"`
+	Mode         string      `json:"mode"`
+	OnError      string      `json:"on_error"`
+}
+
+type SmActionOutbox struct {
+	OutboxID   int64              `json:"outbox_id"`
+	InstanceID uuid.UUID          `json:"instance_id"`
+	HistoryID  pgtype.Int8        `json:"history_id"`
+	BindingID  *uuid.UUID         `json:"binding_id"`
+	ActionName string             `json:"action_name"`
+	Params     []byte             `json:"params"`
+	Status     string             `json:"status"`
+	Attempts   int32              `json:"attempts"`
+	ClaimedAt  pgtype.Timestamptz `json:"claimed_at"`
+	ClaimedBy  pgtype.Text        `json:"claimed_by"`
+	LastError  pgtype.Text        `json:"last_error"`
+	CreatedAt  time.Time          `json:"created_at"`
+}
+
+type SmDefinition struct {
+	DefinitionID uuid.UUID `json:"definition_id"`
+	MachineType  string    `json:"machine_type"`
+	Version      int32     `json:"version"`
+	InitialState string    `json:"initial_state"`
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type SmGuardBinding struct {
+	TransitionID       uuid.UUID   `json:"transition_id"`
+	Seq                int32       `json:"seq"`
+	ImplementationKind string      `json:"implementation_kind"`
+	GuardName          pgtype.Text `json:"guard_name"`
+	Script             pgtype.Text `json:"script"`
+	Params             []byte      `json:"params"`
+}
+
+type SmInstance struct {
+	InstanceID   uuid.UUID `json:"instance_id"`
+	DefinitionID uuid.UUID `json:"definition_id"`
+	MachineType  string    `json:"machine_type"`
+	SubjectType  string    `json:"subject_type"`
+	SubjectID    string    `json:"subject_id"`
+	CurrentState string    `json:"current_state"`
+	Context      []byte    `json:"context"`
+	Version      int64     `json:"version"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type SmScheduledTransition struct {
+	ScheduleID   uuid.UUID          `json:"schedule_id"`
+	InstanceID   uuid.UUID          `json:"instance_id"`
+	EventName    string             `json:"event_name"`
+	EventPayload []byte             `json:"event_payload"`
+	FireAt       time.Time          `json:"fire_at"`
+	Status       string             `json:"status"`
+	Attempts     int32              `json:"attempts"`
+	ClaimedAt    pgtype.Timestamptz `json:"claimed_at"`
+	ClaimedBy    pgtype.Text        `json:"claimed_by"`
+	LastError    pgtype.Text        `json:"last_error"`
+	CreatedAt    time.Time          `json:"created_at"`
+}
+
+type SmState struct {
+	DefinitionID uuid.UUID `json:"definition_id"`
+	StateName    string    `json:"state_name"`
+	IsFinal      bool      `json:"is_final"`
+	Metadata     []byte    `json:"metadata"`
+}
+
+type SmTransition struct {
+	TransitionID  uuid.UUID   `json:"transition_id"`
+	DefinitionID  uuid.UUID   `json:"definition_id"`
+	FromState     string      `json:"from_state"`
+	EventName     string      `json:"event_name"`
+	ToState       string      `json:"to_state"`
+	Priority      int32       `json:"priority"`
+	EmitEventType pgtype.Text `json:"emit_event_type"`
+}
+
+type SmTransitionHistory struct {
+	HistoryID     int64       `json:"history_id"`
+	InstanceID    uuid.UUID   `json:"instance_id"`
+	TransitionID  *uuid.UUID  `json:"transition_id"`
+	FromState     pgtype.Text `json:"from_state"`
+	ToState       string      `json:"to_state"`
+	EventName     pgtype.Text `json:"event_name"`
+	EventPayload  []byte      `json:"event_payload"`
+	ContextBefore []byte      `json:"context_before"`
+	ContextAfter  []byte      `json:"context_after"`
+	TriggeredBy   pgtype.Text `json:"triggered_by"`
+	OccurredAt    time.Time   `json:"occurred_at"`
 }
 
 type Subscription struct {

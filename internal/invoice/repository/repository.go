@@ -19,7 +19,6 @@ import (
 
 var (
 	ErrInvoiceNotFound = errors.New("invoice not found")
-	ErrVersionConflict = errors.New("invoice was modified concurrently, retry")
 	ErrInvalidStatus   = errors.New("invalid invoice status code")
 )
 
@@ -61,13 +60,19 @@ func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.In
 
 		qVal, _ := li.QuantityValue.Float64Value()
 
+		var subID int64
+		if li.SubscriptionID.Valid {
+			subID = li.SubscriptionID.Int64
+		}
+
 		lineItems = append(lineItems, model.LineItem{
-			ItemID:        li.ItemID,
-			Description:   li.Description,
-			QuantityValue: qVal.Float64,
-			QuantityUnit:  li.QuantityUnit,
-			UnitAmount:    unitAmt,
-			TotalAmount:   totalAmt,
+			ItemID:         li.ItemID,
+			SubscriptionID: subID,
+			Description:    li.Description,
+			QuantityValue:  qVal.Float64,
+			QuantityUnit:   li.QuantityUnit,
+			UnitAmount:     unitAmt,
+			TotalAmount:    totalAmt,
 		})
 	}
 
@@ -92,7 +97,7 @@ func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.In
 		AccountID:     row.AccountID,
 		InvoiceNumber: invoiceNum,
 		Status:        model.Status(row.InvoiceStatusCode),
-		Currency:      row.Currency,
+		Currency:      money.Currency(row.Currency),
 		Subtotal:      subtotal,
 		Tax:           tax,
 		Discount:      discount,
@@ -103,19 +108,16 @@ func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.In
 		FinalizedAt:   finalizedAt,
 		PaidAt:        paidAt,
 		LineItems:     lineItems,
-		Version:       row.Version,
 	}, nil
 }
 
 func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.Invoice) (int64, error) {
 	q := sqlcgen.New(tx)
 
-	fmt.Println(inv.Status)
-
 	invoiceID, err := q.CreateInvoice(ctx, sqlcgen.CreateInvoiceParams{
 		AccountID:         inv.AccountID,
 		InvoiceStatusCode: string(inv.Status),
-		Currency:          inv.Currency,
+		Currency:          string(inv.Currency),
 		SubtotalAmount:    inv.Subtotal.AmountMinor,
 		TaxAmount:         inv.Tax.AmountMinor,
 		DiscountAmount:    inv.Discount.AmountMinor,
@@ -129,8 +131,8 @@ func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.In
 
 	for _, li := range inv.LineItems {
 		var subID pgtype.Int8
-		if inv.SubscriptionID != 0 {
-			subID = pgtype.Int8{Int64: inv.SubscriptionID, Valid: true}
+		if li.SubscriptionID != 0 {
+			subID = pgtype.Int8{Int64: li.SubscriptionID, Valid: true}
 		}
 
 		var qVal pgtype.Numeric
@@ -161,28 +163,33 @@ func (r *PostgresRepository) Create(ctx context.Context, tx pgx.Tx, inv model.In
 
 	return invoiceID, nil
 }
-
 func (r *PostgresRepository) Finalize(
 	ctx context.Context,
 	tx pgx.Tx,
 	invoiceID int64,
-	finalizedAt time.Time,
-	expectedVersion int64,
-) error {
+	subtotal, tax, discount, total, amountDue money.Money,
+	dueAt, finalizedAt time.Time,
+) (string, error) {
 	q := sqlcgen.New(tx)
 
-	rows, err := q.FinalizeInvoice(ctx, sqlcgen.FinalizeInvoiceParams{
-		FinalizedAt: pgtype.Timestamptz{Time: finalizedAt, Valid: true},
-		InvoiceID:   invoiceID,
-		Version:     expectedVersion,
+	invoiceNumber, err := q.FinalizeInvoice(ctx, sqlcgen.FinalizeInvoiceParams{
+		SubtotalAmount: subtotal.AmountMinor,
+		TaxAmount:      tax.AmountMinor,
+		DiscountAmount: discount.AmountMinor,
+		TotalAmount:    total.AmountMinor,
+		AmountDue:      amountDue.AmountMinor,
+		DueAt:          pgtype.Timestamptz{Time: dueAt, Valid: true},
+		FinalizedAt:    pgtype.Timestamptz{Time: finalizedAt, Valid: true},
+		InvoiceID:      invoiceID,
 	})
 	if err != nil {
-		return r.handleError(err, "finalize invoice")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("%w: invoice %d is not in draft status or does not exist", ErrInvalidStatus, invoiceID)
+		}
+		return "", r.handleError(err, "finalize invoice")
 	}
-	if rows == 0 {
-		return ErrVersionConflict
-	}
-	return nil
+
+	return invoiceNumber.String, nil
 }
 
 func (r *PostgresRepository) MarkPaid(
@@ -192,22 +199,16 @@ func (r *PostgresRepository) MarkPaid(
 	amountPaid money.Money,
 	amountDue money.Money,
 	paidAt time.Time,
-	expectedVersion int64,
 ) error {
 	q := sqlcgen.New(tx)
 
-	rows, err := q.MarkInvoicePaid(ctx, sqlcgen.MarkInvoicePaidParams{
+	if _, err := q.MarkInvoicePaid(ctx, sqlcgen.MarkInvoicePaidParams{
 		AmountPaid: amountPaid.AmountMinor,
 		AmountDue:  amountDue.AmountMinor,
 		PaidAt:     pgtype.Timestamptz{Time: paidAt, Valid: true},
 		InvoiceID:  invoiceID,
-		Version:    expectedVersion,
-	})
-	if err != nil {
+	}); err != nil {
 		return r.handleError(err, "mark invoice paid")
-	}
-	if rows == 0 {
-		return ErrVersionConflict
 	}
 	return nil
 }
@@ -216,19 +217,11 @@ func (r *PostgresRepository) MarkVoid(
 	ctx context.Context,
 	tx pgx.Tx,
 	invoiceID int64,
-	expectedVersion int64,
 ) error {
 	q := sqlcgen.New(tx)
 
-	rows, err := q.VoidInvoice(ctx, sqlcgen.VoidInvoiceParams{
-		InvoiceID: invoiceID,
-		Version:   expectedVersion,
-	})
-	if err != nil {
+	if _, err := q.VoidInvoice(ctx, invoiceID); err != nil {
 		return r.handleError(err, "void invoice")
-	}
-	if rows == 0 {
-		return ErrVersionConflict
 	}
 	return nil
 }
@@ -239,21 +232,15 @@ func (r *PostgresRepository) UpdatePaymentBalances(
 	invoiceID int64,
 	amountPaid money.Money,
 	amountDue money.Money,
-	expectedVersion int64,
 ) error {
 	q := sqlcgen.New(tx)
 
-	rows, err := q.UpdatePaymentBalances(ctx, sqlcgen.UpdatePaymentBalancesParams{
+	if _, err := q.UpdatePaymentBalances(ctx, sqlcgen.UpdatePaymentBalancesParams{
 		AmountPaid: amountPaid.AmountMinor,
 		AmountDue:  amountDue.AmountMinor,
 		InvoiceID:  invoiceID,
-		Version:    expectedVersion,
-	})
-	if err != nil {
+	}); err != nil {
 		return r.handleError(err, "update payment balances")
-	}
-	if rows == 0 {
-		return ErrVersionConflict
 	}
 	return nil
 }

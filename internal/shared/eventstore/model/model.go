@@ -71,7 +71,7 @@ type AppendRequest struct {
 	Sequence      int64
 	EventType     EventType
 	EventVersion  int
-	Actor         json.RawMessage // Standard JSONB type
+	Actor         Actor
 	CausationID   *uuid.UUID
 	CorrelationID *uuid.UUID
 	Payload       any
@@ -105,10 +105,10 @@ type EventStore interface {
 // Reducer functions represent mathematical deterministic folds transforming history back into runtime structures
 type Reducer[State any] func(State, Event) (State, error)
 
-// Rebuild streams out ledger history and compiles system state on the fly
-func Rebuild[State any](initial State, stream []Event, reduce Reducer[State]) (State, error) {
+// Rebuild events out ledger history and compiles system state on the fly
+func Rebuild[State any](initial State, events []Event, reduce Reducer[State]) (State, error) {
 	state := initial
-	for _, event := range stream {
+	for _, event := range events {
 		var err error
 		state, err = reduce(state, event)
 		if err != nil {
@@ -116,4 +116,17 @@ func Rebuild[State any](initial State, stream []Event, reduce Reducer[State]) (S
 		}
 	}
 	return state, nil
+}
+
+type ActorType string
+
+const (
+	ActorTypeUser   ActorType = "USER"
+	ActorTypeSystem ActorType = "SYSTEM"
+)
+
+type Actor struct {
+	ID   string    `json:"id"`
+	Type ActorType `json:"type"`
+	Name string    `json:"name,omitempty"`
 }
