@@ -26,7 +26,6 @@ func (p LegacyPricePolicy) Valid() bool {
 	}
 }
 
-
 // Plan represents an immutable, versioned pricing entity.
 type Plan struct {
 	ID                    int64             `json:"plan_id"`
@@ -43,12 +42,12 @@ type Plan struct {
 }
 
 type PlanDuration struct {
-	ID        int64            `json:"plan_duration_id"`
-	PlanID    int64            `json:"plan_id"`
-	TariffID  int64            `json:"tariff_id"`
+	ID        int64         `json:"plan_duration_id"`
+	PlanID    int64         `json:"plan_id"`
+	TariffID  int64         `json:"tariff_id"`
 	Duration  time.Duration `json:"duration"`
-	IsActive  bool             `json:"is_active"`
-	CreatedAt time.Time        `json:"created_at"`
+	IsActive  bool          `json:"is_active"`
+	CreatedAt time.Time     `json:"created_at"`
 }
 
 func (p Plan) Validate() error {
@@ -98,5 +97,3 @@ func (d PlanDuration) Validate() error {
 
 	return nil
 }
-
-

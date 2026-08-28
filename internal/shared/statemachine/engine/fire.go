@@ -76,6 +76,7 @@ func (e *Engine) CreateInstance(
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	//nolint:lll // Kept together for readability.
 	instance, err := e.repo.CreateInstance(ctx, tx, def.Meta.DefinitionID, machineType, subjectType, subjectID, def.Meta.InitialState, initialContext)
 	if err != nil {
 		return model.Instance{}, err
@@ -117,6 +118,7 @@ func (e *Engine) CreateInstance(
 	// Always persist here: ON_ENTER hooks may have mutated ec.Context even when
 	// the initial state isn't final, and that mutation must not be silently
 	// dropped just because status doesn't need to change.
+	//nolint:lll // Kept together for readability.
 	if _, err := e.repo.UpdateInstanceState(ctx, tx, instance.InstanceID, instance.Version, def.Meta.InitialState, ec.Context, newStatus); err != nil {
 		return model.Instance{}, fmt.Errorf("persist initial context: %w", err)
 	}
@@ -279,6 +281,8 @@ func (e *Engine) Fire(
 // model.Compile) and returns the first whose guards all pass (AND semantics,
 // short-circuiting on the first failing guard). A guard error aborts selection
 // entirely — it is never silently treated as pass or fail.
+//
+//nolint:lll // Kept together for readability.
 func (e *Engine) selectTransition(ctx context.Context, candidates []model.Transition, ec model.ExecutionContext) (*model.Transition, error) {
 	for i := range candidates {
 		t := candidates[i]

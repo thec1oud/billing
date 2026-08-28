@@ -177,6 +177,30 @@ func (q *Queries) GetPlanByCodeAndVersion(ctx context.Context, arg GetPlanByCode
 	return i, err
 }
 
+const getPlanByID = `-- name: GetPlanByID :one
+SELECT plan_id, plan_code, version, effective_from, effective_until,
+    legacy_price_policy_code, migration_path, metadata, created_at
+FROM plans
+WHERE plan_id = $1
+`
+
+func (q *Queries) GetPlanByID(ctx context.Context, planID int64) (Plan, error) {
+	row := q.db.QueryRow(ctx, getPlanByID, planID)
+	var i Plan
+	err := row.Scan(
+		&i.PlanID,
+		&i.PlanCode,
+		&i.Version,
+		&i.EffectiveFrom,
+		&i.EffectiveUntil,
+		&i.LegacyPricePolicyCode,
+		&i.MigrationPath,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getPlanDuration = `-- name: GetPlanDuration :one
 SELECT
     plan_duration_id,

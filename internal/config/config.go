@@ -55,11 +55,9 @@ func GetEnv(envKey string) (string, error) {
 // Load reads the .env file and environment variables
 // into the Config struct.
 func Load() (*Config, error) {
-	if err := godotenv.Load(); err != nil {
-		// .env is optional.
-		// Environment variables may be provided directly
-		// by the operating system or deployment environment.
-	}
+	// .env is optional; environment variables may be provided directly by the
+	// operating system or deployment environment.
+	_ = godotenv.Load()
 
 	appEnv, err := GetEnv("APP_ENV")
 	if err != nil {
@@ -135,8 +133,8 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		AppEnv:        appEnv,
-		AppPort:       appPort,
+		AppEnv:  appEnv,
+		AppPort: appPort,
 
 		DBHost:     dbHost,
 		DBPort:     dbPort,

@@ -35,6 +35,7 @@ type Repository interface {
 		code string,
 		version int,
 	) (Plan, error)
+	GetByID(ctx context.Context, id int64) (Plan, error)
 
 	LatestVersion(
 		ctx context.Context,
@@ -69,6 +70,20 @@ type Repository interface {
 		tariffID int64,
 		isActive bool,
 	) (PlanDuration, error)
+}
+
+func (r *PostgresRepository) GetByID(ctx context.Context, id int64) (Plan, error) {
+	if id <= 0 {
+		return Plan{}, errors.New("plan id must be greater than zero")
+	}
+	row, err := sqlcgen.New(r.pool).GetPlanByID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Plan{}, ErrPlanNotFound
+	}
+	if err != nil {
+		return Plan{}, fmt.Errorf("get plan by id: %w", err)
+	}
+	return toPlanModel(row), nil
 }
 
 type PostgresRepository struct {

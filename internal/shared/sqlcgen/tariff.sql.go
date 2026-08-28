@@ -152,6 +152,33 @@ func (q *Queries) GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffBy
 	return i, err
 }
 
+const getTariffByID = `-- name: GetTariffByID :one
+SELECT tariff_id, tariff_code, version, name, description, tariff_type_code,
+    amount, currency, tier_brackets, is_active, metadata, created_at
+FROM tariffs
+WHERE tariff_id = $1
+`
+
+func (q *Queries) GetTariffByID(ctx context.Context, tariffID int64) (Tariff, error) {
+	row := q.db.QueryRow(ctx, getTariffByID, tariffID)
+	var i Tariff
+	err := row.Scan(
+		&i.TariffID,
+		&i.TariffCode,
+		&i.Version,
+		&i.Name,
+		&i.Description,
+		&i.TariffTypeCode,
+		&i.Amount,
+		&i.Currency,
+		&i.TierBrackets,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listTariffVersions = `-- name: ListTariffVersions :many
 SELECT
     tariff_id,

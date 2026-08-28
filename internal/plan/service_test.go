@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,6 +73,15 @@ func (f *fakePlanRepository) GetByCodeAndVersion(
 		}
 	}
 
+	return Plan{}, ErrPlanNotFound
+}
+
+func (f *fakePlanRepository) GetByID(_ context.Context, id int64) (Plan, error) {
+	for _, plan := range f.plans {
+		if plan.ID == id {
+			return plan, nil
+		}
+	}
 	return Plan{}, ErrPlanNotFound
 }
 
@@ -364,7 +372,7 @@ func TestGetDurationByPlanAndCode(t *testing.T) {
 	result, err := service.GetDurationByPlanAndCode(
 		context.Background(),
 		10,
-		30 * 24 * time.Hour,
+		30*24*time.Hour,
 	)
 
 	require.NoError(t, err)
@@ -384,7 +392,7 @@ func TestListDurations(t *testing.T) {
 				ID:       2,
 				PlanID:   10,
 				TariffID: 30,
-				Duration: 12*30 * 24 * time.Hour,
+				Duration: 12 * 30 * 24 * time.Hour,
 			},
 		},
 	}
@@ -407,7 +415,7 @@ func TestUpdateDurationTariff(t *testing.T) {
 				ID:       1,
 				PlanID:   10,
 				TariffID: 20,
-				Duration:30 * 24 * time.Hour,
+				Duration: 30 * 24 * time.Hour,
 				IsActive: true,
 			},
 		},

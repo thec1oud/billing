@@ -353,16 +353,16 @@ func TestPurchasableItem_Validate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-	t.Run(tt.name, func(t *testing.T) {
-		err := tt.item.Validate()
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.item.Validate()
 
-		if (err != nil) != tt.wantErr {
-			t.Fatalf(
-				"validatePurchasableItem() error = %v, wantErr = %v",
-				err,
-				tt.wantErr,
-			)
-		}
-	})
-}
+			if (err != nil) != tt.wantErr {
+				t.Fatalf(
+					"validatePurchasableItem() error = %v, wantErr = %v",
+					err,
+					tt.wantErr,
+				)
+			}
+		})
+	}
 }

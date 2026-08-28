@@ -1,6 +1,3 @@
-ALTER TABLE plans
-    ADD CONSTRAINT uq_plan_code_version
-    UNIQUE (plan_code, version);
 
 -- Plan versions must start from 1.
 ALTER TABLE plans

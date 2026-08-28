@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/thec1oud/billing/internal/account"
+	accountservice "github.com/thec1oud/billing/internal/account/service"
 	"github.com/thec1oud/billing/internal/shared/money"
-	"github.com/thec1oud/billing/internal/subscription"
+	subscriptionservice "github.com/thec1oud/billing/internal/subscription/service"
 )
 
 var ErrNoPaymentMethodOnFile = errors.New("account has no payment method on file")
@@ -26,7 +26,7 @@ func (f PlanLookupFunc) FlatFeeForSubscription(
 
 // NewSubscriptionPlanLookup builds a PlanLookup backed by the real
 // subscription and plan modules, replacing the CreateDraftInvoice test stub.
-func NewSubscriptionPlanLookup(subscriptions *subscription.Service) PlanLookupFunc {
+func NewSubscriptionPlanLookup(subscriptions *subscriptionservice.Service) PlanLookupFunc {
 	return func(ctx context.Context, subscriptionID int64) (int64, money.Money, time.Time, time.Time, error) {
 		projection, err := subscriptions.BillingProjection(ctx, subscriptionID)
 		if err != nil {
@@ -47,9 +47,9 @@ func (f AccountLookupFunc) DefaultPaymentMethodID(ctx context.Context, accountID
 
 // NewAccountPaymentMethodLookup builds an AccountLookup backed by the real
 // account module, replacing the AttemptPayment test stub.
-func NewAccountPaymentMethodLookup(accounts *account.Service) AccountLookupFunc {
+func NewAccountPaymentMethodLookup(accounts *accountservice.Service) AccountLookupFunc {
 	return func(ctx context.Context, accountID int64) (string, error) {
-		acct, err := accounts.GetAccount(ctx, accountID)
+		acct, err := accounts.Get(ctx, accountID)
 		if err != nil {
 			return "", err
 		}

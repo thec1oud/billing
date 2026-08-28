@@ -9,6 +9,3 @@ ALTER TABLE plans
 
 ALTER TABLE plans
     DROP CONSTRAINT IF EXISTS chk_plan_version_positive;
-
-ALTER TABLE plans
-    DROP CONSTRAINT IF EXISTS uq_plan_code_version;
