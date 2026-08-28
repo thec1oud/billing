@@ -26,8 +26,6 @@ func (p LegacyPricePolicy) Valid() bool {
 	}
 }
 
-type PlanDurationCode string
-
 // Plan represents an immutable, versioned pricing entity.
 type Plan struct {
 	ID                    int64             `json:"plan_id"`
@@ -43,17 +41,13 @@ type Plan struct {
 	Durations []PlanDuration `json:"durations,omitempty"`
 }
 
-// PlanDuration represents a billing duration available for a plan.
-//
-// Each duration points to the tariff that should be used for that
-// particular duration.
 type PlanDuration struct {
-	ID        int64            `json:"plan_duration_id"`
-	PlanID    int64            `json:"plan_id"`
-	TariffID  int64            `json:"tariff_id"`
-	Duration  PlanDurationCode `json:"duration"`
-	IsActive  bool             `json:"is_active"`
-	CreatedAt time.Time        `json:"created_at"`
+	ID        int64         `json:"plan_duration_id"`
+	PlanID    int64         `json:"plan_id"`
+	TariffID  int64         `json:"tariff_id"`
+	Duration  time.Duration `json:"duration"`
+	IsActive  bool          `json:"is_active"`
+	CreatedAt time.Time     `json:"created_at"`
 }
 
 func (p Plan) Validate() error {
@@ -97,16 +91,8 @@ func (d PlanDuration) Validate() error {
 		return errors.New("tariff id must be greater than zero")
 	}
 
-	if err := d.Duration.Validate(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (d PlanDurationCode) Validate() error {
-	if d == "" {
-		return errors.New("plan duration is required")
+	if d.Duration <= 0 {
+		return errors.New("duration must be greater than zero")
 	}
 
 	return nil

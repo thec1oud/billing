@@ -49,6 +49,10 @@ func (m *mockRepository) GetByCodeAndVersion(
 	}, nil
 }
 
+func (m *mockRepository) GetByID(_ context.Context, id int64) (Tariff, error) {
+	return Tariff{ID: id}, nil
+}
+
 func (m *mockRepository) LatestVersion(
 	_ context.Context,
 	_ string,

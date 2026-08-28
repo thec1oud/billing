@@ -184,10 +184,6 @@ func validateTiers(
 // the current domain model. For tiered charging, the current implementation
 // models the graduated pricing behavior only.
 func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
-	if err := t.Validate(); err != nil {
-		return money.Money{}, err
-	}
-
 	switch t.TariffTypeCode {
 	case TariffTypeFlatFee:
 		return t.Amount, nil

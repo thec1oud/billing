@@ -462,6 +462,7 @@ func TestFire_ScriptedGuardAndScriptedActionParams_WorksEndToEnd(t *testing.T) {
 					{Seq: 1, ImplementationKind: model.GuardImplScript, Script: scriptedGuardSource, Params: json.RawMessage(`{"limit": 100}`)},
 				},
 				Actions: []loader.ActionBindingSpec{
+					//nolint:lll // Kept together for readability.
 					{Seq: 1, ActionName: "recording", ParamsKind: model.ParamsKindScript, ParamsScript: scriptedParamsSource, Mode: model.ActionModeSync, OnError: model.OnErrorAbort},
 				},
 			},

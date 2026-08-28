@@ -35,6 +35,7 @@ type Repository interface {
 		code string,
 		version int,
 	) (Plan, error)
+	GetByID(ctx context.Context, id int64) (Plan, error)
 
 	LatestVersion(
 		ctx context.Context,
@@ -51,10 +52,10 @@ type Repository interface {
 		id int64,
 	) (PlanDuration, error)
 
-	GetDurationByPlanAndCode(
+	GetDurationByPlanAndDuration(
 		ctx context.Context,
 		planID int64,
-		duration PlanDurationCode,
+		duration time.Duration,
 	) (PlanDuration, error)
 
 	ListDurations(
@@ -69,6 +70,20 @@ type Repository interface {
 		tariffID int64,
 		isActive bool,
 	) (PlanDuration, error)
+}
+
+func (r *PostgresRepository) GetByID(ctx context.Context, id int64) (Plan, error) {
+	if id <= 0 {
+		return Plan{}, errors.New("plan id must be greater than zero")
+	}
+	row, err := sqlcgen.New(r.pool).GetPlanByID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Plan{}, ErrPlanNotFound
+	}
+	if err != nil {
+		return Plan{}, fmt.Errorf("get plan by id: %w", err)
+	}
+	return toPlanModel(row), nil
 }
 
 type PostgresRepository struct {
@@ -149,7 +164,7 @@ func (r *PostgresRepository) CreateDuration(
 		sqlcgen.CreatePlanDurationParams{
 			PlanID:   duration.PlanID,
 			TariffID: duration.TariffID,
-			Duration: string(duration.Duration),
+			Duration: int64(duration.Duration),
 			IsActive: duration.IsActive,
 		},
 	)
@@ -253,10 +268,10 @@ func (r *PostgresRepository) GetDuration(
 	return toPlanDurationModel(row), nil
 }
 
-func (r *PostgresRepository) GetDurationByPlanAndCode(
+func (r *PostgresRepository) GetDurationByPlanAndDuration(
 	ctx context.Context,
 	planID int64,
-	duration PlanDurationCode,
+	duration time.Duration,
 ) (PlanDuration, error) {
 	q := sqlcgen.New(r.pool)
 
@@ -264,7 +279,7 @@ func (r *PostgresRepository) GetDurationByPlanAndCode(
 		ctx,
 		sqlcgen.GetPlanDurationByPlanAndDurationParams{
 			PlanID:   planID,
-			Duration: string(duration),
+			Duration: int64(duration),
 		},
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -386,7 +401,7 @@ func toPlanDurationModel(row sqlcgen.PlanDuration) PlanDuration {
 		ID:        row.PlanDurationID,
 		PlanID:    row.PlanID,
 		TariffID:  row.TariffID,
-		Duration:  PlanDurationCode(row.Duration),
+		Duration:  time.Duration(row.Duration),
 		IsActive:  row.IsActive,
 		CreatedAt: row.CreatedAt,
 	}

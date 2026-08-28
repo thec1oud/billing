@@ -56,6 +56,12 @@ FROM tariffs
 WHERE tariff_code = $1
   AND version = $2;
 
+-- name: GetTariffByID :one
+SELECT tariff_id, tariff_code, version, name, description, tariff_type_code,
+    amount, currency, tier_brackets, is_active, metadata, created_at
+FROM tariffs
+WHERE tariff_id = $1;
+
 
 -- name: GetLatestTariffVersion :one
 SELECT COALESCE(MAX(version), 0)::int

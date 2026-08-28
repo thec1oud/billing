@@ -17,6 +17,8 @@ import (
 
 // seedDefinition creates a minimal two-state, one-transition definition
 // (DRAFT --submit--> DONE) and returns its definitionID and transitionID.
+//
+//nolint:lll // Kept together for readability.
 func seedDefinition(t *testing.T, ctx context.Context, repo *repository.PostgresRepository, machineType model.MachineType) (definitionID, transitionID uuid.UUID) {
 	t.Helper()
 

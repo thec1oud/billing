@@ -210,7 +210,7 @@ func (s *Service) GetDuration(
 func (s *Service) GetDurationByPlanAndCode(
 	ctx context.Context,
 	planID int64,
-	duration PlanDurationCode,
+	duration time.Duration,
 ) (PlanDuration, error) {
 	if planID <= 0 {
 		return PlanDuration{}, errors.New(
@@ -218,7 +218,7 @@ func (s *Service) GetDurationByPlanAndCode(
 		)
 	}
 
-	result, err := s.repository.GetDurationByPlanAndCode(
+	result, err := s.repository.GetDurationByPlanAndDuration(
 		ctx,
 		planID,
 		duration,

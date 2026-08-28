@@ -33,7 +33,6 @@ import (
 )
 
 func main() {
-	fmt.Println("----> STARTING BILLING SERVICE <----")
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL ERROR: %v\n", err)
 		os.Exit(1)
@@ -66,17 +65,18 @@ func run() error {
 		return fmt.Errorf("infrastructure: %w", err)
 	}
 
-	// 4. Deferred resource teardown (LIFO order: Rabbit -> Redis -> Pool -> DB)
 	defer func() {
 		if deps.Rabbit != nil {
 			_ = deps.Rabbit.Close()
 		}
 	}()
+
 	defer func() {
 		if deps.Redis != nil {
 			_ = deps.Redis.Close()
 		}
 	}()
+
 	defer func() {
 		if deps.Pool != nil {
 			deps.Pool.Close()
@@ -88,7 +88,7 @@ func run() error {
 		}
 	}()
 
-	// 5. Run database migrations
+	// 4. Run database migrations
 	if err := database.RunMigrations(deps.DB); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
@@ -158,6 +158,25 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("HTTP Server Shutdown error", logger.Err(err))
 	}
+	slog.Info(
+		"All background services wired. Starting application layer...",
+		"port",
+		cfg.AppPort,
+	)
+
+	// 5. Block process until SIGINT/SIGTERM
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	// START YOUR SERVER / CONSUMER HERE
+
+	<-ctx.Done()
+
+	slog.Info("Shutting down billing service...")
 
 	log.Info("Billing service stopped successfully.")
 	return nil

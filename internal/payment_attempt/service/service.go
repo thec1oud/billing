@@ -21,7 +21,14 @@ type PaymentRepository interface {
 	GetByInternalTxID(ctx context.Context, db repository.DBTX, internalTxID string) (model.PaymentAttempt, error)
 	GetByProviderTxID(ctx context.Context, db repository.DBTX, providerTxID string) (model.PaymentAttempt, error)
 	GetPendingByInvoiceID(ctx context.Context, db repository.DBTX, invoiceID int64) (model.PaymentAttempt, error)
-	UpdateResult(ctx context.Context, db repository.DBTX, attemptID int64, status model.Status, providerTxID *string, rawResponse json.RawMessage) error
+	UpdateResult(
+		ctx context.Context,
+		db repository.DBTX,
+		attemptID int64,
+		status model.Status,
+		providerTxID *string,
+		rawResponse json.RawMessage,
+	) error
 	ListByInvoiceID(ctx context.Context, db repository.DBTX, invoiceID int64) ([]model.PaymentAttempt, error)
 	DeleteByAttemptID(ctx context.Context, db repository.DBTX, attemptID int64) error
 }

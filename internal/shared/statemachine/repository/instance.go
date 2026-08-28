@@ -77,6 +77,7 @@ func (r *PostgresRepository) GetInstanceByID(ctx context.Context, db DBTX, insta
 	return mapInstance(row), nil
 }
 
+//nolint:lll // Kept together for readability.
 func (r *PostgresRepository) GetInstanceBySubject(ctx context.Context, db DBTX, subjectType, subjectID string, machineType model.MachineType) (model.Instance, error) {
 	q := r.getQuerier(db)
 
@@ -148,6 +149,7 @@ type TransitionHistoryPending struct {
 	TriggeredBy   string
 }
 
+//nolint:lll // Kept together for readability.
 func (r *PostgresRepository) InsertTransitionHistoryPending(ctx context.Context, db DBTX, h TransitionHistoryPending) (historyID int64, occurredAt time.Time, err error) {
 	q := r.getQuerier(db)
 

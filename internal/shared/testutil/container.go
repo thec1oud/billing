@@ -49,7 +49,7 @@ func NewPostgresContainer(t *testing.T) *pgxpool.Pool {
 		postgres.WithPassword(dbPass),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
+				WithOccurrence(1).
 				WithStartupTimeout(30*time.Second),
 		),
 	)
@@ -71,7 +71,7 @@ func NewPostgresContainer(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("connect to test container for migrations: %v", err)
 	}
-	defer migrateConn.Close(ctx)
+	defer func() { _ = migrateConn.Close(ctx) }()
 
 	if err := database.RunMigrations(migrateConn); err != nil {
 		t.Fatalf("run migrations against test container: %v", err)
