@@ -2,8 +2,7 @@ package subscription
 
 import (
 	"context"
-
-	"github.com/google/uuid"
+	"strconv"
 
 	"github.com/thec1oud/billing/internal/plan"
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
@@ -36,13 +35,13 @@ func (r *Repository) Append(
 // its event stream.
 func (r *Repository) Get(
 	ctx context.Context,
-	subscriptionID uuid.UUID,
+	subscriptionID int64,
 ) (*Subscription, error) {
 
 	stream, err := r.store.ReadStream(
 		ctx,
 		events.AggregateSubscription,
-		subscriptionID.String(),
+		strconv.FormatInt(subscriptionID, 10),
 	)
 	if err != nil {
 		return nil, err
@@ -55,7 +54,7 @@ func (r *Repository) Get(
 // Invoice Engine to generate invoice line items.
 func (r *Repository) BillingProjection(
 	ctx context.Context,
-	subscriptionID uuid.UUID,
+	subscriptionID int64,
 	planRepository plan.Repository,
 ) (*BillingProjection, error) {
 
@@ -74,8 +73,8 @@ func (r *Repository) BillingProjection(
 	}
 
 	return &BillingProjection{
-		SubscriptionID: subscription.SubscriptionID.String(),
-		AccountID:      subscription.AccountID.String(),
+		SubscriptionID: subscription.SubscriptionID,
+		AccountID:      subscription.AccountID,
 
 		PlanID:      selectedPlan.PlanCode,
 		PlanVersion: selectedPlan.Version,

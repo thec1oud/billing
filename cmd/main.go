@@ -12,12 +12,6 @@ import (
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
 	"github.com/thec1oud/billing/internal/infra/logger"
-	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
-	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
-	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
-	"github.com/thec1oud/billing/internal/shared/statemachine/repository"
-	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
-	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
 )
 
 func main() {

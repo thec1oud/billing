@@ -3,8 +3,6 @@ package account
 import (
 	"encoding/json"
 
-	"github.com/google/uuid"
-
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 )
 
@@ -16,7 +14,7 @@ const (
 
 // Account is the Account aggregate.
 type Account struct {
-	AccountID      uuid.UUID
+	AccountID      int64
 	Status         Status
 	Currency       string
 	Timezone       string

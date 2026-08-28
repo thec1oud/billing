@@ -3,17 +3,18 @@ package subscription
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"sync/atomic"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/thec1oud/billing/internal/account"
 	"github.com/thec1oud/billing/internal/plan"
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 	"github.com/thec1oud/billing/internal/shared/idempotency"
 	"github.com/thec1oud/billing/internal/shared/timeutil"
-	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 )
+
+var nextSubscriptionID atomic.Int64
 
 type Service struct {
 	repository        *Repository
@@ -48,7 +49,7 @@ func NewService(
 //   - Cancellation
 func (s *Service) CreateSubscription(
 	ctx context.Context,
-	accountID uuid.UUID,
+	accountID int64,
 	planID string,
 	idempotencyKey string,
 ) (*Subscription, error) {
@@ -58,10 +59,9 @@ func (s *Service) CreateSubscription(
 	//------------------------------------------------------------------
 
 	requestHash := idempotency.HashRequest(
-		[]byte(fmt.Sprintf("%s:%s", accountID.String(), planID)),
+		[]byte(fmt.Sprintf("%d:%s", accountID, planID)),
 	)
 
-	// Replace Line 64 with:
 	return idempotency.Execute(
 		ctx,
 		s.idem,
@@ -83,7 +83,7 @@ func (s *Service) CreateSubscription(
 			}
 
 			if acc == nil {
-				return nil, fmt.Errorf("account %s not found", accountID)
+				return nil, fmt.Errorf("account %d not found", accountID)
 			}
 
 			//------------------------------------------------------------------
@@ -138,10 +138,7 @@ func (s *Service) CreateSubscription(
 			// Create Aggregate ID
 			//------------------------------------------------------------------
 
-			subscriptionID, err := sharedUUID.New()
-			if err != nil {
-				return nil, err
-			}
+			subscriptionID := nextSubscriptionID.Add(1)
 
 			//------------------------------------------------------------------
 			// Build Event Payload
@@ -165,7 +162,7 @@ func (s *Service) CreateSubscription(
 				ctx,
 				events.AppendRequest{
 					AggregateType: events.AggregateSubscription,
-					AggregateID:   subscriptionID.String(),
+					AggregateID:   strconv.FormatInt(subscriptionID, 10),
 					Sequence:      1,
 					EventType:     events.SubscriptionCreated,
 					EventVersion:  1,
@@ -193,6 +190,6 @@ func (s *Service) CreateSubscription(
 		})
 }
 
-func (s *Service) BillingProjection(ctx context.Context, subscriptionID uuid.UUID) (*BillingProjection, error) {
+func (s *Service) BillingProjection(ctx context.Context, subscriptionID int64) (*BillingProjection, error) {
 	return s.repository.BillingProjection(ctx, subscriptionID, s.planRepository)
 }

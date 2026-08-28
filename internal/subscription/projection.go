@@ -11,8 +11,8 @@ import (
 // to generate invoice line items.
 type BillingProjection struct {
 	// Subscription identity
-	SubscriptionID string
-	AccountID      string
+	SubscriptionID int64
+	AccountID      int64
 
 	// Selected immutable plan
 	PlanID      string

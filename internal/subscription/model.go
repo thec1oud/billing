@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/google/uuid"
-
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 )
 
@@ -21,8 +19,8 @@ const (
 // Future milestones will introduce PAUSED, CANCELLED,
 // EXPIRED, TRIALING, etc.
 type Subscription struct {
-	SubscriptionID     uuid.UUID
-	AccountID          uuid.UUID
+	SubscriptionID     int64
+	AccountID          int64
 	PlanID             string
 	PlanVersion        int
 	Status             Status

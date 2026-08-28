@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/thec1oud/billing/internal/account"
@@ -28,7 +29,7 @@ func TestWalkingSkeleton_EndToEnd(t *testing.T) {
 		t.Fatalf("add payment method: %v", err)
 	}
 
-	accountStream, err := store.ReadStream(ctx, events.AggregateAccount, acct.AccountID.String())
+	accountStream, err := store.ReadStream(ctx, events.AggregateAccount, strconv.FormatInt(acct.AccountID, 10))
 	if err != nil {
 		t.Fatalf("read account stream: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestWalkingSkeleton_ReplayDetectsDrift(t *testing.T) {
 		t.Fatalf("add payment method: %v", err)
 	}
 
-	accountStream, err := store.ReadStream(ctx, events.AggregateAccount, acct.AccountID.String())
+	accountStream, err := store.ReadStream(ctx, events.AggregateAccount, strconv.FormatInt(acct.AccountID, 10))
 	if err != nil {
 		t.Fatalf("read account stream: %v", err)
 	}

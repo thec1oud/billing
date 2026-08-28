@@ -3,14 +3,15 @@ package account
 import (
 	"context"
 	"fmt"
-
-	"github.com/google/uuid"
+	"strconv"
+	"sync/atomic"
 
 	"github.com/thec1oud/billing/internal/ppi/adapters"
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 	"github.com/thec1oud/billing/internal/shared/idempotency"
-	sharedUUID "github.com/thec1oud/billing/internal/shared/uuid"
 )
+
+var nextAccountID atomic.Int64
 
 type Service struct {
 	repository *Repository
@@ -27,10 +28,6 @@ func NewService(
 	}
 }
 
-// CreateAccount creates a new billing account.
-//
-// Milestone 1 deliberately skips the PENDING_VERIFICATION state.
-// Every account becomes ACTIVE immediately.
 func (s *Service) CreateAccount(
 	ctx context.Context,
 	currency string,
@@ -42,10 +39,7 @@ func (s *Service) CreateAccount(
 	)
 
 	return idempotency.Execute(ctx, s.idem, idempotencyKey, "account.create", requestHash, func() (*Account, error) {
-		accountID, err := sharedUUID.New()
-		if err != nil {
-			return nil, err
-		}
+		accountID := nextAccountID.Add(1)
 
 		event := AccountCreated{
 			AccountID: accountID,
@@ -53,9 +47,9 @@ func (s *Service) CreateAccount(
 			Timezone:  timezone,
 		}
 
-		err = s.repository.Append(ctx, events.AppendRequest{
+		err := s.repository.Append(ctx, events.AppendRequest{
 			AggregateType: events.AggregateAccount,
-			AggregateID:   accountID.String(),
+			AggregateID:   strconv.FormatInt(accountID, 10),
 			Sequence:      1,
 			EventType:     events.AccountCreated,
 			EventVersion:  1,
@@ -72,7 +66,7 @@ func (s *Service) CreateAccount(
 
 func (s *Service) AddPaymentMethod(
 	ctx context.Context,
-	accountID uuid.UUID,
+	accountID int64,
 	paymentMethodID string,
 ) (*Account, error) {
 	if _, ok := adapters.MockPaymentMethods[paymentMethodID]; !ok {
@@ -93,7 +87,7 @@ func (s *Service) AddPaymentMethod(
 
 	err = s.repository.Append(ctx, events.AppendRequest{
 		AggregateType: events.AggregateAccount,
-		AggregateID:   accountID.String(),
+		AggregateID:   strconv.FormatInt(accountID, 10),
 		Sequence:      nextSequence,
 		EventType:     events.PaymentMethodAdded,
 		EventVersion:  1,
@@ -108,6 +102,6 @@ func (s *Service) AddPaymentMethod(
 
 }
 
-func (s *Service) GetAccount(ctx context.Context, accountID uuid.UUID) (*Account, error) {
+func (s *Service) GetAccount(ctx context.Context, accountID int64) (*Account, error) {
 	return s.repository.Get(ctx, accountID)
 }

@@ -2,8 +2,7 @@ package account
 
 import (
 	"context"
-
-	"github.com/google/uuid"
+	"strconv"
 
 	events "github.com/thec1oud/billing/internal/shared/eventstore"
 )
@@ -34,13 +33,13 @@ func (r *Repository) Append(
 // Get rebuilds an Account aggregate by replaying its event stream.
 func (r *Repository) Get(
 	ctx context.Context,
-	accountID uuid.UUID,
+	accountID int64,
 ) (*Account, error) {
 
 	stream, err := r.store.ReadStream(
 		ctx,
 		events.AggregateAccount,
-		accountID.String(),
+		strconv.FormatInt(accountID, 10),
 	)
 	if err != nil {
 		return nil, err

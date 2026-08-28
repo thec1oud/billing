@@ -48,7 +48,7 @@ func TestCreateAccountAndReadProjection(t *testing.T) {
 
 	if projected.AccountID != account.AccountID {
 		t.Fatalf(
-			"expected account id %s, got %s",
+			"expected account id %d, got %d",
 			account.AccountID,
 			projected.AccountID,
 		)
