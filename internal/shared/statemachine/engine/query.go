@@ -66,3 +66,9 @@ func (e *Engine) AvailableEvents(ctx context.Context, instanceID uuid.UUID) ([]m
 
 	return def.EventsFrom(instance.CurrentState), nil
 }
+
+// GetInstanceBySubject resolves a running or completed instance by its subject mapping.
+func (e *Engine) GetInstanceBySubject(ctx context.Context, subjectType, subjectID string, machineType model.MachineType) (model.Instance, error) {
+	return e.repo.GetInstanceBySubject(ctx, nil, subjectType, subjectID, machineType)
+}
+

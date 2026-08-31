@@ -14,6 +14,7 @@ import (
 
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
+	CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error)
 	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error)
 	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (CreateAccountRow, error)
@@ -40,6 +41,7 @@ type Querier interface {
 	GetInvoice(ctx context.Context, invoiceID int64) (GetInvoiceRow, error)
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
 	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
+	GetPPIWebhookByID(ctx context.Context, webhookID string) (PpiWebhook, error)
 	GetPaymentAttemptByID(ctx context.Context, attemptID int64) (PaymentAttempt, error)
 	GetPaymentAttemptByInternalTxID(ctx context.Context, internalTxID string) (PaymentAttempt, error)
 	GetPaymentAttemptByProviderTxID(ctx context.Context, providerTxID pgtype.Text) (PaymentAttempt, error)
@@ -68,6 +70,8 @@ type Querier interface {
 	ListPaymentMethodReferences(ctx context.Context, accountID int64) ([]string, error)
 	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
 	ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error)
+	ListPlans(ctx context.Context) ([]Plan, error)
+	ListPurchasableItems(ctx context.Context) ([]PurchasableItem, error)
 	ListStatesByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmState, error)
 	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
 	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
@@ -76,6 +80,7 @@ type Querier interface {
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) error
 	MarkOutboxPublished(ctx context.Context, outboxID int64) error
 	MarkOutboxRetry(ctx context.Context, arg MarkOutboxRetryParams) error
+	MarkPPIWebhookPublished(ctx context.Context, webhookID string) error
 	MarkScheduleFailed(ctx context.Context, arg MarkScheduleFailedParams) error
 	MarkScheduleFired(ctx context.Context, scheduleID uuid.UUID) error
 	MarkScheduleRetry(ctx context.Context, arg MarkScheduleRetryParams) error
@@ -83,6 +88,7 @@ type Querier interface {
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
 	ReapStuckOutbox(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
 	ReapStuckSchedules(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
+	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
 	UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error
 	UpdateInstanceState(ctx context.Context, arg UpdateInstanceStateParams) (int64, error)
 	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error

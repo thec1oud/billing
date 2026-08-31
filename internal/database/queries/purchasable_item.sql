@@ -57,3 +57,17 @@ SELECT
     created_at
 FROM purchasable_items
 WHERE item_code = $1;
+
+-- name: ListPurchasableItems :many
+SELECT
+    item_id,
+    item_code,
+    item_type_code,
+    name,
+    description,
+    plan_id,
+    is_active,
+    metadata,
+    created_at
+FROM purchasable_items
+ORDER BY item_id DESC;

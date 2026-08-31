@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	"github.com/thec1oud/billing/internal/invoice/model"
 	invoicerepo "github.com/thec1oud/billing/internal/invoice/repository"
 	invoiceservice "github.com/thec1oud/billing/internal/invoice/service"
@@ -13,6 +14,10 @@ import (
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
+	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
+	sm_repo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 )
 
@@ -27,7 +32,18 @@ func TestService_CreateDraftInvoice_Validation(t *testing.T) {
 	eStore := eventrepo.NewPostgresEventStore(pool)
 	eSvc := eventservice.NewService(eStore)
 	repo := invoicerepo.NewPostgresRepository(pool)
-	svc := invoiceservice.NewService(pool, eSvc, nil, repo)
+
+	smRegistry := registry.New()
+	smRepo := sm_repo.NewPostgresRepository(pool)
+	smEngine := engine.NewEngine(pool, smRepo, smRegistry)
+
+	statemachine.RegisterStateMachineActions(smRegistry, repo)
+	_, err = loader.Publish(ctx, pool, smRepo, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		t.Fatalf("failed to publish spec: %v", err)
+	}
+
+	svc := invoiceservice.NewService(pool, eSvc, nil, repo, smEngine)
 
 	actor := eventmodel.Actor{Type: "USER", ID: "usr_test"}
 	usd := money.Currency("USD")
@@ -72,7 +88,18 @@ func TestService_DraftAndFinalize_Lifecycle(t *testing.T) {
 	eStore := eventrepo.NewPostgresEventStore(pool)
 	eSvc := eventservice.NewService(eStore)
 	repo := invoicerepo.NewPostgresRepository(pool)
-	svc := invoiceservice.NewService(pool, eSvc, nil, repo)
+
+	smRegistry := registry.New()
+	smRepo := sm_repo.NewPostgresRepository(pool)
+	smEngine := engine.NewEngine(pool, smRepo, smRegistry)
+
+	statemachine.RegisterStateMachineActions(smRegistry, repo)
+	_, err = loader.Publish(ctx, pool, smRepo, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		t.Fatalf("failed to publish spec: %v", err)
+	}
+
+	svc := invoiceservice.NewService(pool, eSvc, nil, repo, smEngine)
 
 	actor := eventmodel.Actor{Type: "SYSTEM", ID: "billing_test"}
 	accountID := int64(1)

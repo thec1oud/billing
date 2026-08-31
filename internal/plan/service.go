@@ -183,6 +183,20 @@ func (s *Service) ListVersions(
 	return plans, nil
 }
 
+func (s *Service) ListAll(
+	ctx context.Context,
+) ([]Plan, error) {
+	plans, err := s.repository.ListAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list all plans: %w",
+			err,
+		)
+	}
+
+	return plans, nil
+}
+
 func (s *Service) GetDuration(
 	ctx context.Context,
 	id int64,

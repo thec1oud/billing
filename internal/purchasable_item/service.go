@@ -71,3 +71,9 @@ func (s *Service) GetByCode(
 
 	return s.repository.GetByCode(ctx, code)
 }
+
+func (s *Service) ListAll(
+	ctx context.Context,
+) ([]PurchasableItem, error) {
+	return s.repository.ListAll(ctx)
+}

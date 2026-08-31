@@ -140,3 +140,48 @@ func (q *Queries) GetPurchasableItemByID(ctx context.Context, itemID int64) (Pur
 	)
 	return i, err
 }
+
+const listPurchasableItems = `-- name: ListPurchasableItems :many
+SELECT
+    item_id,
+    item_code,
+    item_type_code,
+    name,
+    description,
+    plan_id,
+    is_active,
+    metadata,
+    created_at
+FROM purchasable_items
+ORDER BY item_id DESC
+`
+
+func (q *Queries) ListPurchasableItems(ctx context.Context) ([]PurchasableItem, error) {
+	rows, err := q.db.Query(ctx, listPurchasableItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PurchasableItem
+	for rows.Next() {
+		var i PurchasableItem
+		if err := rows.Scan(
+			&i.ItemID,
+			&i.ItemCode,
+			&i.ItemTypeCode,
+			&i.Name,
+			&i.Description,
+			&i.PlanID,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

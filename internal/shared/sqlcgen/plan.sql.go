@@ -345,6 +345,51 @@ func (q *Queries) ListPlanVersions(ctx context.Context, planCode string) ([]Plan
 	return items, nil
 }
 
+const listPlans = `-- name: ListPlans :many
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+ORDER BY plan_id DESC
+`
+
+func (q *Queries) ListPlans(ctx context.Context) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, listPlans)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.PlanID,
+			&i.PlanCode,
+			&i.Version,
+			&i.EffectiveFrom,
+			&i.EffectiveUntil,
+			&i.LegacyPricePolicyCode,
+			&i.MigrationPath,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updatePlanDurationTariff = `-- name: UpdatePlanDurationTariff :one
 UPDATE plan_durations
 SET

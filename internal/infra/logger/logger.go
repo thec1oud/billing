@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/lmittmann/tint"
 	"github.com/thec1oud/billing/internal/config"
 )
 
@@ -74,7 +76,11 @@ func InitGlobalLogger(cfg *config.Config) ([]io.Closer, error) {
 	if strings.EqualFold(cfg.AppEnv, "production") {
 		handler = slog.NewJSONHandler(combinedWriter, opts)
 	} else {
-		handler = slog.NewTextHandler(combinedWriter, opts)
+		handler = tint.NewHandler(combinedWriter, &tint.Options{
+			Level:      opts.Level,
+			TimeFormat: time.RFC3339,
+			AddSource:  opts.AddSource,
+		})
 	}
 
 	logger := slog.New(handler)
@@ -92,4 +98,14 @@ func InitGlobalLogger(cfg *config.Config) ([]io.Closer, error) {
 	)
 
 	return closers, nil
+}
+
+// Err returns a standardized error attribute for all error cases.
+func Err(err error) slog.Attr {
+	return slog.Any("error", err)
+}
+
+// ForComponent creates a child logger tagged with the submodule name.
+func ForComponent(name string) *slog.Logger {
+	return slog.Default().With(slog.String("component", name))
 }

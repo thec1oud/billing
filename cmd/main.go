@@ -4,25 +4,43 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
-	accountrepository "github.com/thec1oud/billing/internal/account/repository"
-	accountservice "github.com/thec1oud/billing/internal/account/service"
-	"github.com/thec1oud/billing/internal/api"
+	"github.com/jackc/pgx/v5/pgxpool"
+	accountRepo "github.com/thec1oud/billing/internal/account/repository"
+	accountSvc "github.com/thec1oud/billing/internal/account/service"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
+	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	"github.com/thec1oud/billing/internal/infra/messaging"
+	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
+	invoiceSvc "github.com/thec1oud/billing/internal/invoice/service"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
+	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
+	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/plan"
-	eventrepository "github.com/thec1oud/billing/internal/shared/eventstore/repository"
-	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
-	subscriptionrepository "github.com/thec1oud/billing/internal/subscription/repository"
-	subscriptionservice "github.com/thec1oud/billing/internal/subscription/service"
+	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
+	"github.com/thec1oud/billing/internal/ppi/repository"
+	"github.com/thec1oud/billing/internal/ppi/service"
+	"github.com/thec1oud/billing/internal/purchasable_item"
+	eventRepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventSvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
+	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
+	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
+	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
+	subRepo "github.com/thec1oud/billing/internal/subscription/repository"
+	subSvc "github.com/thec1oud/billing/internal/subscription/service"
 	"github.com/thec1oud/billing/internal/tariff"
 )
 
@@ -71,42 +89,175 @@ func run() error {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	port, err := strconv.Atoi(cfg.AppPort)
-	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("invalid APP_PORT %q", cfg.AppPort)
-	}
-	accountRepo := accountrepository.New(deps.Pool)
-	events := eventservice.NewService(eventrepository.NewPostgresEventStore(deps.Pool))
-	router := api.NewRouter(api.Services{
-		Accounts: accountservice.NewWithEvents(accountRepo, events),
-		Subscriptions: subscriptionservice.New(
-			subscriptionrepository.New(deps.Pool),
-			accountRepo,
-			plan.NewPostgresRepository(deps.Pool),
-			tariff.NewPostgresRepository(deps.Pool),
-		),
-	})
-	server := api.NewServer(port, router)
-	errCh := make(chan error, 1)
-	go func() {
-		if err := server.Start(); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		}
-	}()
-	slog.Info("billing HTTP server started", "port", port)
-
-	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// 6. Block process until SIGINT/SIGTERM for background contexts
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	select {
-	case <-signalCtx.Done():
-	case err := <-errCh:
-		return fmt.Errorf("http server: %w", err)
+
+	// 7. Wire the state machine engine's background workers.
+	smRegistry := registry.New()
+	smRepository := smRepo.NewPostgresRepository(deps.Pool)
+	smEngine := engine.NewEngine(deps.Pool, smRepository, smRegistry, engine.WithScripting(scripting.NewPool(0, 0)))
+
+	// Register invoice state machine actions & publish definition spec
+	invoiceRepository := invoiceRepo.NewPostgresRepository(deps.Pool)
+	statemachine.RegisterStateMachineActions(smRegistry, invoiceRepository)
+
+	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		return fmt.Errorf("failed to bootstrap invoice state machine: %w", err)
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	smPublisher := outbox.NewPublisher(deps.Pool, smRepository, smRegistry, outbox.Config{})
+	smPublisher.Start(sigCtx)
+	defer smPublisher.Stop()
+
+	smScheduler := scheduler.NewPoller(smEngine, smRepository, scheduler.Config{})
+	smScheduler.Start(sigCtx)
+	defer smScheduler.Stop()
+
+	// 8. Initialize Messaging Broker Topology
+	rabbitBroker, err := messaging.NewRabbitBroker(deps.Rabbit)
+	if err != nil {
+		return fmt.Errorf("messaging broker: %w", err)
+	}
+	if err := rabbitBroker.InitTopology(ctx); err != nil {
+		return fmt.Errorf("broker topology init: %w", err)
+	}
+	defer rabbitBroker.Close()
+
+	// 9. Initialize Payment Attempt Repository & Service
+	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
+	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
+
+	// 10. Initialize PPI Webhook Repository & Service
+	ppiRepo := repository.NewPostgresRepository()
+	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
+	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+
+	// 10.5 Initialize Core Domain Services
+	accountRepository := accountRepo.New(deps.Pool)
+	accountService := accountSvc.New(accountRepository)
+
+	planRepository := plan.NewPostgresRepository(deps.Pool)
+	planService := plan.NewService(planRepository)
+
+	tariffRepository := tariff.NewPostgresRepository(deps.Pool)
+	tariffService := tariff.NewService(tariffRepository)
+
+	purchasableItemRepository := purchasable_item.NewPostgresRepository(deps.Pool)
+	purchasableItemService := purchasable_item.NewService(purchasableItemRepository)
+
+	subscriptionRepository := subRepo.New(deps.Pool)
+	subscriptionService := subSvc.New(subscriptionRepository, accountRepository, planRepository, tariffRepository)
+
+	eventRepository := eventRepo.NewPostgresEventStore(deps.Pool)
+	eventService := eventSvc.NewService(eventRepository)
+
+	invoiceService := invoiceSvc.NewService(deps.Pool, eventService, ppiService, invoiceRepository, smEngine)
+
+	if os.Getenv("SEED_DB") == "true" {
+		if err := SeedCatalog(ctx, deps.Pool, planService, tariffService, purchasableItemService); err != nil {
+			return fmt.Errorf("failed to seed catalog: %w", err)
+		}
+	}
+
+	// 11. Configure & Start HTTP Server
+	srv := api.NewServer(cfg, api.Deps{
+		PPIService:             ppiService,
+		Broker:                 rabbitBroker,
+		AccountService:         accountService,
+		PlanService:            planService,
+		PurchasableItemService: purchasableItemService,
+		SubscriptionService:    subscriptionService,
+		InvoiceService:         invoiceService,
+	})
+	srv.Start()
+
+	// Set up component logger for the main process
+	log := logger.ForComponent("main")
+	log.Info("All background services wired successfully. Application layer online.", slog.String("port", cfg.AppPort))
+
+	<-sigCtx.Done()
+	log.Info("Shutting down billing service gracefully...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown http server: %w", err)
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("HTTP Server Shutdown error", logger.Err(err))
 	}
-	slog.Info("billing service shut down")
+	log.Info("Billing service stopped successfully.")
+	return nil
+}
+
+func SeedCatalog(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	planSvc *plan.Service,
+	tariffSvc *tariff.Service,
+	itemSvc *purchasable_item.Service,
+) error {
+	log := logger.ForComponent("seeder")
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	amt, _ := money.New(1000, "ETB") // 10.00 ETB per unit
+
+	t, err := tariffSvc.CreateTariff(
+		ctx,
+		tx,
+		"STANDARD_USAGE_V1",
+		"Standard Usage Pricing",
+		"Standard per-unit pricing",
+		tariff.TariffTypeFlatFee,
+		amt,
+		nil,
+		nil,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			log.Info("Catalog already seeded")
+			return nil
+		}
+		return fmt.Errorf("create tariff: %w", err)
+	}
+
+	p, err := planSvc.CreatePlan(ctx, tx, plan.Plan{
+		PlanCode:              "USAGE_PLAN_A",
+		LegacyPricePolicyCode: plan.LegacyPolicyKeepForever,
+	})
+	if err != nil {
+		return fmt.Errorf("create plan: %w", err)
+	}
+
+	_, err = planSvc.CreatePlanDuration(ctx, tx, plan.PlanDuration{
+		PlanID:   p.ID,
+		TariffID: t.ID,
+		Duration: 30 * 24 * time.Hour,
+	})
+	if err != nil {
+		return fmt.Errorf("create plan duration: %w", err)
+	}
+
+	_, err = itemSvc.Create(ctx, tx, purchasable_item.PurchasableItem{
+		ItemCode:     "API_REQUEST_1K",
+		ItemTypeCode: purchasable_item.ItemTypePlan,
+		Name:         "API Requests (per 1k)",
+		PlanID:       &p.ID,
+		IsActive:     true,
+	})
+	if err != nil {
+		return fmt.Errorf("create item: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit seed tx: %w", err)
+	}
+
+	log.Info("Successfully seeded DB with reference catalog (tariffs, plans, items).")
 	return nil
 }
