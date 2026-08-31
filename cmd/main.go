@@ -260,9 +260,9 @@ func SeedCatalog(
 	}
 
 	_, err = itemSvc.Create(ctx, tx, purchasable_item.PurchasableItem{
-		ItemCode:     "API_REQUEST_1K",
+		ItemCode:     "API_REQUEST",
 		ItemTypeCode: purchasable_item.ItemTypePlan,
-		Name:         "API Requests (per 1k)",
+		Name:         "API Requests",
 		PlanID:       &p.ID,
 		IsActive:     true,
 	})
