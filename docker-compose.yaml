@@ -8,6 +8,7 @@ services:
     ports:
       - "${APP_PORT:-8080}:${APP_PORT:-8080}"
     environment:
+      - SEED_DB=${SEED_DB}
       - APP_ENV=${APP_ENV}
       - APP_PORT=${APP_PORT}
       - DB_HOST=${DB_HOST}
