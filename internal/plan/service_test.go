@@ -107,6 +107,16 @@ func (f *fakePlanRepository) ListVersions(
 	return f.plans, nil
 }
 
+func (f *fakePlanRepository) ListAll(
+	_ context.Context,
+) ([]Plan, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	return f.plans, nil
+}
+
 func (f *fakePlanRepository) GetDuration(
 	_ context.Context,
 	id int64,
