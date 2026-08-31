@@ -53,14 +53,10 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-
-	// 1. Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-
-	// 2. Initialize global logger FIRST so all downstream logs use the configured pipeline
 	logClosers, err := logger.InitGlobalLogger(cfg)
 	if err != nil {
 		return fmt.Errorf("logger: %w", err)
@@ -71,36 +67,24 @@ func run() error {
 		}
 	}()
 
-	// 3. Initialize infrastructural dependencies
 	deps, err := infra.InitDependencies(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("infrastructure: %w", err)
 	}
-
 	defer func() {
 		if deps.Rabbit != nil {
 			_ = deps.Rabbit.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Redis != nil {
 			_ = deps.Redis.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Pool != nil {
 			deps.Pool.Close()
 		}
-	}()
-	defer func() {
 		if deps.DB != nil {
 			_ = deps.DB.Close(ctx)
 		}
 	}()
-
-	// 4. Run database migrations
 	if err := database.RunMigrations(deps.DB); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}

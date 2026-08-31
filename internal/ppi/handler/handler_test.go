@@ -13,6 +13,7 @@ import (
 	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/handler"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type mockBroker struct {
@@ -80,6 +81,10 @@ func (s *mockService) ProcessWebhook(ctx context.Context, payload ppi.ProviderWe
 func (s *mockService) MarkWebhookPublished(ctx context.Context, webhookID string) error {
 	s.published[webhookID] = true
 	return nil
+}
+
+func (s *mockService) ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+	return ppi.ChargeResult{}, nil
 }
 
 func TestWebhookHandler_SuccessFlow(t *testing.T) {

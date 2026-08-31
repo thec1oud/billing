@@ -19,6 +19,7 @@ var (
 	ErrNotFound               = errors.New("account not found")
 	ErrInvalidStateTransition = errors.New("invalid account state transition")
 	ErrClosed                 = errors.New("account is closed")
+	ErrDuplicateExternalID    = errors.New("account external id already exists")
 )
 
 // Account is a database-backed account. AccountID is a PostgreSQL BIGINT identity.

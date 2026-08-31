@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,25 +13,42 @@ import (
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/ppi"
-	"github.com/thec1oud/billing/internal/ppi/service"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 var log = logger.ForComponent("ppi_handler")
 
+type PPIService interface {
+	GetAdapter(providerCode string) (ppi.Provider, bool)
+	ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) (bool, error)
+	MarkWebhookPublished(ctx context.Context, webhookID string) error
+	ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error)
+}
+
+type WebhookService = PPIService
+
 type PPIHandler struct {
-	svc    *service.Service
+	svc    PPIService
 	broker messaging.Broker
 }
 
+type WebhookHandler = PPIHandler
+
 func NewPPIHandler(
-	svc *service.Service,
+	svc PPIService,
 	broker messaging.Broker,
 ) *PPIHandler {
 	return &PPIHandler{
 		svc:    svc,
 		broker: broker,
 	}
+}
+
+func NewWebhookHandler(
+	svc PPIService,
+	broker messaging.Broker,
+) *PPIHandler {
+	return NewPPIHandler(svc, broker)
 }
 
 type AttemptPaymentRequest struct {
