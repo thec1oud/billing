@@ -1,6 +1,14 @@
-import React, { useState } from 'react'
-import { Account, Invoice, LineItem, CreateDraftInvoiceInput } from '../types/api'
+import React, { useState, useEffect } from 'react'
+import { Account, Invoice, CreateDraftInvoiceInput } from '../types/api'
 import { billingApi } from '../services/apiClient'
+
+// Form input state interface used strictly inside the component UI
+interface FormLineItem {
+  item_id: number
+  description: string
+  quantity: number
+  unit_price_minor: number
+}
 
 interface InvoicesTabProps {
   accounts: Account[]
@@ -15,9 +23,19 @@ export const InvoicesTab: React.FC<InvoicesTabProps> = ({
   onInvoiceCreated,
   onInvoiceUpdated,
 }) => {
-  const [accountId, setAccountId] = useState<number>(accounts[0]?.id || 1)
+  const [accountId, setAccountId] = useState<number>(accounts[0]?.id || 0)
+
+  // accounts starts empty and fills in as the user creates them elsewhere
+  // in the app; keep the selection pointed at a real account instead of
+  // a stale placeholder id, which would otherwise 500 on a foreign-key
+  // violation when POSTing the draft invoice.
+  useEffect(() => {
+    if (accounts.length > 0 && !accounts.some((a) => a.id === accountId)) {
+      setAccountId(accounts[0].id)
+    }
+  }, [accounts])
   const [currency, setCurrency] = useState<string>('ETB')
-  const [lines, setLines] = useState<LineItem[]>([
+  const [lines, setLines] = useState<FormLineItem[]>([
     { item_id: 1, description: 'API Requests (1,000 units)', quantity: 2, unit_price_minor: 5000 },
   ])
   const [loading, setLoading] = useState(false)
@@ -38,7 +56,7 @@ export const InvoicesTab: React.FC<InvoicesTabProps> = ({
     setLines(lines.filter((_, i) => i !== index))
   }
 
-  const handleLineChange = (index: number, field: keyof LineItem, value: any) => {
+  const handleLineChange = (index: number, field: keyof FormLineItem, value: any) => {
     const next = [...lines]
     next[index] = { ...next[index], [field]: value }
     setLines(next)
@@ -46,19 +64,41 @@ export const InvoicesTab: React.FC<InvoicesTabProps> = ({
 
   const handleCreateDraft = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!accountId) {
+      setError('Create an account first — there is no account to bill this invoice to.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
+      // Maps the frontend form state to match Go's model.CreateDraftInput & model.LineItem
       const input: CreateDraftInvoiceInput = {
         account_id: Number(accountId),
-        currency,
-        line_items: lines.map((l) => ({
-          item_id: Number(l.item_id),
-          description: l.description,
-          quantity: Number(l.quantity),
-          unit_price_minor: Number(l.unit_price_minor),
-        })),
+        currency: currency,
+        line_items: lines.map((l) => {
+          const qty = Number(l.quantity)
+          const unitPrice = Number(l.unit_price_minor)
+          const totalMinor = qty * unitPrice
+
+          return {
+            item_id: Number(l.item_id),
+            description: l.description,
+            quantity_value: qty,
+            quantity_unit: 'unit',
+            unit_amount: {
+              amount: unitPrice,
+              amount_minor: unitPrice,
+              currency: currency,
+            },
+            total_amount: {
+              amount: totalMinor,
+              amount_minor: totalMinor,
+              currency: currency,
+            },
+          }
+        }),
       }
+
       const res = await billingApi.createDraftInvoice(input)
       onInvoiceCreated(res.data)
     } catch (err: any) {

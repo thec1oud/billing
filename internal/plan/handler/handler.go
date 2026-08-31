@@ -25,8 +25,7 @@ func (h *PlanHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	plans, err := h.svc.ListAll(ctx)
 	if err != nil {
-		log.Error("Failed to list plans", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to list plans")
+		response.WriteError(w, log, "Failed to list plans", err)
 		return
 	}
 

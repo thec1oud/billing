@@ -34,8 +34,7 @@ func (h *SubscriptionHandler) HandleCreate(w http.ResponseWriter, r *http.Reques
 
 	subscription, err := h.svc.Create(ctx, input)
 	if err != nil {
-		log.Error("Failed to create subscription", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to create subscription")
+		response.WriteError(w, log, "Failed to create subscription", err)
 		return
 	}
 

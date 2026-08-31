@@ -144,11 +144,22 @@ export const E2EFlowTab: React.FC<E2EFlowTabProps> = ({
           {
             item_id: 1,
             description: 'Usage & Compute Package',
-            quantity: 2,
-            unit_price_minor: 5000,
+            quantity_value: 2,
+            quantity_unit: 'unit',
+            unit_amount: {
+              amount: 5000,
+              amount_minor: 5000,
+              currency: 'ETB',
+            },
+            total_amount: {
+              amount: 10000,
+              amount_minor: 10000,
+              currency: 'ETB',
+            },
           },
         ],
-      })
+      } as any)
+
       const invoice: Invoice = unwrapData(invDraftRes)
       if (!invoice?.id) {
         throw new Error('Failed to extract invoice ID from response')

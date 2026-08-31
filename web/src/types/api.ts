@@ -57,11 +57,29 @@ export interface CreateSubscriptionInput {
   auto_renew: boolean;
 }
 
+export interface Money {
+  amount?: number;
+  amount_minor?: number;
+  currency: string;
+}
+
 export interface LineItem {
+  line_item_id?: number;
   item_id: number;
   description: string;
-  quantity: number;
-  unit_price_minor: number;
+  quantity_value: number;
+  quantity_unit: string;
+  unit_amount: Money;
+  total_amount: Money;
+  metadata?: Record<string, any>;
+  subscription_id?: number;
+}
+
+export interface CreateDraftInvoiceInput {
+  account_id: number;
+  subscription_id?: number;
+  currency: string;
+  line_items: LineItem[];
 }
 
 export interface Invoice {

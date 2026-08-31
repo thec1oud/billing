@@ -35,8 +35,7 @@ func (h *AccountHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	account, err := h.svc.Create(ctx, input)
 	if err != nil {
-		log.Error("Failed to create account", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to create account")
+		response.WriteError(w, log, "Failed to create account", err)
 		return
 	}
 
@@ -56,8 +55,7 @@ func (h *AccountHandler) HandleActivate(w http.ResponseWriter, r *http.Request) 
 
 	account, err := h.svc.Activate(ctx, accountID)
 	if err != nil {
-		log.Error("Failed to activate account", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to activate account")
+		response.WriteError(w, log, "Failed to activate account", err)
 		return
 	}
 

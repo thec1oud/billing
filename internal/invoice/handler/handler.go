@@ -48,8 +48,7 @@ func (h *InvoiceHandler) HandleCreateDraft(w http.ResponseWriter, r *http.Reques
 
 	invoice, err := h.svc.CreateDraftInvoice(ctx, actor, req.AccountID, money.Currency(req.Currency), req.LineItems)
 	if err != nil {
-		log.Error("Failed to create draft invoice", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to create draft invoice")
+		response.WriteError(w, log, "Failed to create draft invoice", err)
 		return
 	}
 
@@ -75,8 +74,7 @@ func (h *InvoiceHandler) HandleFinalize(w http.ResponseWriter, r *http.Request) 
 	// For the UI demo, we will default to Net 14 days due date
 	invoice, err := h.svc.FinalizeInvoice(ctx, actor, invoiceID, 14)
 	if err != nil {
-		log.Error("Failed to finalize invoice", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to finalize invoice")
+		response.WriteError(w, log, "Failed to finalize invoice", err)
 		return
 	}
 
@@ -96,8 +94,7 @@ func (h *InvoiceHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 	invoice, err := h.svc.Get(ctx, invoiceID)
 	if err != nil {
-		log.Error("Failed to get invoice", logger.Err(err))
-		response.Write(w, http.StatusNotFound, "Invoice not found")
+		response.WriteError(w, log, "Failed to get invoice", err)
 		return
 	}
 

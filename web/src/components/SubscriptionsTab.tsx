@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Account, Subscription, CreateSubscriptionInput } from '../types/api'
 import { billingApi } from '../services/apiClient'
 
@@ -13,7 +13,16 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
   subscriptions,
   onSubscriptionCreated,
 }) => {
-  const [accountId, setAccountId] = useState<number>(accounts[0]?.id || 1)
+  const [accountId, setAccountId] = useState<number>(accounts[0]?.id || 0)
+
+  // accounts starts empty and fills in as the user creates them elsewhere
+  // in the app; keep the selection pointed at a real account instead of
+  // the stale placeholder id captured at mount time.
+  useEffect(() => {
+    if (accounts.length > 0 && !accounts.some((a) => a.id === accountId)) {
+      setAccountId(accounts[0].id)
+    }
+  }, [accounts])
   const [planId, setPlanId] = useState<number>(1)
   const [planDurationId, setPlanDurationId] = useState<number>(1)
   const [autoRenew, setAutoRenew] = useState<boolean>(true)
@@ -22,6 +31,10 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!accountId) {
+      setError('Create an account first — there is no account to attach this subscription to.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
