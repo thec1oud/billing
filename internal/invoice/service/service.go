@@ -129,6 +129,10 @@ func (s *Service) CreateDraftInvoice(
 	return inv, nil
 }
 
+func (s *Service) Get(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+	return s.repo.Get(ctx, invoiceID)
+}
+
 func (s *Service) FinalizeInvoice(
 	ctx context.Context,
 	actor eventmodel.Actor,

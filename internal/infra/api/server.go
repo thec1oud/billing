@@ -7,9 +7,14 @@ import (
 	"log/slog"
 	"net/http"
 
+	accountHandlers "github.com/thec1oud/billing/internal/account/handler"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	invoiceHandlers "github.com/thec1oud/billing/internal/invoice/handler"
+	planHandlers "github.com/thec1oud/billing/internal/plan/handler"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
+	itemHandlers "github.com/thec1oud/billing/internal/purchasable_item/handler"
+	subscriptionHandlers "github.com/thec1oud/billing/internal/subscription/handler"
 )
 
 type Server struct {
@@ -23,9 +28,43 @@ type Server struct {
 func NewServer(cfg *config.Config, deps Deps) *Server {
 	mux := http.NewServeMux()
 
+	// Account routes
+	if deps.AccountService != nil {
+		accountHandler := accountHandlers.NewAccountHandler(deps.AccountService)
+		mux.HandleFunc("POST /api/v1/accounts", accountHandler.HandleCreate)
+		mux.HandleFunc("POST /api/v1/accounts/{id}/activate", accountHandler.HandleActivate)
+	}
+
+	// Catalog routes
+	if deps.PlanService != nil {
+		planHandler := planHandlers.NewPlanHandler(deps.PlanService)
+		mux.HandleFunc("GET /api/v1/plans", planHandler.HandleList)
+	}
+	if deps.PurchasableItemService != nil {
+		itemHandler := itemHandlers.NewPurchasableItemHandler(deps.PurchasableItemService)
+		mux.HandleFunc("GET /api/v1/purchasable-items", itemHandler.HandleList)
+	}
+
+	// Subscription routes
+	if deps.SubscriptionService != nil {
+		subscriptionHandler := subscriptionHandlers.NewSubscriptionHandler(deps.SubscriptionService)
+		mux.HandleFunc("POST /api/v1/subscriptions", subscriptionHandler.HandleCreate)
+	}
+
+	// Invoice routes
+	if deps.InvoiceService != nil {
+		invoiceHandler := invoiceHandlers.NewInvoiceHandler(deps.InvoiceService)
+		mux.HandleFunc("POST /api/v1/invoices", invoiceHandler.HandleCreateDraft)
+		mux.HandleFunc("POST /api/v1/invoices/{id}/finalize", invoiceHandler.HandleFinalize)
+		mux.HandleFunc("GET /api/v1/invoices/{id}", invoiceHandler.HandleGet)
+	}
+
 	// PPI routes
-	ppiWebhook := ppiHandlers.NewWebhookHandler(deps.PPIService, deps.Broker)
-	mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiWebhook.HandleWebhook)
+	if deps.PPIService != nil {
+		ppiHandler := ppiHandlers.NewPPIHandler(deps.PPIService, deps.Broker)
+		mux.HandleFunc("POST /api/v1/payments/charge", ppiHandler.HandleAttemptPayment)
+		mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiHandler.HandleWebhook)
+	}
 
 	return &Server{
 		srv: &http.Server{

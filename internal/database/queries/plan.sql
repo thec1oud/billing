@@ -72,6 +72,20 @@ FROM plans
 WHERE plan_code = $1
 ORDER BY version DESC;
 
+-- name: ListPlans :many
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+ORDER BY plan_id DESC;
+
 
 -- name: CreatePlanDuration :one
 INSERT INTO plan_durations (

@@ -31,6 +31,10 @@ type Repository interface {
 		ctx context.Context,
 		code string,
 	) (PurchasableItem, error)
+
+	ListAll(
+		ctx context.Context,
+	) ([]PurchasableItem, error)
 }
 
 type PostgresRepository struct {
@@ -140,6 +144,31 @@ func (r *PostgresRepository) GetByCode(
 	}
 
 	return toModel(row)
+}
+
+func (r *PostgresRepository) ListAll(
+	ctx context.Context,
+) ([]PurchasableItem, error) {
+	q := sqlcgen.New(r.pool)
+
+	rows, err := q.ListPurchasableItems(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list purchasable items: %w",
+			err,
+		)
+	}
+
+	items := make([]PurchasableItem, 0, len(rows))
+	for _, row := range rows {
+		item, err := toModel(row)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
 }
 
 func toModel(row sqlcgen.PurchasableItem) (PurchasableItem, error) {

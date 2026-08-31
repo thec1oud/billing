@@ -42,6 +42,10 @@ type Repository interface {
 		code string,
 	) (int, error)
 
+	ListAll(
+		ctx context.Context,
+	) ([]Plan, error)
+
 	ListVersions(
 		ctx context.Context,
 		code string,
@@ -240,6 +244,27 @@ func (r *PostgresRepository) ListVersions(
 
 	plans := make([]Plan, 0, len(rows))
 
+	for _, row := range rows {
+		plans = append(plans, toPlanModel(row))
+	}
+
+	return plans, nil
+}
+
+func (r *PostgresRepository) ListAll(
+	ctx context.Context,
+) ([]Plan, error) {
+	q := sqlcgen.New(r.pool)
+
+	rows, err := q.ListPlans(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list plans: %w",
+			err,
+		)
+	}
+
+	plans := make([]Plan, 0, len(rows))
 	for _, row := range rows {
 		plans = append(plans, toPlanModel(row))
 	}
