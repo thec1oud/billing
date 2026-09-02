@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/invoice/model"
@@ -93,11 +92,14 @@ func (h *InvoiceHandler) HandleListInvoices(w http.ResponseWriter, r *http.Reque
 }
 
 type PayInvoiceInput struct {
-	ProviderCode string `json:"provider_code"`
+	ProviderCode   string `json:"provider_code"`
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 type PayInvoiceResponse struct {
-	CheckoutURL string `json:"checkout_url"`
+	CheckoutURL       string `json:"checkout_url"`
+	InternalTxID      string `json:"internal_tx_id"`
+	ProviderReference string `json:"provider_reference"`
 }
 
 func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +131,14 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if in.IdempotencyKey == "" {
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code:    "INVALID_INPUT",
+			Message: "idempotency_key is required",
+		})
+		return
+	}
+
 	inv, err := h.svc.GetInvoice(r.Context(), invoiceID)
 	if err != nil {
 		if errors.Is(err, repository.ErrInvoiceNotFound) {
@@ -153,8 +163,7 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	idempotencyKey := "req_" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	result, err := h.ppi.ChargePaymentMethod(r.Context(), in.ProviderCode, invoiceID, inv.AmountDue, idempotencyKey)
+	result, err := h.ppi.ChargePaymentMethod(r.Context(), in.ProviderCode, invoiceID, inv.AmountDue, in.IdempotencyKey)
 	if err != nil {
 		response.Write(w, http.StatusInternalServerError, &response.ErrorResponse{
 			Code:    "CHARGE_FAILED",
@@ -172,6 +181,8 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 	}
 
 	response.Write(w, http.StatusOK, PayInvoiceResponse{
-		CheckoutURL: result.CheckoutURL,
+		CheckoutURL:       result.CheckoutURL,
+		InternalTxID:      result.IdempotencyKey,
+		ProviderReference: result.ProviderReference,
 	})
 }

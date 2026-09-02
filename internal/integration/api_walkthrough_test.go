@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -42,6 +43,8 @@ import (
 	invoicerepo "github.com/thec1oud/billing/internal/invoice/repository"
 	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
+	invoicesub "github.com/thec1oud/billing/internal/invoice/subscriber"
+	ppisub "github.com/thec1oud/billing/internal/ppi/subscriber"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
@@ -106,6 +109,17 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	require.NoError(t, err)
 
 	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, invoiceRepository, smEngine)
+	invoiceSubscriber := invoicesub.NewInvoiceSubscriber(cluster.DBPool, invoiceSvc, paymentAttemptSvc)
+
+	// Register Webhook Subscriber to RabbitMQ
+	err = ppisub.RegisterModuleSubscriber(
+		ctx,
+		broker,
+		"api_e2e_test_webhook_queue",
+		[]string{"ppi.webhook.payment.*"},
+		invoiceSubscriber.HandlePaymentWebhook,
+	)
+	require.NoError(t, err)
 
 	// 3. Setup Server
 	cfg := &config.Config{AppPort: "8080"}
@@ -232,11 +246,47 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	require.Equal(t, invoicemodel.StatusOpen, finalInv.Status)
 
 	var payRes map[string]any
-	payReqBody := map[string]string{"provider_code": "fake"}
+	payReqBody := map[string]string{
+		"provider_code":   "fake",
+		"idempotency_key": "req_" + strconv.FormatInt(time.Now().UnixNano(), 10),
+	}
 	resp = doJSON("POST", fmt.Sprintf("/api/v1/invoices/%d/pay", finalInv.InvoiceID), payReqBody, &payRes)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	checkoutURL, ok := payRes["checkout_url"].(string)
 	require.True(t, ok, "checkout_url must be a string")
 	require.NotEmpty(t, checkoutURL)
+
+	internalTxID, ok := payRes["internal_tx_id"].(string)
+	require.True(t, ok, "internal_tx_id must be a string")
+
+	providerRef, ok := payRes["provider_reference"].(string)
+	require.True(t, ok, "provider_reference must be a string")
+
+	// Phase 6: Simulate Webhook from Provider
+	webhookPayload := map[string]any{
+		"event_id":     "wh_evt_9999",
+		"event":        "charge.success",
+		"tx_ref":       internalTxID,
+		"reference":    providerRef,
+		"status":       "success",
+		"amount_minor": 1000,
+		"currency":     "ETB",
+	}
+
+	resp = doJSON("POST", "/api/v1/webhooks/fake", webhookPayload, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Phase 7: Verification
+	// Wait a moment for RabbitMQ to deliver the message to our subscriber which pays the invoice
+	var finalStatus invoicemodel.Status
+	for i := 0; i < 2; i++ {
+		time.Sleep(100 * time.Millisecond)
+		inv, _ := invoiceRepository.Get(ctx, draftInv.InvoiceID)
+		if inv.Status == invoicemodel.StatusPaid {
+			finalStatus = inv.Status
+			break
+		}
+	}
+	require.Equal(t, invoicemodel.StatusPaid, finalStatus, "invoice should reach PAID status after webhook processing")
 }
