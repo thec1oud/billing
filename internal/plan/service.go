@@ -205,6 +205,17 @@ func (s *Service) ListVersions(
 	return plans, nil
 }
 
+func (s *Service) ListActivePlans(
+	ctx context.Context,
+) ([]Plan, error) {
+	plans, err := s.repository.ListActivePlans(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list active plans: %w", err)
+	}
+
+	return plans, nil
+}
+
 func (s *Service) GetDuration(
 	ctx context.Context,
 	id int64,

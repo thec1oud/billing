@@ -30,6 +30,10 @@ func (m *mockPlanService) CreatePlan(ctx context.Context, p plan.Plan) (plan.Pla
 	return p, nil
 }
 
+func (m *mockPlanService) ListActivePlans(ctx context.Context) ([]plan.Plan, error) {
+	return nil, nil
+}
+
 func TestHandleCreatePlan(t *testing.T) {
 	svc := &mockPlanService{}
 	h := handler.NewPlanHandler(svc)

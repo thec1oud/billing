@@ -109,6 +109,13 @@ func (s *Service) Get(
 	return s.repository.Get(ctx, subscriptionID)
 }
 
+func (s *Service) ListAccountSubscriptions(
+	ctx context.Context,
+	accountID int64,
+) ([]model.Subscription, error) {
+	return s.repository.ListAccountSubscriptions(ctx, accountID)
+}
+
 type BillingProjection struct {
 	AccountID   int64
 	Amount      money.Money

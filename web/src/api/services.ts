@@ -137,6 +137,12 @@ export const planService = {
       body: JSON.stringify(input),
     });
   },
+
+  list: (): Promise<Plan[]> => {
+    return request<Plan[]>("/plans", {
+      method: "GET",
+    });
+  },
 };
 
 export const subscriptionService = {
@@ -144,6 +150,12 @@ export const subscriptionService = {
     return request<Subscription>("/subscriptions", {
       method: "POST",
       body: JSON.stringify(input),
+    });
+  },
+
+  listForAccount: (accountId: number): Promise<Subscription[]> => {
+    return request<Subscription[]>(`/accounts/${accountId}/subscriptions`, {
+      method: "GET",
     });
   },
 };

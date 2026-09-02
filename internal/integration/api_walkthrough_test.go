@@ -124,6 +124,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	// 3. Setup Server
 	cfg := &config.Config{AppPort: "8080"}
 	deps := api.Deps{
+		Pool:                cluster.DBPool,
 		AccountService:      accountSvc,
 		PlanService:         planSvc,
 		TariffService:       tariffSvc,

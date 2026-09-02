@@ -11,6 +11,7 @@ import (
 
 type PlanService interface {
 	CreatePlan(ctx context.Context, p plan.Plan) (plan.Plan, error)
+	ListActivePlans(ctx context.Context) ([]plan.Plan, error)
 }
 
 type PlanHandler struct {
@@ -42,4 +43,17 @@ func (h *PlanHandler) HandleCreatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Write(w, http.StatusCreated, created)
+}
+
+func (h *PlanHandler) HandleListPlans(w http.ResponseWriter, r *http.Request) {
+	plans, err := h.svc.ListActivePlans(r.Context())
+	if err != nil {
+		response.Write(w, http.StatusInternalServerError, &response.ErrorResponse{
+			Code:    "LIST_FAILED",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	response.Write(w, http.StatusOK, plans)
 }

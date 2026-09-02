@@ -45,12 +45,14 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 	if deps.PlanService != nil {
 		planAPI := planHandler.NewPlanHandler(deps.PlanService)
 		mux.HandleFunc("POST /api/v1/plans", planAPI.HandleCreatePlan)
+		mux.HandleFunc("GET /api/v1/plans", planAPI.HandleListPlans)
 	}
 
 	// Subscription routes
 	if deps.SubscriptionService != nil {
 		subAPI := subHandler.NewSubscriptionHandler(deps.SubscriptionService)
 		mux.HandleFunc("POST /api/v1/subscriptions", subAPI.HandleCreateSubscription)
+		mux.HandleFunc("GET /api/v1/accounts/{id}/subscriptions", subAPI.HandleListAccountSubscriptions)
 	}
 
 	// Invoice routes
@@ -69,10 +71,18 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 	ppiWebhook := ppiHandlers.NewWebhookHandler(deps.PPIService, deps.Broker)
 	mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiWebhook.HandleWebhook)
 
+	var handler http.Handler = mux
+	if deps.Pool != nil {
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), "db_pool", deps.Pool)
+			mux.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+
 	return &Server{
 		srv: &http.Server{
 			Addr:    fmt.Sprintf(":%s", cfg.AppPort),
-			Handler: logger.RequestLogger(mux),
+			Handler: logger.RequestLogger(handler),
 		},
 		log: logger.ForComponent("http_server"),
 	}

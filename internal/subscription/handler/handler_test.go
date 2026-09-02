@@ -30,6 +30,10 @@ func (m *mockSubscriptionService) Create(ctx context.Context, input model.Create
 	}, nil
 }
 
+func (m *mockSubscriptionService) ListAccountSubscriptions(ctx context.Context, accountID int64) ([]model.Subscription, error) {
+	return nil, nil
+}
+
 func TestHandleCreateSubscription(t *testing.T) {
 	svc := &mockSubscriptionService{}
 	h := handler.NewSubscriptionHandler(svc)

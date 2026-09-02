@@ -46,6 +46,10 @@ type Repository interface {
 		code string,
 	) ([]Plan, error)
 
+	ListActivePlans(
+		ctx context.Context,
+	) ([]Plan, error)
+
 	GetDuration(
 		ctx context.Context,
 		id int64,
@@ -239,6 +243,37 @@ func (r *PostgresRepository) ListVersions(
 
 	for _, row := range rows {
 		plans = append(plans, toPlanModel(row))
+	}
+
+	return plans, nil
+}
+
+func (r *PostgresRepository) ListActivePlans(
+	ctx context.Context,
+) ([]Plan, error) {
+	q := sqlcgen.New(r.pool)
+
+	rows, err := q.ListActivePlans(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list active plans: %w",
+			err,
+		)
+	}
+
+	plans := make([]Plan, 0, len(rows))
+	for _, row := range rows {
+		plans = append(plans, toPlanModel(sqlcgen.Plan{
+			PlanID:                row.PlanID,
+			PlanCode:              row.PlanCode,
+			Version:               row.Version,
+			EffectiveFrom:         row.EffectiveFrom,
+			EffectiveUntil:        row.EffectiveUntil,
+			LegacyPricePolicyCode: row.LegacyPricePolicyCode,
+			MigrationPath:         row.MigrationPath,
+			Metadata:              row.Metadata,
+			CreatedAt:             row.CreatedAt,
+		}))
 	}
 
 	return plans, nil

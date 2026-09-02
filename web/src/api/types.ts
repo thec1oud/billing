@@ -190,7 +190,7 @@ export interface PayInvoiceResponse {
 
 export interface DevGenerateInvoiceInput {
   account_id: number;
-  item_id: number;
+  plan_id: number;
 }
 
 export interface FakeWebhookPayload {

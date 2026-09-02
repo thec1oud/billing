@@ -89,3 +89,49 @@ func (q *Queries) GetSubscription(ctx context.Context, subscriptionID int64) (Ge
 	)
 	return i, err
 }
+
+const listAccountSubscriptions = `-- name: ListAccountSubscriptions :many
+SELECT subscription_id, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor
+FROM subscriptions 
+WHERE account_id = $1 AND subscription_status_code = 'ACTIVE'
+`
+
+type ListAccountSubscriptionsRow struct {
+	SubscriptionID         int64     `json:"subscription_id"`
+	AccountID              int64     `json:"account_id"`
+	PlanID                 int64     `json:"plan_id"`
+	PlanVersion            int32     `json:"plan_version"`
+	SubscriptionStatusCode string    `json:"subscription_status_code"`
+	CurrentPeriodStartAt   time.Time `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time `json:"billing_cycle_anchor"`
+}
+
+func (q *Queries) ListAccountSubscriptions(ctx context.Context, accountID int64) ([]ListAccountSubscriptionsRow, error) {
+	rows, err := q.db.Query(ctx, listAccountSubscriptions, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountSubscriptionsRow
+	for rows.Next() {
+		var i ListAccountSubscriptionsRow
+		if err := rows.Scan(
+			&i.SubscriptionID,
+			&i.AccountID,
+			&i.PlanID,
+			&i.PlanVersion,
+			&i.SubscriptionStatusCode,
+			&i.CurrentPeriodStartAt,
+			&i.CurrentPeriodEndAt,
+			&i.BillingCycleAnchor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

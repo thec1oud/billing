@@ -16,15 +16,32 @@ import (
 )
 
 type mockInvoiceService struct {
-	getInvoice   func(ctx context.Context, invoiceID int64) (model.Invoice, error)
-	listInvoices func(ctx context.Context, accountID int64) ([]model.Invoice, error)
+	getInvoiceFn         func(ctx context.Context, id int64) (model.Invoice, error)
+	listInvoicesFn       func(ctx context.Context, accountID int64) ([]model.Invoice, error)
+	createDraftInvoiceFn func(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error)
+	finalizeInvoiceFn    func(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error)
 }
 
-func (m *mockInvoiceService) GetInvoice(ctx context.Context, invoiceID int64) (model.Invoice, error) {
-	return m.getInvoice(ctx, invoiceID)
+func (m *mockInvoiceService) GetInvoice(ctx context.Context, id int64) (model.Invoice, error) {
+	return m.getInvoiceFn(ctx, id)
 }
+
 func (m *mockInvoiceService) ListInvoices(ctx context.Context, accountID int64) ([]model.Invoice, error) {
-	return m.listInvoices(ctx, accountID)
+	return m.listInvoicesFn(ctx, accountID)
+}
+
+func (m *mockInvoiceService) CreateDraftInvoice(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error) {
+	if m.createDraftInvoiceFn != nil {
+		return m.createDraftInvoiceFn(ctx, actor, accountID, currency, items)
+	}
+	return model.Invoice{}, nil
+}
+
+func (m *mockInvoiceService) FinalizeInvoice(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error) {
+	if m.finalizeInvoiceFn != nil {
+		return m.finalizeInvoiceFn(ctx, actor, invoiceID, paymentTermsDays)
+	}
+	return model.Invoice{}, nil
 }
 
 type mockPPIService struct {

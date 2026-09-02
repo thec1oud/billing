@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
@@ -11,6 +12,7 @@ import (
 
 type SubscriptionService interface {
 	Create(ctx context.Context, input model.CreateInput) (model.Subscription, error)
+	ListAccountSubscriptions(ctx context.Context, accountID int64) ([]model.Subscription, error)
 }
 
 type SubscriptionHandler struct {
@@ -42,4 +44,35 @@ func (h *SubscriptionHandler) HandleCreateSubscription(w http.ResponseWriter, r 
 	}
 
 	response.Write(w, http.StatusCreated, created)
+}
+
+func (h *SubscriptionHandler) HandleListAccountSubscriptions(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code:    "INVALID_ACCOUNT_ID",
+			Message: "Account ID is required",
+		})
+		return
+	}
+
+	var accountID int64
+	if _, err := fmt.Sscanf(idStr, "%d", &accountID); err != nil {
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code:    "INVALID_ACCOUNT_ID",
+			Message: "Account ID must be an integer",
+		})
+		return
+	}
+
+	subs, err := h.svc.ListAccountSubscriptions(r.Context(), accountID)
+	if err != nil {
+		response.Write(w, http.StatusInternalServerError, &response.ErrorResponse{
+			Code:    "LIST_FAILED",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	response.Write(w, http.StatusOK, subs)
 }

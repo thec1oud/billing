@@ -23,6 +23,7 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
+	"github.com/thec1oud/billing/internal/seed/dev"
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
 	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
@@ -30,6 +31,17 @@ import (
 	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
+	
+	accountrepo "github.com/thec1oud/billing/internal/account/repository"
+	accountsvc "github.com/thec1oud/billing/internal/account/service"
+	"github.com/thec1oud/billing/internal/plan"
+	purchasableitem "github.com/thec1oud/billing/internal/purchasable_item"
+	"github.com/thec1oud/billing/internal/tariff"
+	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
+	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
+	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
+	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 )
 
 func main() {
@@ -138,10 +150,42 @@ func run() error {
 	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
+	// Initialize other domain services
+	accountRepo := accountrepo.New(deps.Pool)
+	accountSvc := accountsvc.New(accountRepo)
+
+	planRepo := plan.NewPostgresRepository(deps.Pool)
+	itemRepo := purchasableitem.NewPostgresRepository(deps.Pool)
+	itemSvc := purchasableitem.NewService(itemRepo)
+	planSvc := plan.NewService(deps.Pool, planRepo, itemSvc)
+
+	tariffRepo := tariff.NewPostgresRepository(deps.Pool)
+	tariffSvc := tariff.NewService(tariffRepo)
+
+	// 5. Seed essential development data
+	if cfg.AppEnv != "production" {
+		if err := dev.Seed(ctx, deps.Pool, planSvc, tariffSvc, logger.ForComponent("dev_seeder")); err != nil {
+			return fmt.Errorf("failed to run dev seeder: %w", err)
+		}
+	}
+
+	subscriptionRepo := subscriptionrepo.New(deps.Pool)
+	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
+	
+	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
+	eventSvc := eventsvc.NewService(eventRepo)
+	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, invoiceRepository, smEngine)
+
 	// 11. Configure & Start HTTP Server
 	srv := api.NewServer(cfg, api.Deps{
-		PPIService: ppiService,
-		Broker:     rabbitBroker,
+		Pool:                deps.Pool,
+		AccountService:      accountSvc,
+		PlanService:         planSvc,
+		TariffService:       tariffSvc,
+		SubscriptionService: subscriptionSvc,
+		InvoiceService:      invoiceSvc,
+		PPIService:          ppiService,
+		Broker:              rabbitBroker,
 	})
 	srv.Start()
 

@@ -97,6 +97,40 @@ func (r *Repository) Get(
 	return toModel(row), nil
 }
 
+func (r *Repository) ListAccountSubscriptions(
+	ctx context.Context,
+	accountID int64,
+) ([]model.Subscription, error) {
+	if accountID <= 0 {
+		return nil, errors.New("account id must be greater than zero")
+	}
+
+	if r == nil || r.pool == nil {
+		return nil, errors.New("subscription repository: database is not configured")
+	}
+
+	rows, err := sqlcgen.New(r.pool).ListAccountSubscriptions(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("list account subscriptions for account %d: %w", accountID, err)
+	}
+
+	subs := make([]model.Subscription, 0, len(rows))
+	for _, row := range rows {
+		subs = append(subs, model.Subscription{
+			SubscriptionID:     row.SubscriptionID,
+			AccountID:          row.AccountID,
+			PlanID:             row.PlanID,
+			PlanVersion:        int(row.PlanVersion),
+			Status:             model.Status(row.SubscriptionStatusCode),
+			CurrentPeriodStart: row.CurrentPeriodStartAt,
+			CurrentPeriodEnd:   row.CurrentPeriodEndAt,
+			BillingCycleAnchor: row.BillingCycleAnchor,
+		})
+	}
+
+	return subs, nil
+}
+
 func toModel(row sqlcgen.GetSubscriptionRow) model.Subscription {
 	return model.Subscription{
 		SubscriptionID:     row.SubscriptionID,

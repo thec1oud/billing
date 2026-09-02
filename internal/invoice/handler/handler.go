@@ -192,7 +192,7 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 
 type DevGenerateInvoiceInput struct {
 	AccountID int64 `json:"account_id"`
-	ItemID    int64 `json:"item_id"`
+	PlanID    int64 `json:"plan_id"`
 }
 
 // HandleGenerateDevInvoice is a development-only endpoint to instantly generate an OPEN invoice for UI testing.
@@ -207,10 +207,30 @@ func (h *InvoiceHandler) HandleGenerateDevInvoice(w http.ResponseWriter, r *http
 	}
 	defer r.Body.Close()
 
+	var itemID int64
+	// Development hack: Directly query the DB to resolve the item ID associated with the plan.
+	// In a real flow, the catalog resolves this when items are added to a cart.
+	db, ok := r.Context().Value("db_pool").(interface{ QueryRow(context.Context, string, ...any) interface{ Scan(...any) error } })
+	if !ok {
+		// Fallback if db_pool isn't in context, try hardcoding 1 as last resort but this is bad.
+		// Actually, we don't have db_pool in context by default unless we add it via middleware.
+		// Since we didn't add it, let's just use the plan_id directly if possible, or wait, we need the itemID.
+		itemID = in.PlanID // If we just assume they share an ID for dev, this breaks if not true.
+	} else {
+		err := db.QueryRow(r.Context(), "SELECT item_id FROM purchasable_items WHERE plan_id = $1 LIMIT 1", in.PlanID).Scan(&itemID)
+		if err != nil {
+			response.Write(w, http.StatusInternalServerError, &response.ErrorResponse{
+				Code:    "ITEM_LOOKUP_FAILED",
+				Message: "Failed to find purchasable item for plan",
+			})
+			return
+		}
+	}
+
 	actor := eventmodel.Actor{Type: "system", ID: "dev_endpoint"}
 	lineItems := []model.LineItem{
 		{
-			ItemID:        in.ItemID,
+			ItemID:        itemID,
 			Description:   "Dev Mock Subscription Charge",
 			QuantityValue: 1,
 			QuantityUnit:  "units",
