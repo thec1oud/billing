@@ -138,6 +138,11 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 
 	client := ts.Client()
 
+	printObj := func(label string, obj any) {
+		b, _ := json.MarshalIndent(obj, "", "  ")
+		t.Logf("=== %s ===\n%s\n", label, string(b))
+	}
+
 	// Helper for HTTP requests
 	doJSON := func(method, path string, body any, out any) *http.Response {
 		var reqBody []byte
@@ -171,6 +176,8 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	resp = doJSON("POST", fmt.Sprintf("/api/v1/accounts/%d/activate", account.AccountID), nil, &account)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, accountmodel.StatusActive, account.Status)
+	
+	printObj("Activated Account", account)
 
 	// Phase 2: Create Tariff
 	var createdTariff tariff.Tariff
@@ -183,6 +190,8 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	}, &createdTariff)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	require.NotZero(t, createdTariff.ID)
+
+	printObj("Created Tariff", createdTariff)
 
 	// Phase 3: Create Plan
 	var createdPlan plan.Plan
@@ -199,10 +208,14 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	require.NotZero(t, createdPlan.ID)
 
+	printObj("Created Plan", createdPlan)
+
 	// Verify the PurchasableItem was created automatically via the DB
 	item, err := itemSvc.GetByCode(ctx, fmt.Sprintf("e2e_premium_v%d", createdPlan.Version))
 	require.NoError(t, err)
 	require.Equal(t, createdPlan.ID, *item.PlanID)
+
+	printObj("Generated Purchasable Item", item)
 
 	// Phase 4: Create Subscription
 	var sub subscriptionmodel.Subscription
@@ -214,6 +227,8 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	require.NotZero(t, sub.SubscriptionID)
 	require.Equal(t, subscriptionmodel.StatusActive, sub.Status)
+
+	printObj("Created Subscription", sub)
 
 	// Phase 5: Create dummy invoice and Pay via API
 	// Insert an OPEN invoice directly to test the Pay endpoint
@@ -239,11 +254,15 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 
 	draftInv, err := invoiceSvc.CreateDraftInvoice(ctx, actor, account.AccountID, "ETB", lineItems)
 	require.NoError(t, err)
+	
+	printObj("Draft Invoice", draftInv)
 
 	// Finalize to make it OPEN, so the checkout payload is accepted
 	finalInv, err := invoiceSvc.FinalizeInvoice(ctx, actor, draftInv.InvoiceID, 14)
 	require.NoError(t, err)
 	require.Equal(t, invoicemodel.StatusOpen, finalInv.Status)
+
+	printObj("Finalized Invoice", finalInv)
 
 	var payRes map[string]any
 	payReqBody := map[string]string{
@@ -252,6 +271,8 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	}
 	resp = doJSON("POST", fmt.Sprintf("/api/v1/invoices/%d/pay", finalInv.InvoiceID), payReqBody, &payRes)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	printObj("Pay Invoice Response", payRes)
 
 	checkoutURL, ok := payRes["checkout_url"].(string)
 	require.True(t, ok, "checkout_url must be a string")
@@ -285,6 +306,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 		inv, _ := invoiceRepository.Get(ctx, draftInv.InvoiceID)
 		if inv.Status == invoicemodel.StatusPaid {
 			finalStatus = inv.Status
+			printObj("Paid Invoice", inv)
 			break
 		}
 	}
