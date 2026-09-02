@@ -122,6 +122,60 @@ func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.In
 	}, nil
 }
 
+func (r *PostgresRepository) ListByAccount(ctx context.Context, db DBTX, accountID int64) ([]model.Invoice, error) {
+	q := r.getQuerier(db)
+
+	rows, err := q.ListInvoicesByAccount(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("list invoices by account: %w", err)
+	}
+
+	invoices := make([]model.Invoice, 0, len(rows))
+	for _, row := range rows {
+		subtotal, _ := money.New(row.SubtotalAmount, row.Currency)
+		tax, _ := money.New(row.TaxAmount, row.Currency)
+		discount, _ := money.New(row.DiscountAmount, row.Currency)
+		total, _ := money.New(row.TotalAmount, row.Currency)
+		amountPaid, _ := money.New(row.AmountPaid, row.Currency)
+		amountDue, _ := money.New(row.AmountDue, row.Currency)
+
+		var dueAt, finalizedAt, paidAt *time.Time
+		if row.DueAt.Valid {
+			dueAt = &row.DueAt.Time
+		}
+		if row.FinalizedAt.Valid {
+			finalizedAt = &row.FinalizedAt.Time
+		}
+		if row.PaidAt.Valid {
+			paidAt = &row.PaidAt.Time
+		}
+
+		var invoiceNum string
+		if row.InvoiceNumber.Valid {
+			invoiceNum = row.InvoiceNumber.String
+		}
+
+		invoices = append(invoices, model.Invoice{
+			InvoiceID:     row.InvoiceID,
+			AccountID:     row.AccountID,
+			InvoiceNumber: invoiceNum,
+			Status:        model.Status(row.InvoiceStatusCode),
+			Currency:      money.Currency(row.Currency),
+			Subtotal:      subtotal,
+			Tax:           tax,
+			Discount:      discount,
+			Total:         total,
+			AmountPaid:    amountPaid,
+			AmountDue:     amountDue,
+			DueAt:         dueAt,
+			FinalizedAt:   finalizedAt,
+			PaidAt:        paidAt,
+			LineItems:     nil, // Intentionally left empty for list views
+		})
+	}
+	return invoices, nil
+}
+
 func (r *PostgresRepository) Create(ctx context.Context, db DBTX, inv model.Invoice) (int64, error) {
 	q := r.getQuerier(db)
 

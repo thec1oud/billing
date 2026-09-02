@@ -37,6 +37,19 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	ppirepo "github.com/thec1oud/billing/internal/ppi/repository"
 	ppisvc "github.com/thec1oud/billing/internal/ppi/service"
+
+	invoicemodel "github.com/thec1oud/billing/internal/invoice/model"
+	invoicerepo "github.com/thec1oud/billing/internal/invoice/repository"
+	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
+	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	sm_loader "github.com/thec1oud/billing/internal/shared/statemachine/loader"
+	sm_registry "github.com/thec1oud/billing/internal/shared/statemachine/registry"
+	sm_repo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
+	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
 )
 
 func TestAPI_E2E_Walkthrough(t *testing.T) {
@@ -79,6 +92,21 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
+	smRegistry := sm_registry.New()
+	smRepository := sm_repo.NewPostgresRepository(cluster.DBPool)
+	smEngine := sm_engine.NewEngine(cluster.DBPool, smRepository, smRegistry, sm_engine.WithScripting(scripting.NewPool(0, 0)))
+
+	eventRepo := eventrepo.NewPostgresEventStore(cluster.DBPool)
+	eventSvc := eventsvc.NewService(eventRepo)
+
+	invoiceRepository := invoicerepo.NewPostgresRepository(cluster.DBPool)
+
+	statemachine.RegisterStateMachineActions(smRegistry, invoiceRepository)
+	_, err = sm_loader.Publish(ctx, cluster.DBPool, smRepository, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
+	require.NoError(t, err)
+
+	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, invoiceRepository, smEngine)
+
 	// 3. Setup Server
 	cfg := &config.Config{AppPort: "8080"}
 	deps := api.Deps{
@@ -86,6 +114,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 		PlanService:         planSvc,
 		TariffService:       tariffSvc,
 		SubscriptionService: subscriptionSvc,
+		InvoiceService:      invoiceSvc,
 		PPIService:          ppiService,
 		Broker:              broker,
 	}
@@ -132,9 +161,9 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	// Phase 2: Create Tariff
 	var createdTariff tariff.Tariff
 	resp = doJSON("POST", "/api/v1/tariffs", tariffhandler.CreateInput{
-		Code:        "api_tariff",
-		Name:        "API Tariff",
-		Description: "API usage tariff",
+		Code:        "standard_per_unit_1000",
+		Name:        "Standard Per Unit 1000 ETB",
+		Description: "Basic per unit pricing",
 		TariffType:  tariff.TariffTypePerUnit,
 		Amount:      money.Money{AmountMinor: 1000, Currency: "ETB"},
 	}, &createdTariff)
@@ -144,7 +173,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	// Phase 3: Create Plan
 	var createdPlan plan.Plan
 	resp = doJSON("POST", "/api/v1/plans", plan.Plan{
-		PlanCode:              "api_premium",
+		PlanCode:              "e2e_premium",
 		LegacyPricePolicyCode: plan.LegacyPolicyKeepForever,
 		Durations: []plan.PlanDuration{
 			{
@@ -157,7 +186,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	require.NotZero(t, createdPlan.ID)
 
 	// Verify the PurchasableItem was created automatically via the DB
-	item, err := itemSvc.GetByCode(ctx, "api_premium_v1")
+	item, err := itemSvc.GetByCode(ctx, fmt.Sprintf("e2e_premium_v%d", createdPlan.Version))
 	require.NoError(t, err)
 	require.Equal(t, createdPlan.ID, *item.PlanID)
 
@@ -171,4 +200,43 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	require.NotZero(t, sub.SubscriptionID)
 	require.Equal(t, subscriptionmodel.StatusActive, sub.Status)
+
+	// Phase 5: Create dummy invoice and Pay via API
+	// Insert an OPEN invoice directly to test the Pay endpoint
+	_, err = cluster.DBPool.Exec(ctx, `
+		INSERT INTO payment_provider (payment_provider_code)
+		VALUES ('fake')
+		ON CONFLICT DO NOTHING;
+	`)
+	require.NoError(t, err)
+
+	// Use InvoiceService to properly create and finalize the invoice instead of raw SQL
+	actor := eventmodel.Actor{Type: "system", ID: "api_e2e_test"}
+	lineItems := []invoicemodel.LineItem{
+		{
+			ItemID:        item.ID,
+			Description:   "Standard Usage",
+			QuantityValue: 1,
+			QuantityUnit:  "units",
+			UnitAmount:    money.Money{AmountMinor: 1000, Currency: "ETB"},
+			TotalAmount:   money.Money{AmountMinor: 1000, Currency: "ETB"},
+		},
+	}
+
+	draftInv, err := invoiceSvc.CreateDraftInvoice(ctx, actor, account.AccountID, "ETB", lineItems)
+	require.NoError(t, err)
+
+	// Finalize to make it OPEN, so the checkout payload is accepted
+	finalInv, err := invoiceSvc.FinalizeInvoice(ctx, actor, draftInv.InvoiceID, 14)
+	require.NoError(t, err)
+	require.Equal(t, invoicemodel.StatusOpen, finalInv.Status)
+
+	var payRes map[string]any
+	payReqBody := map[string]string{"provider_code": "fake"}
+	resp = doJSON("POST", fmt.Sprintf("/api/v1/invoices/%d/pay", finalInv.InvoiceID), payReqBody, &payRes)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	checkoutURL, ok := payRes["checkout_url"].(string)
+	require.True(t, ok, "checkout_url must be a string")
+	require.NotEmpty(t, checkoutURL)
 }

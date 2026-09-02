@@ -66,6 +66,7 @@ type Querier interface {
 	ListActionBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmActionBinding, error)
 	ListGuardBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmGuardBinding, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
+	ListInvoicesByAccount(ctx context.Context, accountID int64) ([]ListInvoicesByAccountRow, error)
 	ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error)
 	ListPaymentMethodReferences(ctx context.Context, accountID int64) ([]string, error)
 	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
@@ -75,11 +76,10 @@ type Querier interface {
 	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
-	MarkPPIWebhookPublished(ctx context.Context, webhookID string) error
-	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) error
 	MarkOutboxPublished(ctx context.Context, outboxID int64) error
 	MarkOutboxRetry(ctx context.Context, arg MarkOutboxRetryParams) error
+	MarkPPIWebhookPublished(ctx context.Context, webhookID string) error
 	MarkScheduleFailed(ctx context.Context, arg MarkScheduleFailedParams) error
 	MarkScheduleFired(ctx context.Context, scheduleID uuid.UUID) error
 	MarkScheduleRetry(ctx context.Context, arg MarkScheduleRetryParams) error
@@ -87,6 +87,7 @@ type Querier interface {
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
 	ReapStuckOutbox(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
 	ReapStuckSchedules(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
+	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
 	UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error
 	UpdateInstanceState(ctx context.Context, arg UpdateInstanceStateParams) (int64, error)
 	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error

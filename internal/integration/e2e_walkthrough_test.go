@@ -137,7 +137,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
-	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, ppiService, invoiceRepository, smEngine)
+	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, invoiceRepository, smEngine)
 	invoiceSubscriber := invoicesub.NewInvoiceSubscriber(cluster.DBPool, invoiceSvc, paymentAttemptSvc)
 	webhookHandler := handler.NewWebhookHandler(ppiService, broker)
 

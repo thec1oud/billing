@@ -9,6 +9,7 @@ import (
 
 	accountHandler "github.com/thec1oud/billing/internal/account/handler"
 	"github.com/thec1oud/billing/internal/config"
+	invoiceHandler "github.com/thec1oud/billing/internal/invoice/handler"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	planHandler "github.com/thec1oud/billing/internal/plan/handler"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
@@ -34,10 +35,6 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 		mux.HandleFunc("POST /api/v1/accounts/{id}/activate", accountAPI.HandleActivateAccount)
 	}
 
-	// PPI routes
-	ppiWebhook := ppiHandlers.NewWebhookHandler(deps.PPIService, deps.Broker)
-	mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiWebhook.HandleWebhook)
-
 	// Tariff routes
 	if deps.TariffService != nil {
 		tariffAPI := tariffHandler.NewTariffHandler(deps.TariffService)
@@ -55,6 +52,18 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 		subAPI := subHandler.NewSubscriptionHandler(deps.SubscriptionService)
 		mux.HandleFunc("POST /api/v1/subscriptions", subAPI.HandleCreateSubscription)
 	}
+
+	// Invoice routes
+	if deps.InvoiceService != nil {
+		invHandler := invoiceHandler.NewInvoiceHandler(deps.InvoiceService, deps.PPIService)
+		mux.HandleFunc("GET /api/v1/invoices/{id}", invHandler.HandleGetInvoice)
+		mux.HandleFunc("GET /api/v1/accounts/{id}/invoices", invHandler.HandleListInvoices)
+		mux.HandleFunc("POST /api/v1/invoices/{id}/pay", invHandler.HandlePayInvoice)
+	}
+
+	// PPI routes
+	ppiWebhook := ppiHandlers.NewWebhookHandler(deps.PPIService, deps.Broker)
+	mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiWebhook.HandleWebhook)
 
 	return &Server{
 		srv: &http.Server{
