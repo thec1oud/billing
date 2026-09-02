@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
+	accountHandler "github.com/thec1oud/billing/internal/account/handler"
 )
 
 // Deps holds all domain-level service dependencies required by the HTTP handlers
@@ -13,4 +14,5 @@ type Deps struct {
 
 	// Future module services go here, e.g.:
 	// InvoiceService invoiceHandlers.SomeServiceInterface
+	AccountService accountHandler.AccountService
 }

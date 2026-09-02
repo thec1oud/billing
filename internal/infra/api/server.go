@@ -10,6 +10,7 @@ import (
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
+	accountHandler "github.com/thec1oud/billing/internal/account/handler"
 )
 
 type Server struct {
@@ -22,6 +23,13 @@ type Server struct {
 // add its service to Deps, then register its routes below.
 func NewServer(cfg *config.Config, deps Deps) *Server {
 	mux := http.NewServeMux()
+
+	// Account routes
+	if deps.AccountService != nil {
+		accountAPI := accountHandler.NewAccountHandler(deps.AccountService)
+		mux.HandleFunc("POST /api/v1/accounts", accountAPI.HandleCreateAccount)
+		mux.HandleFunc("POST /api/v1/accounts/{id}/activate", accountAPI.HandleActivateAccount)
+	}
 
 	// PPI routes
 	ppiWebhook := ppiHandlers.NewWebhookHandler(deps.PPIService, deps.Broker)
