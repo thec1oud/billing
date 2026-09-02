@@ -7,7 +7,6 @@ import (
 
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/thec1oud/billing/internal/shared/money"
 )
@@ -24,7 +23,6 @@ func NewService(repository Repository) *Service {
 
 func (s *Service) CreateTariff(
 	ctx context.Context,
-	tx pgx.Tx,
 	code string,
 	name string,
 	description string,
@@ -80,7 +78,7 @@ func (s *Service) CreateTariff(
 			)
 		}
 
-		created, err := s.repository.Create(ctx, tx, tariff)
+		created, err := s.repository.Create(ctx, tariff)
 		if err == nil {
 			return created, nil
 		}

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -24,7 +23,6 @@ type mockRepository struct {
 
 func (m *mockRepository) Create(
 	_ context.Context,
-	_ pgx.Tx,
 	tariff Tariff,
 ) (Tariff, error) {
 	m.createCalls++
@@ -87,7 +85,6 @@ func TestServiceCreateTariff(t *testing.T) {
 
 	created, err := service.CreateTariff(
 		context.Background(),
-		nil,
 		"BASIC",
 		"Basic",
 		"",
@@ -117,7 +114,6 @@ func TestServiceCreateTariff_RetriesAfterUniqueVersionConflict(t *testing.T) {
 
 	created, err := service.CreateTariff(
 		context.Background(),
-		nil,
 		"BASIC",
 		"Basic",
 		"",
@@ -154,7 +150,6 @@ func TestServiceCreateTariff_RetainsRepositoryError(t *testing.T) {
 
 	_, err = service.CreateTariff(
 		context.Background(),
-		nil,
 		"BASIC",
 		"Basic",
 		"",

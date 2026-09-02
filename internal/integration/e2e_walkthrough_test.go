@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -114,12 +115,14 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	accountSvc := accountsvc.New(accountRepo)
 
 	planRepo := plan.NewPostgresRepository(cluster.DBPool)
-	planSvc := plan.NewService(planRepo)
+	
 	tariffRepo := tariff.NewPostgresRepository(cluster.DBPool)
 	tariffSvc := tariff.NewService(tariffRepo)
 
 	itemRepo := purchasableitem.NewPostgresRepository(cluster.DBPool)
 	itemSvc := purchasableitem.NewService(itemRepo)
+
+	planSvc := plan.NewService(cluster.DBPool, planRepo, itemSvc)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
@@ -181,15 +184,9 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	// Phase 2: Plan & Subscription
 
 	// Use Domain Services to setup pricing model
-	tx, err := cluster.DBPool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin tx: %v", err)
-	}
-	defer tx.Rollback(ctx)
 
 	createdTariff, err := tariffSvc.CreateTariff(
 		ctx,
-		tx,
 		"standard_per_unit_1000",
 		"Standard Per Unit 1000 ETB",
 		"Basic per unit pricing",
@@ -204,7 +201,6 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 
 	createdPlan, err := planSvc.CreatePlan(
 		ctx,
-		tx,
 		plan.Plan{
 			PlanCode:              "e2e_premium",
 			LegacyPricePolicyCode: plan.LegacyPolicyKeepForever,
@@ -221,24 +217,13 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 		t.Fatalf("failed to create plan: %v", err)
 	}
 
-	planID := createdPlan.ID
-	createdItem, err := itemSvc.Create(
-		ctx,
-		tx,
-		purchasableitem.PurchasableItem{
-			ItemCode:     "api_usage",
-			ItemTypeCode: purchasableitem.ItemTypePlan,
-			Name:         "API Usage",
-			PlanID:       &planID,
-		},
-	)
+	itemCode := fmt.Sprintf("%s_v%d", createdPlan.PlanCode, createdPlan.Version)
+
+	createdItem, err := itemSvc.GetByCode(ctx, itemCode)
 	if err != nil {
-		t.Fatalf("failed to create purchasable item: %v", err)
+		t.Fatalf("failed to retrieve automatically created purchasable item: %v", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("failed to commit tx: %v", err)
-	}
 
 	sub, err := subscriptionSvc.Create(ctx, subscriptionmodel.CreateInput{
 		AccountID:   account.AccountID,

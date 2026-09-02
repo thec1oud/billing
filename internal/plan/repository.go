@@ -26,7 +26,6 @@ type Repository interface {
 
 	CreateDuration(
 		ctx context.Context,
-		tx pgx.Tx,
 		duration PlanDuration,
 	) (PlanDuration, error)
 
@@ -65,7 +64,6 @@ type Repository interface {
 
 	UpdateDurationTariff(
 		ctx context.Context,
-		tx pgx.Tx,
 		durationID int64,
 		tariffID int64,
 		isActive bool,
@@ -147,7 +145,6 @@ func (r *PostgresRepository) Create(
 
 func (r *PostgresRepository) CreateDuration(
 	ctx context.Context,
-	tx pgx.Tx,
 	duration PlanDuration,
 ) (PlanDuration, error) {
 	if err := duration.Validate(); err != nil {
@@ -157,7 +154,7 @@ func (r *PostgresRepository) CreateDuration(
 		)
 	}
 
-	q := sqlcgen.New(tx)
+	q := sqlcgen.New(r.pool)
 
 	row, err := q.CreatePlanDuration(
 		ctx,
@@ -324,7 +321,6 @@ func (r *PostgresRepository) ListDurations(
 
 func (r *PostgresRepository) UpdateDurationTariff(
 	ctx context.Context,
-	tx pgx.Tx,
 	durationID int64,
 	tariffID int64,
 	isActive bool,
@@ -341,7 +337,7 @@ func (r *PostgresRepository) UpdateDurationTariff(
 		)
 	}
 
-	q := sqlcgen.New(tx)
+	q := sqlcgen.New(r.pool)
 
 	row, err := q.UpdatePlanDurationTariff(
 		ctx,

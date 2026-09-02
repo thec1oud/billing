@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 
+	accountHandler "github.com/thec1oud/billing/internal/account/handler"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	planHandler "github.com/thec1oud/billing/internal/plan/handler"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
-	accountHandler "github.com/thec1oud/billing/internal/account/handler"
+	subHandler "github.com/thec1oud/billing/internal/subscription/handler"
+	tariffHandler "github.com/thec1oud/billing/internal/tariff/handler"
 )
 
 type Server struct {
@@ -35,6 +38,24 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 	ppiWebhook := ppiHandlers.NewWebhookHandler(deps.PPIService, deps.Broker)
 	mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiWebhook.HandleWebhook)
 
+	// Tariff routes
+	if deps.TariffService != nil {
+		tariffAPI := tariffHandler.NewTariffHandler(deps.TariffService)
+		mux.HandleFunc("POST /api/v1/tariffs", tariffAPI.HandleCreateTariff)
+	}
+
+	// Plan routes
+	if deps.PlanService != nil {
+		planAPI := planHandler.NewPlanHandler(deps.PlanService)
+		mux.HandleFunc("POST /api/v1/plans", planAPI.HandleCreatePlan)
+	}
+
+	// Subscription routes
+	if deps.SubscriptionService != nil {
+		subAPI := subHandler.NewSubscriptionHandler(deps.SubscriptionService)
+		mux.HandleFunc("POST /api/v1/subscriptions", subAPI.HandleCreateSubscription)
+	}
+
 	return &Server{
 		srv: &http.Server{
 			Addr:    fmt.Sprintf(":%s", cfg.AppPort),
@@ -42,6 +63,11 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 		},
 		log: logger.ForComponent("http_server"),
 	}
+}
+
+// Handler returns the underlying http.Handler.
+func (s *Server) Handler() http.Handler {
+	return s.srv.Handler
 }
 
 // Start launches the HTTP server listener in a non-blocking background goroutine.

@@ -2,8 +2,11 @@ package api
 
 import (
 	"github.com/thec1oud/billing/internal/infra/messaging"
-	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
 	accountHandler "github.com/thec1oud/billing/internal/account/handler"
+	planHandler "github.com/thec1oud/billing/internal/plan/handler"
+	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
+	subHandler "github.com/thec1oud/billing/internal/subscription/handler"
+	tariffHandler "github.com/thec1oud/billing/internal/tariff/handler"
 )
 
 // Deps holds all domain-level service dependencies required by the HTTP handlers
@@ -12,7 +15,8 @@ type Deps struct {
 	PPIService ppiHandlers.WebhookService
 	Broker     messaging.Broker
 
-	// Future module services go here, e.g.:
-	// InvoiceService invoiceHandlers.SomeServiceInterface
-	AccountService accountHandler.AccountService
+	AccountService      accountHandler.AccountService
+	TariffService       tariffHandler.TariffService
+	PlanService         planHandler.PlanService
+	SubscriptionService subHandler.SubscriptionService
 }
