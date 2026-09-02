@@ -11,12 +11,15 @@ import (
 	"github.com/thec1oud/billing/internal/invoice/model"
 	"github.com/thec1oud/billing/internal/invoice/repository"
 	"github.com/thec1oud/billing/internal/ppi"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type InvoiceService interface {
 	GetInvoice(ctx context.Context, invoiceID int64) (model.Invoice, error)
 	ListInvoices(ctx context.Context, accountID int64) ([]model.Invoice, error)
+	CreateDraftInvoice(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error)
+	FinalizeInvoice(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error)
 }
 
 type PPIService interface {
@@ -185,4 +188,56 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 		InternalTxID:      result.IdempotencyKey,
 		ProviderReference: result.ProviderReference,
 	})
+}
+
+type DevGenerateInvoiceInput struct {
+	AccountID int64 `json:"account_id"`
+	ItemID    int64 `json:"item_id"`
+}
+
+// HandleGenerateDevInvoice is a development-only endpoint to instantly generate an OPEN invoice for UI testing.
+func (h *InvoiceHandler) HandleGenerateDevInvoice(w http.ResponseWriter, r *http.Request) {
+	var in DevGenerateInvoiceInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code:    "INVALID_REQUEST_BODY",
+			Message: "Failed to decode request body",
+		})
+		return
+	}
+	defer r.Body.Close()
+
+	actor := eventmodel.Actor{Type: "system", ID: "dev_endpoint"}
+	lineItems := []model.LineItem{
+		{
+			ItemID:        in.ItemID,
+			Description:   "Dev Mock Subscription Charge",
+			QuantityValue: 1,
+			QuantityUnit:  "units",
+			UnitAmount:    money.Money{AmountMinor: 1000, Currency: "ETB"},
+			TotalAmount:   money.Money{AmountMinor: 1000, Currency: "ETB"},
+		},
+	}
+
+	// 1. Create Draft
+	draftInv, err := h.svc.CreateDraftInvoice(r.Context(), actor, in.AccountID, money.Currency("ETB"), lineItems)
+	if err != nil {
+		response.Write(w, http.StatusInternalServerError, &response.ErrorResponse{
+			Code:    "DRAFT_FAILED",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// 2. Finalize
+	finalInv, err := h.svc.FinalizeInvoice(r.Context(), actor, draftInv.InvoiceID, 14)
+	if err != nil {
+		response.Write(w, http.StatusInternalServerError, &response.ErrorResponse{
+			Code:    "FINALIZE_FAILED",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	response.Write(w, http.StatusCreated, finalInv)
 }

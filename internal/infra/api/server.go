@@ -59,6 +59,10 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 		mux.HandleFunc("GET /api/v1/invoices/{id}", invHandler.HandleGetInvoice)
 		mux.HandleFunc("GET /api/v1/accounts/{id}/invoices", invHandler.HandleListInvoices)
 		mux.HandleFunc("POST /api/v1/invoices/{id}/pay", invHandler.HandlePayInvoice)
+
+		if cfg.AppEnv != "production" {
+			mux.HandleFunc("POST /api/v1/dev/invoices/generate", invHandler.HandleGenerateDevInvoice)
+		}
 	}
 
 	// PPI routes
