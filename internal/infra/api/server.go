@@ -66,10 +66,18 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 		mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiHandler.HandleWebhook)
 	}
 
+	var handler http.Handler = mux
+	if deps.Pool != nil {
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), "db_pool", deps.Pool)
+			mux.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+
 	return &Server{
 		srv: &http.Server{
 			Addr:    fmt.Sprintf(":%s", cfg.AppPort),
-			Handler: logger.RequestLogger(mux),
+			Handler: logger.RequestLogger(handler),
 		},
 		log: logger.ForComponent("http_server"),
 	}

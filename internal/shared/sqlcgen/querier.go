@@ -63,7 +63,9 @@ type Querier interface {
 	InsertState(ctx context.Context, arg InsertStateParams) error
 	InsertTransition(ctx context.Context, arg InsertTransitionParams) (uuid.UUID, error)
 	InsertTransitionHistoryPending(ctx context.Context, arg InsertTransitionHistoryPendingParams) (InsertTransitionHistoryPendingRow, error)
+	ListAccountSubscriptions(ctx context.Context, accountID int64) ([]ListAccountSubscriptionsRow, error)
 	ListActionBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmActionBinding, error)
+	ListActivePlans(ctx context.Context) ([]Plan, error)
 	ListGuardBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmGuardBinding, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
 	ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error)

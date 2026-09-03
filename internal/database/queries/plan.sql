@@ -160,3 +160,18 @@ RETURNING
     duration,
     is_active,
     created_at;
+
+-- name: ListActivePlans :many
+SELECT DISTINCT ON (plan_code)
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+WHERE effective_until IS NULL
+ORDER BY plan_code, version DESC;

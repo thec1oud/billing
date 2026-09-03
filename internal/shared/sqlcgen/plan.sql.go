@@ -259,6 +259,52 @@ func (q *Queries) GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetP
 	return i, err
 }
 
+const listActivePlans = `-- name: ListActivePlans :many
+SELECT DISTINCT ON (plan_code)
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+WHERE effective_until IS NULL
+ORDER BY plan_code, version DESC
+`
+
+func (q *Queries) ListActivePlans(ctx context.Context) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, listActivePlans)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.PlanID,
+			&i.PlanCode,
+			&i.Version,
+			&i.EffectiveFrom,
+			&i.EffectiveUntil,
+			&i.LegacyPricePolicyCode,
+			&i.MigrationPath,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlanDurations = `-- name: ListPlanDurations :many
 SELECT
     plan_duration_id,
