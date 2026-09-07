@@ -60,7 +60,7 @@ func (s *Service) Create(
 		)
 	}
 
-	p, err := s.plans.GetByID(ctx, input.PlanID)
+	p, err := s.plans.GetByIDAndVersion(ctx, input.PlanID, input.PlanVersion)
 	if err != nil {
 		return model.Subscription{}, fmt.Errorf(
 			"get plan: %w",

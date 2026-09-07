@@ -11,13 +11,11 @@ import (
 )
 
 type fakePlanRepository struct {
-	latestVersion int
-	createdPlan   Plan
-
-	createdDuration PlanDuration
-
 	plans     []Plan
 	durations []PlanDuration
+
+	nextPlanID     int64
+	nextDurationID int64
 
 	err error
 }
@@ -31,11 +29,14 @@ func (f *fakePlanRepository) Create(
 		return Plan{}, f.err
 	}
 
-	f.createdPlan = plan
-
-	if plan.ID == 0 {
-		plan.ID = 1
+	if f.nextPlanID == 0 {
+		f.nextPlanID = 1
 	}
+
+	plan.ID = f.nextPlanID
+	f.nextPlanID++
+
+	f.plans = append(f.plans, plan)
 
 	return plan, nil
 }
@@ -49,11 +50,14 @@ func (f *fakePlanRepository) CreateDuration(
 		return PlanDuration{}, f.err
 	}
 
-	f.createdDuration = duration
-
-	if duration.ID == 0 {
-		duration.ID = 1
+	if f.nextDurationID == 0 {
+		f.nextDurationID = 1
 	}
+
+	duration.ID = f.nextDurationID
+	f.nextDurationID++
+
+	f.durations = append(f.durations, duration)
 
 	return duration, nil
 }
@@ -76,35 +80,60 @@ func (f *fakePlanRepository) GetByCodeAndVersion(
 	return Plan{}, ErrPlanNotFound
 }
 
-func (f *fakePlanRepository) GetByID(_ context.Context, id int64) (Plan, error) {
+func (f *fakePlanRepository) GetByIDAndVersion(
+	_ context.Context,
+	id int64,
+	version int,
+) (Plan, error) {
+	if f.err != nil {
+		return Plan{}, f.err
+	}
+
 	for _, plan := range f.plans {
-		if plan.ID == id {
+		if plan.ID == id && plan.Version == version {
 			return plan, nil
 		}
 	}
+
 	return Plan{}, ErrPlanNotFound
 }
 
 func (f *fakePlanRepository) LatestVersion(
 	_ context.Context,
-	_ string,
+	code string,
 ) (int, error) {
 	if f.err != nil {
 		return 0, f.err
 	}
 
-	return f.latestVersion, nil
+	latest := 0
+
+	for _, plan := range f.plans {
+		if plan.PlanCode == code && plan.Version > latest {
+			latest = plan.Version
+		}
+	}
+
+	return latest, nil
 }
 
 func (f *fakePlanRepository) ListVersions(
 	_ context.Context,
-	_ string,
+	code string,
 ) ([]Plan, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 
-	return f.plans, nil
+	result := make([]Plan, 0)
+
+	for _, plan := range f.plans {
+		if plan.PlanCode == code {
+			result = append(result, plan)
+		}
+	}
+
+	return result, nil
 }
 
 func (f *fakePlanRepository) GetDuration(
@@ -127,15 +156,15 @@ func (f *fakePlanRepository) GetDuration(
 func (f *fakePlanRepository) GetDurationByPlanAndDuration(
 	_ context.Context,
 	planID int64,
-	code time.Duration,
+	duration time.Duration,
 ) (PlanDuration, error) {
 	if f.err != nil {
 		return PlanDuration{}, f.err
 	}
 
-	for _, duration := range f.durations {
-		if duration.PlanID == planID && duration.Duration == code {
-			return duration, nil
+	for _, item := range f.durations {
+		if item.PlanID == planID && item.Duration == duration {
+			return item, nil
 		}
 	}
 
@@ -161,31 +190,23 @@ func (f *fakePlanRepository) ListDurations(
 	return result, nil
 }
 
-func (f *fakePlanRepository) UpdateDurationTariff(
-	_ context.Context,
-	_ pgx.Tx,
-	durationID int64,
-	tariffID int64,
-	isActive bool,
-) (PlanDuration, error) {
-	if f.err != nil {
-		return PlanDuration{}, f.err
-	}
-
-	for _, duration := range f.durations {
-		if duration.ID == durationID {
-			duration.TariffID = tariffID
-			duration.IsActive = isActive
-			return duration, nil
-		}
-	}
-
-	return PlanDuration{}, ErrPlanDurationNotFound
-}
-
 func TestCreatePlan(t *testing.T) {
 	repository := &fakePlanRepository{
-		latestVersion: 2,
+		plans: []Plan{
+			{
+				ID:                    1,
+				PlanCode:              "PRO",
+				Version:               1,
+				LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			},
+			{
+				ID:                    2,
+				PlanCode:              "PRO",
+				Version:               2,
+				LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			},
+		},
+		nextPlanID: 3,
 	}
 
 	service := NewService(repository)
@@ -204,9 +225,10 @@ func TestCreatePlan(t *testing.T) {
 	require.Equal(t, 3, created.Version)
 	require.Equal(t, "PRO", created.PlanCode)
 	require.Equal(t, LegacyPolicyKeepForever, created.LegacyPricePolicyCode)
-	require.NotZero(t, created.ID)
+	require.Equal(t, int64(3), created.ID)
 
-	require.Equal(t, 3, repository.createdPlan.Version)
+	require.Len(t, repository.plans, 3)
+	require.Equal(t, 3, repository.plans[2].Version)
 }
 
 func TestCreatePlanSetsEffectiveFromWhenMissing(t *testing.T) {
@@ -220,8 +242,7 @@ func TestCreatePlanSetsEffectiveFromWhenMissing(t *testing.T) {
 		context.Background(),
 		nil,
 		Plan{
-			PlanCode:              "BASIC",
-			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			PlanCode: "BASIC",
 		},
 	)
 
@@ -233,6 +254,11 @@ func TestCreatePlanSetsEffectiveFromWhenMissing(t *testing.T) {
 		t,
 		!created.EffectiveFrom.Before(before) &&
 			!created.EffectiveFrom.After(after),
+	)
+	require.Equal(
+		t,
+		LegacyPolicyKeepForever,
+		created.LegacyPricePolicyCode,
 	)
 }
 
@@ -250,6 +276,7 @@ func TestCreatePlanRejectsInvalidPlan(t *testing.T) {
 	)
 
 	require.Error(t, err)
+	require.Empty(t, repository.plans)
 }
 
 func TestCreatePlanRepositoryError(t *testing.T) {
@@ -275,6 +302,244 @@ func TestCreatePlanRepositoryError(t *testing.T) {
 	require.ErrorIs(t, err, repositoryError)
 }
 
+func TestCreatePlanAutomaticallyCreatesNextVersion(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	first, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			EffectiveFrom:         time.Now().UTC(),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Version)
+
+	second, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyMigrateOnRenewal,
+			EffectiveFrom:         time.Now().UTC(),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, second.Version)
+
+	third, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyMigrateImmediately,
+			EffectiveFrom:         time.Now().UTC(),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 3, third.Version)
+
+	require.Len(t, repository.plans, 3)
+	require.Equal(t, 1, repository.plans[0].Version)
+	require.Equal(t, 2, repository.plans[1].Version)
+	require.Equal(t, 3, repository.plans[2].Version)
+}
+
+func TestCreatePlanIgnoresCallerProvidedVersion(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	first, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			Version:               99,
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			EffectiveFrom:         time.Now().UTC(),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Version)
+
+	second, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			Version:               1,
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			EffectiveFrom:         time.Now().UTC(),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, second.Version)
+}
+
+func TestCreatePlanKeepsPreviousVersionImmutable(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	firstEffectiveFrom := time.Date(
+		2026,
+		1,
+		1,
+		0,
+		0,
+		0,
+		0,
+		time.UTC,
+	)
+
+	first, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+			EffectiveFrom:         firstEffectiveFrom,
+			Metadata:              []byte(`{"price":100}`),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Version)
+	require.Equal(t, int64(1), first.ID)
+
+	secondEffectiveFrom := time.Date(
+		2026,
+		2,
+		1,
+		0,
+		0,
+		0,
+		0,
+		time.UTC,
+	)
+
+	second, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyMigrateOnRenewal,
+			EffectiveFrom:         secondEffectiveFrom,
+			Metadata:              []byte(`{"price":200}`),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, second.Version)
+	require.Equal(t, int64(2), second.ID)
+
+	versionOne, err := service.GetPlanVersion(
+		context.Background(),
+		"PRO",
+		1,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), versionOne.ID)
+	require.Equal(t, 1, versionOne.Version)
+	require.Equal(
+		t,
+		LegacyPolicyKeepForever,
+		versionOne.LegacyPricePolicyCode,
+	)
+	require.Equal(t, firstEffectiveFrom, versionOne.EffectiveFrom)
+	require.JSONEq(
+		t,
+		`{"price":100}`,
+		string(versionOne.Metadata),
+	)
+
+	versionTwo, err := service.GetPlanVersion(
+		context.Background(),
+		"PRO",
+		2,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(2), versionTwo.ID)
+	require.Equal(t, 2, versionTwo.Version)
+	require.Equal(
+		t,
+		LegacyPolicyMigrateOnRenewal,
+		versionTwo.LegacyPricePolicyCode,
+	)
+	require.Equal(t, secondEffectiveFrom, versionTwo.EffectiveFrom)
+	require.JSONEq(
+		t,
+		`{"price":200}`,
+		string(versionTwo.Metadata),
+	)
+}
+
+func TestCreatePlanCreatesIndependentVersionsForDifferentPlanCodes(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	proFirst, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, proFirst.Version)
+
+	basicFirst, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "BASIC",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, basicFirst.Version)
+
+	proSecond, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, proSecond.Version)
+
+	basicSecond, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "BASIC",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 2, basicSecond.Version)
+}
+
 func TestCreatePlanDuration(t *testing.T) {
 	repository := &fakePlanRepository{}
 
@@ -296,7 +561,7 @@ func TestCreatePlanDuration(t *testing.T) {
 	require.Equal(t, int64(1), created.ID)
 	require.Equal(t, int64(1), created.PlanID)
 	require.Equal(t, int64(10), created.TariffID)
-	require.Equal(t, (30 * 24 * time.Hour), created.Duration)
+	require.Equal(t, 30*24*time.Hour, created.Duration)
 	require.True(t, created.IsActive)
 }
 
@@ -316,6 +581,86 @@ func TestCreatePlanDurationRejectsInvalidDuration(t *testing.T) {
 	)
 
 	require.Error(t, err)
+	require.Empty(t, repository.durations)
+}
+
+func TestCreatePlanDurationKeepsDurationsAttachedToTheirPlanVersion(t *testing.T) {
+	repository := &fakePlanRepository{}
+
+	service := NewService(repository)
+
+	firstPlan, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+	)
+
+	require.NoError(t, err)
+
+	firstDuration, err := service.CreatePlanDuration(
+		context.Background(),
+		nil,
+		PlanDuration{
+			PlanID:   firstPlan.ID,
+			TariffID: 100,
+			Duration: 30 * 24 * time.Hour,
+		},
+	)
+
+	require.NoError(t, err)
+
+	secondPlan, err := service.CreatePlan(
+		context.Background(),
+		nil,
+		Plan{
+			PlanCode:              "PRO",
+			LegacyPricePolicyCode: LegacyPolicyMigrateOnRenewal,
+		},
+	)
+
+	require.NoError(t, err)
+
+	secondDuration, err := service.CreatePlanDuration(
+		context.Background(),
+		nil,
+		PlanDuration{
+			PlanID:   secondPlan.ID,
+			TariffID: 200,
+			Duration: 30 * 24 * time.Hour,
+		},
+	)
+
+	require.NoError(t, err)
+
+	require.NotEqual(t, firstPlan.ID, secondPlan.ID)
+	require.NotEqual(t, firstDuration.ID, secondDuration.ID)
+
+	require.Equal(t, firstPlan.ID, firstDuration.PlanID)
+	require.Equal(t, int64(100), firstDuration.TariffID)
+
+	require.Equal(t, secondPlan.ID, secondDuration.PlanID)
+	require.Equal(t, int64(200), secondDuration.TariffID)
+
+	originalDurations, err := service.ListDurations(
+		context.Background(),
+		firstPlan.ID,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, originalDurations, 1)
+	require.Equal(t, int64(100), originalDurations[0].TariffID)
+
+	newDurations, err := service.ListDurations(
+		context.Background(),
+		secondPlan.ID,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, newDurations, 1)
+	require.Equal(t, int64(200), newDurations[0].TariffID)
 }
 
 func TestGetPlanVersion(t *testing.T) {
@@ -352,6 +697,152 @@ func TestGetPlanVersionRejectsInvalidVersion(t *testing.T) {
 	)
 
 	require.Error(t, err)
+}
+
+func TestGetPlanByIDAndVersion(t *testing.T) {
+	expected := Plan{
+		ID:                    10,
+		PlanCode:              "PRO",
+		Version:               3,
+		LegacyPricePolicyCode: LegacyPolicyKeepForever,
+	}
+
+	repository := &fakePlanRepository{
+		plans: []Plan{expected},
+	}
+
+	service := NewService(repository)
+
+	result, err := service.GetPlanByIDAndVersion(
+		context.Background(),
+		10,
+		3,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, result)
+}
+
+func TestGetPlanByIDAndVersionRejectsInvalidID(t *testing.T) {
+	service := NewService(&fakePlanRepository{})
+
+	_, err := service.GetPlanByIDAndVersion(
+		context.Background(),
+		0,
+		1,
+	)
+
+	require.Error(t, err)
+}
+
+func TestGetPlanByIDAndVersionRejectsInvalidVersion(t *testing.T) {
+	service := NewService(&fakePlanRepository{})
+
+	_, err := service.GetPlanByIDAndVersion(
+		context.Background(),
+		1,
+		0,
+	)
+
+	require.Error(t, err)
+}
+
+func TestLatestVersion(t *testing.T) {
+	repository := &fakePlanRepository{
+		plans: []Plan{
+			{
+				ID:       1,
+				PlanCode: "PRO",
+				Version:  1,
+			},
+			{
+				ID:       2,
+				PlanCode: "PRO",
+				Version:  4,
+			},
+			{
+				ID:       3,
+				PlanCode: "BASIC",
+				Version:  9,
+			},
+		},
+	}
+
+	service := NewService(repository)
+
+	result, err := service.LatestVersion(
+		context.Background(),
+		"PRO",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 4, result)
+}
+
+func TestLatestVersionRejectsEmptyCode(t *testing.T) {
+	service := NewService(&fakePlanRepository{})
+
+	_, err := service.LatestVersion(
+		context.Background(),
+		"",
+	)
+
+	require.Error(t, err)
+}
+
+func TestListVersions(t *testing.T) {
+	expected := []Plan{
+		{
+			ID:                    2,
+			PlanCode:              "PRO",
+			Version:               2,
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+		{
+			ID:                    1,
+			PlanCode:              "PRO",
+			Version:               1,
+			LegacyPricePolicyCode: LegacyPolicyKeepForever,
+		},
+	}
+
+	repository := &fakePlanRepository{
+		plans: expected,
+	}
+
+	service := NewService(repository)
+
+	result, err := service.ListVersions(
+		context.Background(),
+		"PRO",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, result)
+}
+
+func TestGetDuration(t *testing.T) {
+	expected := PlanDuration{
+		ID:       1,
+		PlanID:   10,
+		TariffID: 20,
+		Duration: 30 * 24 * time.Hour,
+		IsActive: true,
+	}
+
+	repository := &fakePlanRepository{
+		durations: []PlanDuration{expected},
+	}
+
+	service := NewService(repository)
+
+	result, err := service.GetDuration(
+		context.Background(),
+		1,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, result)
 }
 
 func TestGetDurationByPlanAndCode(t *testing.T) {
@@ -406,32 +897,4 @@ func TestListDurations(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, result, 2)
-}
-
-func TestUpdateDurationTariff(t *testing.T) {
-	repository := &fakePlanRepository{
-		durations: []PlanDuration{
-			{
-				ID:       1,
-				PlanID:   10,
-				TariffID: 20,
-				Duration: 30 * 24 * time.Hour,
-				IsActive: true,
-			},
-		},
-	}
-
-	service := NewService(repository)
-
-	result, err := service.UpdateDurationTariff(
-		context.Background(),
-		nil,
-		1,
-		99,
-		false,
-	)
-
-	require.NoError(t, err)
-	require.Equal(t, int64(99), result.TariffID)
-	require.False(t, result.IsActive)
 }

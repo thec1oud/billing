@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,23 +20,26 @@ func NewService(repository Repository) *Service {
 	}
 }
 
+// CreatePlan creates a new immutable version of a plan.
+//
+// The service owns version assignment. The caller owns the transaction.
+// Existing plan versions are never updated or deleted.
 func (s *Service) CreatePlan(
 	ctx context.Context,
 	tx pgx.Tx,
 	plan Plan,
 ) (Plan, error) {
-	if plan.PlanCode == "" {
-		return Plan{}, errors.New("plan code is required")
+	plan.PlanCode = strings.TrimSpace(plan.PlanCode)
+
+	if plan.LegacyPricePolicyCode == "" {
+		plan.LegacyPricePolicyCode = LegacyPolicyKeepForever
 	}
 
-	if !plan.LegacyPricePolicyCode.Valid() {
-		return Plan{}, fmt.Errorf(
-			"unsupported legacy price policy %q",
-			plan.LegacyPricePolicyCode,
-		)
+	if plan.EffectiveFrom.IsZero() {
+		plan.EffectiveFrom = time.Now().UTC()
 	}
 
-	latest, err := s.repository.LatestVersion(
+	latestVersion, err := s.repository.LatestVersion(
 		ctx,
 		plan.PlanCode,
 	)
@@ -46,10 +50,14 @@ func (s *Service) CreatePlan(
 		)
 	}
 
-	plan.Version = latest + 1
+	// The service owns version assignment.
+	// The caller-provided version is deliberately ignored.
+	plan.Version = latestVersion + 1
 
-	if plan.EffectiveFrom.IsZero() {
-		plan.EffectiveFrom = time.Now().UTC()
+	if plan.Version < 1 {
+		return Plan{}, errors.New(
+			"next plan version must be greater than zero",
+		)
 	}
 
 	if err := plan.Validate(); err != nil {
@@ -59,7 +67,7 @@ func (s *Service) CreatePlan(
 		)
 	}
 
-	created, err := s.repository.Create(
+	createdPlan, err := s.repository.Create(
 		ctx,
 		tx,
 		plan,
@@ -71,24 +79,41 @@ func (s *Service) CreatePlan(
 		)
 	}
 
-	return created, nil
+	return createdPlan, nil
 }
 
+// CreatePlanDuration creates a new duration/tariff association.
+//
+// Plan durations are append-only. Existing duration/tariff associations
+// are not updated through the service.
 func (s *Service) CreatePlanDuration(
 	ctx context.Context,
 	tx pgx.Tx,
 	duration PlanDuration,
 ) (PlanDuration, error) {
-	if err := duration.Validate(); err != nil {
-		return PlanDuration{}, fmt.Errorf(
-			"validate plan duration: %w",
-			err,
+	if duration.PlanID <= 0 {
+		return PlanDuration{}, errors.New(
+			"plan ID must be greater than zero",
 		)
 	}
 
+	if duration.TariffID <= 0 {
+		return PlanDuration{}, errors.New(
+			"tariff ID must be greater than zero",
+		)
+	}
+
+	if duration.Duration <= 0 {
+		return PlanDuration{}, errors.New(
+			"duration must be greater than zero",
+		)
+	}
+
+	// The current database schema defaults new durations to active.
+	// PlanDuration uses bool, so there is no separate "unset" state.
 	duration.IsActive = true
 
-	created, err := s.repository.CreateDuration(
+	createdDuration, err := s.repository.CreateDuration(
 		ctx,
 		tx,
 		duration,
@@ -100,7 +125,7 @@ func (s *Service) CreatePlanDuration(
 		)
 	}
 
-	return created, nil
+	return createdDuration, nil
 }
 
 func (s *Service) GetPlanVersion(
@@ -108,6 +133,8 @@ func (s *Service) GetPlanVersion(
 	code string,
 	version int,
 ) (Plan, error) {
+	code = strings.TrimSpace(code)
+
 	if code == "" {
 		return Plan{}, errors.New(
 			"plan code is required",
@@ -135,10 +162,44 @@ func (s *Service) GetPlanVersion(
 	return plan, nil
 }
 
+func (s *Service) GetPlanByIDAndVersion(
+	ctx context.Context,
+	id int64,
+	version int,
+) (Plan, error) {
+	if id <= 0 {
+		return Plan{}, errors.New(
+			"plan ID must be greater than zero",
+		)
+	}
+
+	if version < 1 {
+		return Plan{}, errors.New(
+			"plan version must be greater than zero",
+		)
+	}
+
+	plan, err := s.repository.GetByIDAndVersion(
+		ctx,
+		id,
+		version,
+	)
+	if err != nil {
+		return Plan{}, fmt.Errorf(
+			"get plan by ID and version: %w",
+			err,
+		)
+	}
+
+	return plan, nil
+}
+
 func (s *Service) LatestVersion(
 	ctx context.Context,
 	code string,
 ) (int, error) {
+	code = strings.TrimSpace(code)
+
 	if code == "" {
 		return 0, errors.New(
 			"plan code is required",
@@ -163,6 +224,8 @@ func (s *Service) ListVersions(
 	ctx context.Context,
 	code string,
 ) ([]Plan, error) {
+	code = strings.TrimSpace(code)
+
 	if code == "" {
 		return nil, errors.New(
 			"plan code is required",
@@ -189,7 +252,7 @@ func (s *Service) GetDuration(
 ) (PlanDuration, error) {
 	if id <= 0 {
 		return PlanDuration{}, errors.New(
-			"plan duration id must be greater than zero",
+			"plan duration ID must be greater than zero",
 		)
 	}
 
@@ -214,11 +277,17 @@ func (s *Service) GetDurationByPlanAndCode(
 ) (PlanDuration, error) {
 	if planID <= 0 {
 		return PlanDuration{}, errors.New(
-			"plan id must be greater than zero",
+			"plan ID must be greater than zero",
 		)
 	}
 
-	result, err := s.repository.GetDurationByPlanAndDuration(
+	if duration <= 0 {
+		return PlanDuration{}, errors.New(
+			"duration must be greater than zero",
+		)
+	}
+
+	planDuration, err := s.repository.GetDurationByPlanAndDuration(
 		ctx,
 		planID,
 		duration,
@@ -230,7 +299,7 @@ func (s *Service) GetDurationByPlanAndCode(
 		)
 	}
 
-	return result, nil
+	return planDuration, nil
 }
 
 func (s *Service) ListDurations(
@@ -239,7 +308,7 @@ func (s *Service) ListDurations(
 ) ([]PlanDuration, error) {
 	if planID <= 0 {
 		return nil, errors.New(
-			"plan id must be greater than zero",
+			"plan ID must be greater than zero",
 		)
 	}
 
@@ -255,40 +324,4 @@ func (s *Service) ListDurations(
 	}
 
 	return durations, nil
-}
-
-func (s *Service) UpdateDurationTariff(
-	ctx context.Context,
-	tx pgx.Tx,
-	durationID int64,
-	tariffID int64,
-	isActive bool,
-) (PlanDuration, error) {
-	if durationID <= 0 {
-		return PlanDuration{}, errors.New(
-			"plan duration id must be greater than zero",
-		)
-	}
-
-	if tariffID <= 0 {
-		return PlanDuration{}, errors.New(
-			"tariff id must be greater than zero",
-		)
-	}
-
-	duration, err := s.repository.UpdateDurationTariff(
-		ctx,
-		tx,
-		durationID,
-		tariffID,
-		isActive,
-	)
-	if err != nil {
-		return PlanDuration{}, fmt.Errorf(
-			"update plan duration tariff: %w",
-			err,
-		)
-	}
-
-	return duration, nil
 }

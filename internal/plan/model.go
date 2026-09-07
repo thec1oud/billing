@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -51,12 +52,22 @@ type PlanDuration struct {
 }
 
 func (p Plan) Validate() error {
+	p.PlanCode = strings.TrimSpace(p.PlanCode)
+
 	if p.PlanCode == "" {
 		return errors.New("plan code is required")
 	}
 
+	if len([]rune(p.PlanCode)) > 128 {
+		return errors.New("plan code must not exceed 128 characters")
+	}
+
 	if p.Version < 1 {
 		return errors.New("plan version must be greater than zero")
+	}
+
+	if p.EffectiveFrom.IsZero() {
+		return errors.New("effective from is required")
 	}
 
 	if !p.LegacyPricePolicyCode.Valid() {
@@ -83,16 +94,40 @@ func (p Plan) Validate() error {
 		}
 	}
 
+	if err := validateJSON("migration path", p.MigrationPath); err != nil {
+		return err
+	}
+
+	if err := validateJSON("metadata", p.Metadata); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (d PlanDuration) Validate() error {
+	if d.PlanID < 0 {
+		return errors.New("plan id cannot be negative")
+	}
+
 	if d.TariffID <= 0 {
 		return errors.New("tariff id must be greater than zero")
 	}
 
 	if d.Duration <= 0 {
 		return errors.New("duration must be greater than zero")
+	}
+
+	return nil
+}
+
+func validateJSON(name string, value json.RawMessage) error {
+	if len(value) == 0 {
+		return nil
+	}
+
+	if !json.Valid(value) {
+		return fmt.Errorf("%s must contain valid JSON", name)
 	}
 
 	return nil

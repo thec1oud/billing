@@ -50,11 +50,21 @@ FROM plans
 WHERE plan_code = $1
   AND version = $2;
 
--- name: GetPlanByID :one
-SELECT plan_id, plan_code, version, effective_from, effective_until,
-    legacy_price_policy_code, migration_path, metadata, created_at
+
+-- name: GetPlanByIDAndVersion :one
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
 FROM plans
-WHERE plan_id = $1;
+WHERE plan_id = $1
+  AND version = $2;
 
 
 -- name: ListPlanVersions :many
@@ -131,18 +141,3 @@ SELECT
 FROM plan_durations
 WHERE plan_id = $1
   AND duration = $2;
-
-
--- name: UpdatePlanDurationTariff :one
-UPDATE plan_durations
-SET
-    tariff_id = $2,
-    is_active = $3
-WHERE plan_duration_id = $1
-RETURNING
-    plan_duration_id,
-    plan_id,
-    tariff_id,
-    duration,
-    is_active,
-    created_at;

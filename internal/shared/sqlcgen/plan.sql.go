@@ -177,15 +177,29 @@ func (q *Queries) GetPlanByCodeAndVersion(ctx context.Context, arg GetPlanByCode
 	return i, err
 }
 
-const getPlanByID = `-- name: GetPlanByID :one
-SELECT plan_id, plan_code, version, effective_from, effective_until,
-    legacy_price_policy_code, migration_path, metadata, created_at
+const getPlanByIDAndVersion = `-- name: GetPlanByIDAndVersion :one
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
 FROM plans
 WHERE plan_id = $1
+  AND version = $2
 `
 
-func (q *Queries) GetPlanByID(ctx context.Context, planID int64) (Plan, error) {
-	row := q.db.QueryRow(ctx, getPlanByID, planID)
+type GetPlanByIDAndVersionParams struct {
+	PlanID  int64 `json:"plan_id"`
+	Version int32 `json:"version"`
+}
+
+func (q *Queries) GetPlanByIDAndVersion(ctx context.Context, arg GetPlanByIDAndVersionParams) (Plan, error) {
+	row := q.db.QueryRow(ctx, getPlanByIDAndVersion, arg.PlanID, arg.Version)
 	var i Plan
 	err := row.Scan(
 		&i.PlanID,
@@ -343,39 +357,4 @@ func (q *Queries) ListPlanVersions(ctx context.Context, planCode string) ([]Plan
 		return nil, err
 	}
 	return items, nil
-}
-
-const updatePlanDurationTariff = `-- name: UpdatePlanDurationTariff :one
-UPDATE plan_durations
-SET
-    tariff_id = $2,
-    is_active = $3
-WHERE plan_duration_id = $1
-RETURNING
-    plan_duration_id,
-    plan_id,
-    tariff_id,
-    duration,
-    is_active,
-    created_at
-`
-
-type UpdatePlanDurationTariffParams struct {
-	PlanDurationID int64 `json:"plan_duration_id"`
-	TariffID       int64 `json:"tariff_id"`
-	IsActive       bool  `json:"is_active"`
-}
-
-func (q *Queries) UpdatePlanDurationTariff(ctx context.Context, arg UpdatePlanDurationTariffParams) (PlanDuration, error) {
-	row := q.db.QueryRow(ctx, updatePlanDurationTariff, arg.PlanDurationID, arg.TariffID, arg.IsActive)
-	var i PlanDuration
-	err := row.Scan(
-		&i.PlanDurationID,
-		&i.PlanID,
-		&i.TariffID,
-		&i.Duration,
-		&i.IsActive,
-		&i.CreatedAt,
-	)
-	return i, err
 }
