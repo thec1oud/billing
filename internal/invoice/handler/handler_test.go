@@ -12,6 +12,7 @@ import (
 	"github.com/thec1oud/billing/internal/invoice/model"
 	"github.com/thec1oud/billing/internal/invoice/repository"
 	"github.com/thec1oud/billing/internal/ppi"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
@@ -122,7 +123,7 @@ func TestHandlePayInvoice(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	
+
 	var envelope struct {
 		Data PayInvoiceResponse `json:"data"`
 	}

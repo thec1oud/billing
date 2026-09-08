@@ -177,7 +177,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	resp = doJSON("POST", fmt.Sprintf("/api/v1/accounts/%d/activate", account.AccountID), nil, &account)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, accountmodel.StatusActive, account.Status)
-	
+
 	printObj("Activated Account", account)
 
 	// Phase 2: Create Tariff
@@ -255,7 +255,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 
 	draftInv, err := invoiceSvc.CreateDraftInvoice(ctx, actor, account.AccountID, "ETB", lineItems)
 	require.NoError(t, err)
-	
+
 	printObj("Draft Invoice", draftInv)
 
 	// Finalize to make it OPEN, so the checkout payload is accepted

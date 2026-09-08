@@ -210,7 +210,9 @@ func (h *InvoiceHandler) HandleGenerateDevInvoice(w http.ResponseWriter, r *http
 	var itemID int64
 	// Development hack: Directly query the DB to resolve the item ID associated with the plan.
 	// In a real flow, the catalog resolves this when items are added to a cart.
-	db, ok := r.Context().Value("db_pool").(interface{ QueryRow(context.Context, string, ...any) interface{ Scan(...any) error } })
+	db, ok := r.Context().Value("db_pool").(interface {
+		QueryRow(context.Context, string, ...any) interface{ Scan(...any) error }
+	})
 	if !ok {
 		// Fallback if db_pool isn't in context, try hardcoding 1 as last resort but this is bad.
 		// Actually, we don't have db_pool in context by default unless we add it via middleware.

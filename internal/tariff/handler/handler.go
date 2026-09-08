@@ -11,13 +11,13 @@ import (
 )
 
 type CreateInput struct {
-	Code         string                 `json:"code"`
-	Name         string                 `json:"name"`
-	Description  string                 `json:"description"`
-	TariffType   tariff.TariffTypeCode `json:"tariff_type_code"`
-	Amount       money.Money           `json:"amount"`
-	Tiers        []tariff.Tier         `json:"tiers,omitempty"`
-	Metadata     []byte                `json:"metadata,omitempty"`
+	Code        string                `json:"code"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	TariffType  tariff.TariffTypeCode `json:"tariff_type_code"`
+	Amount      money.Money           `json:"amount"`
+	Tiers       []tariff.Tier         `json:"tiers,omitempty"`
+	Metadata    []byte                `json:"metadata,omitempty"`
 }
 
 type TariffService interface {

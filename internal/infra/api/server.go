@@ -9,8 +9,8 @@ import (
 
 	accountHandler "github.com/thec1oud/billing/internal/account/handler"
 	"github.com/thec1oud/billing/internal/config"
-	invoiceHandler "github.com/thec1oud/billing/internal/invoice/handler"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	invoiceHandler "github.com/thec1oud/billing/internal/invoice/handler"
 	planHandler "github.com/thec1oud/billing/internal/plan/handler"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
 	subHandler "github.com/thec1oud/billing/internal/subscription/handler"

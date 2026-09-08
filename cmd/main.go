@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
-	"strings"
 
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
@@ -16,8 +16,8 @@ import (
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
-	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
@@ -31,17 +31,17 @@ import (
 	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
-	
+
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
+	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
 	"github.com/thec1oud/billing/internal/plan"
 	purchasableitem "github.com/thec1oud/billing/internal/purchasable_item"
-	"github.com/thec1oud/billing/internal/tariff"
+	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
-	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
-	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
-	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	"github.com/thec1oud/billing/internal/tariff"
 )
 
 func main() {
@@ -171,7 +171,7 @@ func run() error {
 
 	subscriptionRepo := subscriptionrepo.New(deps.Pool)
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
-	
+
 	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
 	eventSvc := eventsvc.NewService(eventRepo)
 	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, invoiceRepository, smEngine)

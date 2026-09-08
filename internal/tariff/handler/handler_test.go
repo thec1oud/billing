@@ -32,9 +32,9 @@ func (m *mockTariffService) CreateTariff(
 		return tariff.Tariff{}, m.createErr
 	}
 	return tariff.Tariff{
-		ID:          1,
-		TariffCode:  code,
-		Name:        name,
+		ID:             1,
+		TariffCode:     code,
+		Name:           name,
 		Description:    description,
 		TariffTypeCode: tariffType,
 		Amount:         amount,

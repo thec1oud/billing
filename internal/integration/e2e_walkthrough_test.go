@@ -115,7 +115,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	accountSvc := accountsvc.New(accountRepo)
 
 	planRepo := plan.NewPostgresRepository(cluster.DBPool)
-	
+
 	tariffRepo := tariff.NewPostgresRepository(cluster.DBPool)
 	tariffSvc := tariff.NewService(tariffRepo)
 
@@ -223,7 +223,6 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to retrieve automatically created purchasable item: %v", err)
 	}
-
 
 	sub, err := subscriptionSvc.Create(ctx, subscriptionmodel.CreateInput{
 		AccountID:   account.AccountID,

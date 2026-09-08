@@ -1,14 +1,14 @@
 package api
 
 import (
-	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/jackc/pgx/v5/pgxpool"
 	accountHandler "github.com/thec1oud/billing/internal/account/handler"
+	"github.com/thec1oud/billing/internal/infra/messaging"
+	invoiceservice "github.com/thec1oud/billing/internal/invoice/service"
 	planHandler "github.com/thec1oud/billing/internal/plan/handler"
+	ppiservice "github.com/thec1oud/billing/internal/ppi/service"
 	subHandler "github.com/thec1oud/billing/internal/subscription/handler"
 	tariffHandler "github.com/thec1oud/billing/internal/tariff/handler"
-	invoiceservice "github.com/thec1oud/billing/internal/invoice/service"
-	ppiservice "github.com/thec1oud/billing/internal/ppi/service"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Deps holds all domain-level service dependencies required by the HTTP handlers

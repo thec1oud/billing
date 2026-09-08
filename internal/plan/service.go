@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	purchasableitem "github.com/thec1oud/billing/internal/purchasable_item"
 )

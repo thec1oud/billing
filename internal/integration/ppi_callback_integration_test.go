@@ -9,6 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"log/slog"
+
+	"github.com/thec1oud/billing/internal/infra/logger"
+	"github.com/thec1oud/billing/internal/infra/messaging"
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi"
@@ -17,9 +21,6 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
 	"github.com/thec1oud/billing/internal/ppi/subscriber"
-	"github.com/thec1oud/billing/internal/infra/messaging"
-	"github.com/thec1oud/billing/internal/infra/logger"
-	"log/slog"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 )
