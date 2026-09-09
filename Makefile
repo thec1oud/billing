@@ -1,4 +1,4 @@
-.PHONY: fmt lint pre-commit-install ci
+.PHONY: fmt lint pre-commit-install ci web-dev web-build
 
 fmt:
 	gofmt -s -w .
@@ -14,3 +14,9 @@ ci:
 	go vet ./...
 	golangci-lint run ./...
 	go test ./...
+
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build

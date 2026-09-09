@@ -55,7 +55,7 @@ func (m *mockPPIService) ChargePaymentMethod(ctx context.Context, providerCode s
 
 func TestHandleGetInvoice(t *testing.T) {
 	svc := &mockInvoiceService{
-		getInvoice: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+		getInvoiceFn: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
 			if invoiceID == 999 {
 				return model.Invoice{}, repository.ErrInvoiceNotFound
 			}
@@ -82,7 +82,7 @@ func TestHandleGetInvoice(t *testing.T) {
 
 func TestHandleListInvoices(t *testing.T) {
 	svc := &mockInvoiceService{
-		listInvoices: func(ctx context.Context, accountID int64) ([]model.Invoice, error) {
+		listInvoicesFn: func(ctx context.Context, accountID int64) ([]model.Invoice, error) {
 			return []model.Invoice{{AccountID: accountID}}, nil
 		},
 	}
@@ -100,7 +100,7 @@ func TestHandleListInvoices(t *testing.T) {
 
 func TestHandlePayInvoice(t *testing.T) {
 	svc := &mockInvoiceService{
-		getInvoice: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+		getInvoiceFn: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
 			if invoiceID == 1 {
 				return model.Invoice{InvoiceID: 1, Status: model.StatusOpen, AmountDue: money.Money{AmountMinor: 1000, Currency: "ETB"}}, nil
 			}
@@ -117,7 +117,7 @@ func TestHandlePayInvoice(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/invoices/{id}/pay", h.HandlePayInvoice)
 
-	body, _ := json.Marshal(PayInvoiceInput{ProviderCode: "fake"})
+	body, _ := json.Marshal(PayInvoiceInput{ProviderCode: "fake", IdempotencyKey: "test-payment-1"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/invoices/1/pay", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

@@ -14,10 +14,27 @@ func TestUnconfiguredRepositoryReturnsErrorsInsteadOfPanicking(t *testing.T) {
 	repo := New(nil)
 	ctx := context.Background()
 
-	if err := repo.UpdateStatus(ctx, 1, model.StatusActive, model.StatusSuspended); err == nil || !strings.Contains(err.Error(), "database is not configured") {
-		t.Fatalf("UpdateStatus error = %v, want database configuration error", err)
+	err := repo.UpdateStatus(
+		ctx,
+		1,
+		model.StatusActive,
+		model.StatusSuspended,
+	)
+	if err == nil || !strings.Contains(err.Error(), "database is not configured") {
+		t.Fatalf(
+			"UpdateStatus error = %v, want database configuration error",
+			err,
+		)
 	}
-	if err := repo.AddPaymentMethod(ctx, 1, "pm_chapa_active"); err == nil || !strings.Contains(err.Error(), "database is not configured") {
-		t.Fatalf("AddPaymentMethod error = %v, want database configuration error", err)
+
+	if err := repo.AddPaymentMethod(
+		ctx,
+		1,
+		"pm_chapa_active",
+	); err == nil || !strings.Contains(err.Error(), "database is not configured") {
+		t.Fatalf(
+			"AddPaymentMethod error = %v, want database configuration error",
+			err,
+		)
 	}
 }

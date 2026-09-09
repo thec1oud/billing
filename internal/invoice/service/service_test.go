@@ -43,7 +43,7 @@ func TestService_CreateDraftInvoice_Validation(t *testing.T) {
 		t.Fatalf("failed to publish spec: %v", err)
 	}
 
-	svc := invoiceservice.NewService(pool, eSvc, repo, smEngine)
+	svc := invoiceservice.NewService(pool, eSvc, nil, repo, smEngine)
 
 	actor := eventmodel.Actor{Type: "USER", ID: "usr_test"}
 	usd := money.Currency("USD")
@@ -99,50 +99,19 @@ func TestService_DraftAndFinalize_Lifecycle(t *testing.T) {
 		t.Fatalf("failed to publish spec: %v", err)
 	}
 
-	svc := invoiceservice.NewService(pool, eSvc, repo, smEngine)
+	svc := invoiceservice.NewService(pool, eSvc, nil, repo, smEngine)
 
 	actor := eventmodel.Actor{Type: "SYSTEM", ID: "billing_test"}
+	accountID := int64(1)
 	usd := money.Currency("USD")
 
 	itemAmount1 := money.MustNew(2000, usd) // $20.00
 	itemAmount2 := money.MustNew(3000, usd) // $30.00
 
-	// Seed Account in Postgres to satisfy FK constraints
-	var accountID int64
-	err = pool.QueryRow(ctx, `
-		INSERT INTO accounts (currency, timezone)
-		VALUES ('USD', 'UTC')
-		RETURNING account_id;
-	`).Scan(&accountID)
-	if err != nil {
-		t.Fatalf("failed to seed account: %v", err)
-	}
-
-	// Seed Purchasable Items
-	var itemID1, itemID2 int64
-	err = pool.QueryRow(ctx, `
-		INSERT INTO purchasable_items (item_code, item_type_code, name, description)
-		VALUES ('test-item-1', 'PLAN', 'Item 1', 'Test')
-		ON CONFLICT (item_code) DO UPDATE SET name = EXCLUDED.name
-		RETURNING item_id;
-	`).Scan(&itemID1)
-	if err != nil {
-		t.Fatalf("failed to seed item 1: %v", err)
-	}
-	err = pool.QueryRow(ctx, `
-		INSERT INTO purchasable_items (item_code, item_type_code, name, description)
-		VALUES ('test-item-2', 'PLAN', 'Item 2', 'Test')
-		ON CONFLICT (item_code) DO UPDATE SET name = EXCLUDED.name
-		RETURNING item_id;
-	`).Scan(&itemID2)
-	if err != nil {
-		t.Fatalf("failed to seed item 2: %v", err)
-	}
-
 	// Note: item_id must exist in purchasable_items table per foreign key constraints
 	lineItems := []model.LineItem{
-		{ItemID: itemID1, Description: "Base Plan", QuantityValue: 1, UnitAmount: itemAmount1, TotalAmount: itemAmount1},
-		{ItemID: itemID2, Description: "Extra Seats", QuantityValue: 1, UnitAmount: itemAmount2, TotalAmount: itemAmount2},
+		{ItemID: 1, Description: "Base Plan", QuantityValue: 1, UnitAmount: itemAmount1, TotalAmount: itemAmount1},
+		{ItemID: 2, Description: "Extra Seats", QuantityValue: 1, UnitAmount: itemAmount2, TotalAmount: itemAmount2},
 	}
 
 	// 1. Create Draft

@@ -71,7 +71,7 @@ func SetupTestCluster(ctx context.Context) (*TestCluster, func(), error) {
 	rabbitContainer, err := tcrabbit.Run(ctx,
 		"rabbitmq:3-management-alpine",
 		testcontainers.WithWaitStrategy(
-			wait.ForLog("Server startup complete").WithStartupTimeout(120*time.Second),
+			wait.ForLog("Server startup complete").WithStartupTimeout(40*time.Second),
 		),
 	)
 	if err != nil {

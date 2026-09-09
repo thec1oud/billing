@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/thec1oud/billing/internal/shared/money"
-	"github.com/thec1oud/billing/internal/tariff"
 	"github.com/thec1oud/billing/internal/tariff/handler"
+	tariff "github.com/thec1oud/billing/internal/tariff/model"
 )
 
 type mockTariffService struct {

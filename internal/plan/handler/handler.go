@@ -6,12 +6,12 @@ import (
 	"net/http"
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
-	"github.com/thec1oud/billing/internal/plan"
+	planmodel "github.com/thec1oud/billing/internal/plan/model"
 )
 
 type PlanService interface {
-	CreatePlan(ctx context.Context, p plan.Plan) (plan.Plan, error)
-	ListActivePlans(ctx context.Context) ([]plan.Plan, error)
+	CreatePlan(ctx context.Context, p planmodel.Plan) (planmodel.Plan, error)
+	ListActivePlans(ctx context.Context) ([]planmodel.Plan, error)
 }
 
 type PlanHandler struct {
@@ -23,7 +23,7 @@ func NewPlanHandler(svc PlanService) *PlanHandler {
 }
 
 func (h *PlanHandler) HandleCreatePlan(w http.ResponseWriter, r *http.Request) {
-	var in plan.Plan
+	var in planmodel.Plan
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
 			Code:    "INVALID_REQUEST_BODY",

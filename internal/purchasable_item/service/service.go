@@ -6,13 +6,24 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
+	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 )
 
+type PurchasableItem = itemmodel.PurchasableItem
+type ItemTypeCode = itemmodel.ItemTypeCode
+
+var ErrPurchasableItemNotFound = itemrepo.ErrPurchasableItemNotFound
+
+const ItemTypePlan = itemmodel.ItemTypePlan
+const ItemTypeOneTimeService = itemmodel.ItemTypeOneTimeService
+const ItemTypeProduct = itemmodel.ItemTypeProduct
+
 type Service struct {
-	repository Repository
+	repository itemrepo.Repository
 }
 
-func NewService(repository Repository) *Service {
+func NewService(repository itemrepo.Repository) *Service {
 	return &Service{
 		repository: repository,
 	}
@@ -70,4 +81,10 @@ func (s *Service) GetByCode(
 	}
 
 	return s.repository.GetByCode(ctx, code)
+}
+
+func (s *Service) ListAll(
+	ctx context.Context,
+) ([]PurchasableItem, error) {
+	return s.repository.ListAll(ctx)
 }

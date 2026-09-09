@@ -1,4 +1,4 @@
-package purchasable_item
+package repository
 
 import (
 	"context"
@@ -10,8 +10,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
+
+type PurchasableItem = itemmodel.PurchasableItem
 
 var ErrPurchasableItemNotFound = errors.New("purchasable item not found")
 
@@ -31,6 +34,10 @@ type Repository interface {
 		ctx context.Context,
 		code string,
 	) (PurchasableItem, error)
+
+	ListAll(
+		ctx context.Context,
+	) ([]PurchasableItem, error)
 }
 
 type PostgresRepository struct {
@@ -142,6 +149,31 @@ func (r *PostgresRepository) GetByCode(
 	return toModel(row)
 }
 
+func (r *PostgresRepository) ListAll(
+	ctx context.Context,
+) ([]PurchasableItem, error) {
+	q := sqlcgen.New(r.pool)
+
+	rows, err := q.ListPurchasableItems(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list purchasable items: %w",
+			err,
+		)
+	}
+
+	items := make([]PurchasableItem, 0, len(rows))
+	for _, row := range rows {
+		item, err := toModel(row)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
 func toModel(row sqlcgen.PurchasableItem) (PurchasableItem, error) {
 	var description *string
 
@@ -165,7 +197,7 @@ func toModel(row sqlcgen.PurchasableItem) (PurchasableItem, error) {
 	return PurchasableItem{
 		ID:           row.ItemID,
 		ItemCode:     row.ItemCode,
-		ItemTypeCode: ItemTypeCode(row.ItemTypeCode),
+		ItemTypeCode: itemmodel.ItemTypeCode(row.ItemTypeCode),
 		Name:         row.Name,
 		Description:  description,
 		PlanID:       planID,

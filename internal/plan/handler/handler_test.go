@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/thec1oud/billing/internal/plan"
 	"github.com/thec1oud/billing/internal/plan/handler"
+	plan "github.com/thec1oud/billing/internal/plan/model"
 )
 
 type mockPlanService struct {
