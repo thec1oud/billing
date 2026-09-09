@@ -104,23 +104,3 @@ UPDATE invoices
 SET amount_paid = $1,
     amount_due = $2
 WHERE invoice_id = $3;
-
--- name: ListInvoicesByAccount :many
-SELECT
-    invoice_id,
-    account_id,
-    invoice_number,
-    invoice_status_code,
-    currency,
-    subtotal_amount,
-    tax_amount,
-    discount_amount,
-    total_amount,
-    amount_paid,
-    amount_due,
-    due_at,
-    finalized_at,
-    paid_at
-FROM invoices
-WHERE account_id = $1
-ORDER BY invoice_id DESC;

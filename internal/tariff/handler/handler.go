@@ -7,17 +7,17 @@ import (
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/shared/money"
-	"github.com/thec1oud/billing/internal/tariff"
+	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
 )
 
 type CreateInput struct {
-	Code        string                `json:"code"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	TariffType  tariff.TariffTypeCode `json:"tariff_type_code"`
-	Amount      money.Money           `json:"amount"`
-	Tiers       []tariff.Tier         `json:"tiers,omitempty"`
-	Metadata    []byte                `json:"metadata,omitempty"`
+	Code        string                     `json:"code"`
+	Name        string                     `json:"name"`
+	Description string                     `json:"description"`
+	TariffType  tariffmodel.TariffTypeCode `json:"tariff_type_code"`
+	Amount      money.Money                `json:"amount"`
+	Tiers       []tariffmodel.Tier         `json:"tiers,omitempty"`
+	Metadata    []byte                     `json:"metadata,omitempty"`
 }
 
 type TariffService interface {
@@ -26,11 +26,11 @@ type TariffService interface {
 		code string,
 		name string,
 		description string,
-		tariffType tariff.TariffTypeCode,
+		tariffType tariffmodel.TariffTypeCode,
 		amount money.Money,
-		tiers []tariff.Tier,
+		tiers []tariffmodel.Tier,
 		metadata []byte,
-	) (tariff.Tariff, error)
+	) (tariffmodel.Tariff, error)
 }
 
 type TariffHandler struct {

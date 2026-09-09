@@ -8,12 +8,14 @@ package sqlcgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createSubscription = `-- name: CreateSubscription :one
 INSERT INTO subscriptions (account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor)
 VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6)
-RETURNING subscription_id, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor
+RETURNING subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor, canceled_at, ended_at
 `
 
 type CreateSubscriptionParams struct {
@@ -26,14 +28,17 @@ type CreateSubscriptionParams struct {
 }
 
 type CreateSubscriptionRow struct {
-	SubscriptionID         int64     `json:"subscription_id"`
-	AccountID              int64     `json:"account_id"`
-	PlanID                 int64     `json:"plan_id"`
-	PlanVersion            int32     `json:"plan_version"`
-	SubscriptionStatusCode string    `json:"subscription_status_code"`
-	CurrentPeriodStartAt   time.Time `json:"current_period_start_at"`
-	CurrentPeriodEndAt     time.Time `json:"current_period_end_at"`
-	BillingCycleAnchor     time.Time `json:"billing_cycle_anchor"`
+	SubscriptionID         int64              `json:"subscription_id"`
+	Version                int64              `json:"version"`
+	AccountID              int64              `json:"account_id"`
+	PlanID                 int64              `json:"plan_id"`
+	PlanVersion            int32              `json:"plan_version"`
+	SubscriptionStatusCode string             `json:"subscription_status_code"`
+	CurrentPeriodStartAt   time.Time          `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time          `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time          `json:"billing_cycle_anchor"`
+	CanceledAt             pgtype.Timestamptz `json:"canceled_at"`
+	EndedAt                pgtype.Timestamptz `json:"ended_at"`
 }
 
 func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (CreateSubscriptionRow, error) {
@@ -48,6 +53,7 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 	var i CreateSubscriptionRow
 	err := row.Scan(
 		&i.SubscriptionID,
+		&i.Version,
 		&i.AccountID,
 		&i.PlanID,
 		&i.PlanVersion,
@@ -55,23 +61,28 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 		&i.CurrentPeriodStartAt,
 		&i.CurrentPeriodEndAt,
 		&i.BillingCycleAnchor,
+		&i.CanceledAt,
+		&i.EndedAt,
 	)
 	return i, err
 }
 
 const getSubscription = `-- name: GetSubscription :one
-SELECT subscription_id, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor FROM subscriptions WHERE subscription_id = $1
+SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor, canceled_at, ended_at FROM subscriptions WHERE subscription_id = $1
 `
 
 type GetSubscriptionRow struct {
-	SubscriptionID         int64     `json:"subscription_id"`
-	AccountID              int64     `json:"account_id"`
-	PlanID                 int64     `json:"plan_id"`
-	PlanVersion            int32     `json:"plan_version"`
-	SubscriptionStatusCode string    `json:"subscription_status_code"`
-	CurrentPeriodStartAt   time.Time `json:"current_period_start_at"`
-	CurrentPeriodEndAt     time.Time `json:"current_period_end_at"`
-	BillingCycleAnchor     time.Time `json:"billing_cycle_anchor"`
+	SubscriptionID         int64              `json:"subscription_id"`
+	Version                int64              `json:"version"`
+	AccountID              int64              `json:"account_id"`
+	PlanID                 int64              `json:"plan_id"`
+	PlanVersion            int32              `json:"plan_version"`
+	SubscriptionStatusCode string             `json:"subscription_status_code"`
+	CurrentPeriodStartAt   time.Time          `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time          `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time          `json:"billing_cycle_anchor"`
+	CanceledAt             pgtype.Timestamptz `json:"canceled_at"`
+	EndedAt                pgtype.Timestamptz `json:"ended_at"`
 }
 
 func (q *Queries) GetSubscription(ctx context.Context, subscriptionID int64) (GetSubscriptionRow, error) {
@@ -79,6 +90,7 @@ func (q *Queries) GetSubscription(ctx context.Context, subscriptionID int64) (Ge
 	var i GetSubscriptionRow
 	err := row.Scan(
 		&i.SubscriptionID,
+		&i.Version,
 		&i.AccountID,
 		&i.PlanID,
 		&i.PlanVersion,
@@ -86,25 +98,30 @@ func (q *Queries) GetSubscription(ctx context.Context, subscriptionID int64) (Ge
 		&i.CurrentPeriodStartAt,
 		&i.CurrentPeriodEndAt,
 		&i.BillingCycleAnchor,
+		&i.CanceledAt,
+		&i.EndedAt,
 	)
 	return i, err
 }
 
 const listAccountSubscriptions = `-- name: ListAccountSubscriptions :many
-SELECT subscription_id, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor
+SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor, canceled_at, ended_at
 FROM subscriptions 
 WHERE account_id = $1 AND subscription_status_code = 'ACTIVE'
 `
 
 type ListAccountSubscriptionsRow struct {
-	SubscriptionID         int64     `json:"subscription_id"`
-	AccountID              int64     `json:"account_id"`
-	PlanID                 int64     `json:"plan_id"`
-	PlanVersion            int32     `json:"plan_version"`
-	SubscriptionStatusCode string    `json:"subscription_status_code"`
-	CurrentPeriodStartAt   time.Time `json:"current_period_start_at"`
-	CurrentPeriodEndAt     time.Time `json:"current_period_end_at"`
-	BillingCycleAnchor     time.Time `json:"billing_cycle_anchor"`
+	SubscriptionID         int64              `json:"subscription_id"`
+	Version                int64              `json:"version"`
+	AccountID              int64              `json:"account_id"`
+	PlanID                 int64              `json:"plan_id"`
+	PlanVersion            int32              `json:"plan_version"`
+	SubscriptionStatusCode string             `json:"subscription_status_code"`
+	CurrentPeriodStartAt   time.Time          `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time          `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time          `json:"billing_cycle_anchor"`
+	CanceledAt             pgtype.Timestamptz `json:"canceled_at"`
+	EndedAt                pgtype.Timestamptz `json:"ended_at"`
 }
 
 func (q *Queries) ListAccountSubscriptions(ctx context.Context, accountID int64) ([]ListAccountSubscriptionsRow, error) {
@@ -118,6 +135,7 @@ func (q *Queries) ListAccountSubscriptions(ctx context.Context, accountID int64)
 		var i ListAccountSubscriptionsRow
 		if err := rows.Scan(
 			&i.SubscriptionID,
+			&i.Version,
 			&i.AccountID,
 			&i.PlanID,
 			&i.PlanVersion,
@@ -125,6 +143,8 @@ func (q *Queries) ListAccountSubscriptions(ctx context.Context, accountID int64)
 			&i.CurrentPeriodStartAt,
 			&i.CurrentPeriodEndAt,
 			&i.BillingCycleAnchor,
+			&i.CanceledAt,
+			&i.EndedAt,
 		); err != nil {
 			return nil, err
 		}

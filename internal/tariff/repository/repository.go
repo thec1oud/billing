@@ -1,4 +1,4 @@
-package tariff
+package repository
 
 import (
 	"context"
@@ -12,12 +12,17 @@ import (
 
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
+	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
 )
+
+type Tariff = tariffmodel.Tariff
+type Tier = tariffmodel.Tier
+type TariffTypeCode = tariffmodel.TariffTypeCode
 
 var ErrTariffNotFound = errors.New("tariff not found")
 
 type Repository interface {
-	Create(ctx context.Context, tariff Tariff) (Tariff, error)
+	Create(ctx context.Context, tx pgx.Tx, tariff Tariff) (Tariff, error)
 	GetByCodeAndVersion(
 		ctx context.Context,
 		code string,
@@ -54,6 +59,7 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 
 func (r *PostgresRepository) Create(
 	ctx context.Context,
+	tx pgx.Tx,
 	tariff Tariff,
 ) (Tariff, error) {
 	if err := tariff.Validate(); err != nil {
@@ -78,7 +84,7 @@ func (r *PostgresRepository) Create(
 		metadata = json.RawMessage(`{}`)
 	}
 
-	q := sqlcgen.New(r.pool)
+	q := sqlcgen.New(tx)
 
 	row, err := q.CreateTariff(ctx, sqlcgen.CreateTariffParams{
 		TariffCode:     tariff.TariffCode,

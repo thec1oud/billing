@@ -1,4 +1,4 @@
-package plan
+package model
 
 import (
 	"encoding/json"
@@ -55,8 +55,8 @@ func (p Plan) Validate() error {
 		return errors.New("plan code is required")
 	}
 
-	if p.Version < 1 {
-		return errors.New("plan version must be greater than zero")
+	if p.Version < 0 {
+		return errors.New("plan version cannot be negative")
 	}
 
 	if !p.LegacyPricePolicyCode.Valid() {

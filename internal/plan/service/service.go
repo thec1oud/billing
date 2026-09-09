@@ -1,4 +1,4 @@
-package plan
+package service
 
 import (
 	"context"
@@ -6,26 +6,35 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	purchasableitem "github.com/thec1oud/billing/internal/purchasable_item"
+	"github.com/jackc/pgx/v5"
+	planmodel "github.com/thec1oud/billing/internal/plan/model"
+	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 )
 
+type Plan = planmodel.Plan
+type PlanDuration = planmodel.PlanDuration
+type LegacyPricePolicy = planmodel.LegacyPricePolicy
+
+var ErrPlanNotFound = planrepo.ErrPlanNotFound
+var ErrPlanDurationNotFound = planrepo.ErrPlanDurationNotFound
+
+const LegacyPolicyKeepForever = planmodel.LegacyPolicyKeepForever
+const LegacyPolicyMigrateImmediately = planmodel.LegacyPolicyMigrateImmediately
+const LegacyPolicyMigrateOnRenewal = planmodel.LegacyPolicyMigrateOnRenewal
+
 type Service struct {
-	db         *pgxpool.Pool
-	repository Repository
-	itemSvc    *purchasableitem.Service
+	repository planrepo.Repository
 }
 
-func NewService(db *pgxpool.Pool, repository Repository, itemSvc *purchasableitem.Service) *Service {
+func NewService(repository planrepo.Repository) *Service {
 	return &Service{
-		db:         db,
 		repository: repository,
-		itemSvc:    itemSvc,
 	}
 }
 
 func (s *Service) CreatePlan(
 	ctx context.Context,
+	tx pgx.Tx,
 	plan Plan,
 ) (Plan, error) {
 	if plan.PlanCode == "" {
@@ -39,19 +48,6 @@ func (s *Service) CreatePlan(
 		)
 	}
 
-	latest, err := s.repository.LatestVersion(
-		ctx,
-		plan.PlanCode,
-	)
-	if err != nil {
-		return Plan{}, fmt.Errorf(
-			"get latest plan version: %w",
-			err,
-		)
-	}
-
-	plan.Version = latest + 1
-
 	if plan.EffectiveFrom.IsZero() {
 		plan.EffectiveFrom = time.Now().UTC()
 	}
@@ -62,12 +58,6 @@ func (s *Service) CreatePlan(
 			err,
 		)
 	}
-
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return Plan{}, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
 
 	created, err := s.repository.Create(
 		ctx,
@@ -81,26 +71,12 @@ func (s *Service) CreatePlan(
 		)
 	}
 
-	_, err = s.itemSvc.Create(ctx, tx, purchasableitem.PurchasableItem{
-		ItemCode:     fmt.Sprintf("%s_v%d", plan.PlanCode, created.Version),
-		ItemTypeCode: purchasableitem.ItemTypePlan,
-		Name:         fmt.Sprintf("%s Plan (v%d)", plan.PlanCode, created.Version),
-		PlanID:       &created.ID,
-		IsActive:     true,
-	})
-	if err != nil {
-		return Plan{}, fmt.Errorf("create purchasable item for plan: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return Plan{}, fmt.Errorf("commit transaction: %w", err)
-	}
-
 	return created, nil
 }
 
 func (s *Service) CreatePlanDuration(
 	ctx context.Context,
+	tx pgx.Tx,
 	duration PlanDuration,
 ) (PlanDuration, error) {
 	if err := duration.Validate(); err != nil {
@@ -114,6 +90,7 @@ func (s *Service) CreatePlanDuration(
 
 	created, err := s.repository.CreateDuration(
 		ctx,
+		tx,
 		duration,
 	)
 	if err != nil {
@@ -293,6 +270,7 @@ func (s *Service) ListDurations(
 
 func (s *Service) UpdateDurationTariff(
 	ctx context.Context,
+	tx pgx.Tx,
 	durationID int64,
 	tariffID int64,
 	isActive bool,
@@ -311,6 +289,7 @@ func (s *Service) UpdateDurationTariff(
 
 	duration, err := s.repository.UpdateDurationTariff(
 		ctx,
+		tx,
 		durationID,
 		tariffID,
 		isActive,

@@ -117,7 +117,6 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 	total, _ := money.New(1000, "USD")
 	amountPaid, _ := money.New(0, "USD")
 	amountDue, _ := money.New(1000, "USD")
-	dueAt := time.Now().UTC().Add(14 * 24 * time.Hour)
 
 	inv := model.Invoice{
 		AccountID:  1,
@@ -129,7 +128,6 @@ func TestPostgresRepository_LifecycleTransitions(t *testing.T) {
 		Total:      total,
 		AmountPaid: amountPaid,
 		AmountDue:  amountDue,
-		DueAt:      &dueAt,
 	}
 
 	tx, err := pool.Begin(ctx)

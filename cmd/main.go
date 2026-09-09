@@ -10,6 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	accountrepo "github.com/thec1oud/billing/internal/account/repository"
+	accountsvc "github.com/thec1oud/billing/internal/account/service"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
@@ -17,13 +20,21 @@ import (
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
+	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
+	planmodel "github.com/thec1oud/billing/internal/plan/model"
+	planrepo "github.com/thec1oud/billing/internal/plan/repository"
+	planservice "github.com/thec1oud/billing/internal/plan/service"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
-	"github.com/thec1oud/billing/internal/seed/dev"
+	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
+	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
+	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
 	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
@@ -31,17 +42,12 @@ import (
 	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
-
-	accountrepo "github.com/thec1oud/billing/internal/account/repository"
-	accountsvc "github.com/thec1oud/billing/internal/account/service"
-	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
-	"github.com/thec1oud/billing/internal/plan"
-	purchasableitem "github.com/thec1oud/billing/internal/purchasable_item"
-	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
-	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
-	"github.com/thec1oud/billing/internal/tariff"
+	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
+	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
+	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
+	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 )
 
 func main() {
@@ -53,14 +59,10 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-
-	// 1. Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-
-	// 2. Initialize global logger FIRST so all downstream logs use the configured pipeline
 	logClosers, err := logger.InitGlobalLogger(cfg)
 	if err != nil {
 		return fmt.Errorf("logger: %w", err)
@@ -71,36 +73,24 @@ func run() error {
 		}
 	}()
 
-	// 3. Initialize infrastructural dependencies
 	deps, err := infra.InitDependencies(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("infrastructure: %w", err)
 	}
-
 	defer func() {
 		if deps.Rabbit != nil {
 			_ = deps.Rabbit.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Redis != nil {
 			_ = deps.Redis.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Pool != nil {
 			deps.Pool.Close()
 		}
-	}()
-	defer func() {
 		if deps.DB != nil {
 			_ = deps.DB.Close(ctx)
 		}
 	}()
-
-	// 4. Run database migrations
 	if err := database.RunMigrations(deps.DB); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
@@ -154,34 +144,28 @@ func run() error {
 	accountRepo := accountrepo.New(deps.Pool)
 	accountSvc := accountsvc.New(accountRepo)
 
-	planRepo := plan.NewPostgresRepository(deps.Pool)
-	itemRepo := purchasableitem.NewPostgresRepository(deps.Pool)
-	itemSvc := purchasableitem.NewService(itemRepo)
-	planSvc := plan.NewService(deps.Pool, planRepo, itemSvc)
+	planRepo := planrepo.NewPostgresRepository(deps.Pool)
+	planSvc := planservice.NewService(planRepo)
 
-	tariffRepo := tariff.NewPostgresRepository(deps.Pool)
-	tariffSvc := tariff.NewService(tariffRepo)
-
-	// 5. Seed essential development data
-	if cfg.AppEnv != "production" {
-		if err := dev.Seed(ctx, deps.Pool, planSvc, tariffSvc, logger.ForComponent("dev_seeder")); err != nil {
-			return fmt.Errorf("failed to run dev seeder: %w", err)
-		}
-	}
+	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
 
 	subscriptionRepo := subscriptionrepo.New(deps.Pool)
-	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
+	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
+	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, subscriptionstatemachine.BuildSubscriptionDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		return fmt.Errorf("failed to bootstrap subscription state machine: %w", err)
+	}
+	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine)
 
 	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
 	eventSvc := eventsvc.NewService(eventRepo)
-	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, invoiceRepository, smEngine)
+	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, ppiService, invoiceRepository, smEngine)
 
 	// 11. Configure & Start HTTP Server
 	srv := api.NewServer(cfg, api.Deps{
 		Pool:                deps.Pool,
 		AccountService:      accountSvc,
 		PlanService:         planSvc,
-		TariffService:       tariffSvc,
 		SubscriptionService: subscriptionSvc,
 		InvoiceService:      invoiceSvc,
 		PPIService:          ppiService,
@@ -203,5 +187,77 @@ func run() error {
 		log.Error("HTTP Server Shutdown error", logger.Err(err))
 	}
 	log.Info("Billing service stopped successfully.")
+	return nil
+}
+
+func SeedCatalog(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	planSvc *planservice.Service,
+	tariffSvc *tariffservice.Service,
+	itemSvc *itemservice.Service,
+) error {
+	log := logger.ForComponent("seeder")
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	amt, _ := money.New(1000, "ETB") // 10.00 ETB per unit
+
+	t, err := tariffSvc.CreateTariff(
+		ctx,
+		tx,
+		"STANDARD_USAGE_V1",
+		"Standard Usage Pricing",
+		"Standard per-unit pricing",
+		tariffmodel.TariffTypeFlatFee,
+		amt,
+		nil,
+		nil,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			log.Info("Catalog already seeded")
+			return nil
+		}
+		return fmt.Errorf("create tariff: %w", err)
+	}
+
+	p, err := planSvc.CreatePlan(ctx, tx, planmodel.Plan{
+		PlanCode:              "USAGE_PLAN_A",
+		LegacyPricePolicyCode: planmodel.LegacyPolicyKeepForever,
+	})
+	if err != nil {
+		return fmt.Errorf("create plan: %w", err)
+	}
+
+	_, err = planSvc.CreatePlanDuration(ctx, tx, planmodel.PlanDuration{
+		PlanID:   p.ID,
+		TariffID: t.ID,
+		Duration: 30 * 24 * time.Hour,
+	})
+	if err != nil {
+		return fmt.Errorf("create plan duration: %w", err)
+	}
+
+	_, err = itemSvc.Create(ctx, tx, itemmodel.PurchasableItem{
+		ItemCode:     "API_REQUEST",
+		ItemTypeCode: itemmodel.ItemTypePlan,
+		Name:         "API Requests",
+		PlanID:       &p.ID,
+		IsActive:     true,
+	})
+	if err != nil {
+		return fmt.Errorf("create item: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit seed tx: %w", err)
+	}
+
+	log.Info("Successfully seeded DB with reference catalog (tariffs, plans, items).")
 	return nil
 }

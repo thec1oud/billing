@@ -1,4 +1,4 @@
-package purchasable_item
+package model
 
 import (
 	"encoding/json"

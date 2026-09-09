@@ -1,4 +1,4 @@
-package plan
+package repository
 
 import (
 	"context"
@@ -11,8 +11,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
+
+type Plan = planmodel.Plan
+type PlanDuration = planmodel.PlanDuration
+type LegacyPricePolicy = planmodel.LegacyPricePolicy
 
 var ErrPlanNotFound = errors.New("plan not found")
 var ErrPlanDurationNotFound = errors.New("plan duration not found")
@@ -26,6 +31,7 @@ type Repository interface {
 
 	CreateDuration(
 		ctx context.Context,
+		tx pgx.Tx,
 		duration PlanDuration,
 	) (PlanDuration, error)
 
@@ -49,7 +55,6 @@ type Repository interface {
 	ListActivePlans(
 		ctx context.Context,
 	) ([]Plan, error)
-
 	GetDuration(
 		ctx context.Context,
 		id int64,
@@ -68,6 +73,7 @@ type Repository interface {
 
 	UpdateDurationTariff(
 		ctx context.Context,
+		tx pgx.Tx,
 		durationID int64,
 		tariffID int64,
 		isActive bool,
@@ -132,7 +138,6 @@ func (r *PostgresRepository) Create(
 		ctx,
 		sqlcgen.CreatePlanParams{
 			PlanCode:              plan.PlanCode,
-			Version:               int32(plan.Version),
 			EffectiveFrom:         plan.EffectiveFrom,
 			EffectiveUntil:        effectiveUntil,
 			LegacyPricePolicyCode: string(plan.LegacyPricePolicyCode),
@@ -149,6 +154,7 @@ func (r *PostgresRepository) Create(
 
 func (r *PostgresRepository) CreateDuration(
 	ctx context.Context,
+	tx pgx.Tx,
 	duration PlanDuration,
 ) (PlanDuration, error) {
 	if err := duration.Validate(); err != nil {
@@ -158,7 +164,7 @@ func (r *PostgresRepository) CreateDuration(
 		)
 	}
 
-	q := sqlcgen.New(r.pool)
+	q := sqlcgen.New(tx)
 
 	row, err := q.CreatePlanDuration(
 		ctx,
@@ -356,6 +362,7 @@ func (r *PostgresRepository) ListDurations(
 
 func (r *PostgresRepository) UpdateDurationTariff(
 	ctx context.Context,
+	tx pgx.Tx,
 	durationID int64,
 	tariffID int64,
 	isActive bool,
@@ -372,7 +379,7 @@ func (r *PostgresRepository) UpdateDurationTariff(
 		)
 	}
 
-	q := sqlcgen.New(r.pool)
+	q := sqlcgen.New(tx)
 
 	row, err := q.UpdatePlanDurationTariff(
 		ctx,

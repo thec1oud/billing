@@ -54,7 +54,7 @@ func TestInvoiceStateMachine_E2E(t *testing.T) {
 	}
 
 	// 5. Initialize the Invoice service with the SM Engine
-	svc := invoiceservice.NewService(cluster.DBPool, eventSvc, invoiceRepository, smEngine)
+	svc := invoiceservice.NewService(cluster.DBPool, eventSvc, nil, invoiceRepository, smEngine)
 
 	// Seed Account in Postgres to satisfy FK constraints
 	var accountID int64

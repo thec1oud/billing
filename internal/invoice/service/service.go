@@ -12,6 +12,7 @@ import (
 	"github.com/thec1oud/billing/internal/invoice/model"
 	"github.com/thec1oud/billing/internal/invoice/repository"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
+	"github.com/thec1oud/billing/internal/ppi"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -22,6 +23,7 @@ import (
 type Service struct {
 	db           *pgxpool.Pool
 	eventService *eventservice.Service
+	ppi          ppi.PPI
 	repo         *repository.PostgresRepository
 	smEngine     *engine.Engine
 }
@@ -29,23 +31,17 @@ type Service struct {
 func NewService(
 	db *pgxpool.Pool,
 	eventService *eventservice.Service,
+	ppi ppi.PPI,
 	repo *repository.PostgresRepository,
 	smEngine *engine.Engine,
 ) *Service {
 	return &Service{
 		db:           db,
 		eventService: eventService,
+		ppi:          ppi,
 		repo:         repo,
 		smEngine:     smEngine,
 	}
-}
-
-func (s *Service) GetInvoice(ctx context.Context, invoiceID int64) (model.Invoice, error) {
-	return s.repo.Get(ctx, invoiceID)
-}
-
-func (s *Service) ListInvoices(ctx context.Context, accountID int64) ([]model.Invoice, error) {
-	return s.repo.ListByAccount(ctx, nil, accountID)
 }
 
 func (s *Service) CreateDraftInvoice(
@@ -131,6 +127,10 @@ func (s *Service) CreateDraftInvoice(
 
 	inv.InvoiceID = invoiceID
 	return inv, nil
+}
+
+func (s *Service) Get(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+	return s.repo.Get(ctx, invoiceID)
 }
 
 func (s *Service) FinalizeInvoice(

@@ -7,14 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	accountHandler "github.com/thec1oud/billing/internal/account/handler"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/logger"
-	invoiceHandler "github.com/thec1oud/billing/internal/invoice/handler"
-	planHandler "github.com/thec1oud/billing/internal/plan/handler"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
-	subHandler "github.com/thec1oud/billing/internal/subscription/handler"
-	tariffHandler "github.com/thec1oud/billing/internal/tariff/handler"
+	itemHandlers "github.com/thec1oud/billing/internal/purchasable_item/handler"
+	subscriptionHandlers "github.com/thec1oud/billing/internal/subscription/handler"
 )
 
 type Server struct {
@@ -28,48 +25,23 @@ type Server struct {
 func NewServer(cfg *config.Config, deps Deps) *Server {
 	mux := http.NewServeMux()
 
-	// Account routes
-	if deps.AccountService != nil {
-		accountAPI := accountHandler.NewAccountHandler(deps.AccountService)
-		mux.HandleFunc("POST /api/v1/accounts", accountAPI.HandleCreateAccount)
-		mux.HandleFunc("POST /api/v1/accounts/{id}/activate", accountAPI.HandleActivateAccount)
-	}
-
-	// Tariff routes
-	if deps.TariffService != nil {
-		tariffAPI := tariffHandler.NewTariffHandler(deps.TariffService)
-		mux.HandleFunc("POST /api/v1/tariffs", tariffAPI.HandleCreateTariff)
-	}
-
-	// Plan routes
-	if deps.PlanService != nil {
-		planAPI := planHandler.NewPlanHandler(deps.PlanService)
-		mux.HandleFunc("POST /api/v1/plans", planAPI.HandleCreatePlan)
-		mux.HandleFunc("GET /api/v1/plans", planAPI.HandleListPlans)
+	if deps.PurchasableItemService != nil {
+		itemHandler := itemHandlers.NewPurchasableItemHandler(deps.PurchasableItemService)
+		mux.HandleFunc("GET /api/v1/purchasable-items", itemHandler.HandleList)
 	}
 
 	// Subscription routes
 	if deps.SubscriptionService != nil {
-		subAPI := subHandler.NewSubscriptionHandler(deps.SubscriptionService)
-		mux.HandleFunc("POST /api/v1/subscriptions", subAPI.HandleCreateSubscription)
-		mux.HandleFunc("GET /api/v1/accounts/{id}/subscriptions", subAPI.HandleListAccountSubscriptions)
-	}
-
-	// Invoice routes
-	if deps.InvoiceService != nil {
-		invHandler := invoiceHandler.NewInvoiceHandler(deps.InvoiceService, deps.PPIService)
-		mux.HandleFunc("GET /api/v1/invoices/{id}", invHandler.HandleGetInvoice)
-		mux.HandleFunc("GET /api/v1/accounts/{id}/invoices", invHandler.HandleListInvoices)
-		mux.HandleFunc("POST /api/v1/invoices/{id}/pay", invHandler.HandlePayInvoice)
-
-		if cfg.AppEnv != "production" {
-			mux.HandleFunc("POST /api/v1/dev/invoices/generate", invHandler.HandleGenerateDevInvoice)
-		}
+		subscriptionHandler := subscriptionHandlers.NewSubscriptionHandler(deps.SubscriptionService)
+		mux.HandleFunc("POST /api/v1/subscriptions", subscriptionHandler.HandleCreateSubscription)
 	}
 
 	// PPI routes
-	ppiWebhook := ppiHandlers.NewWebhookHandler(deps.PPIService, deps.Broker)
-	mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiWebhook.HandleWebhook)
+	if deps.PPIService != nil {
+		ppiHandler := ppiHandlers.NewPPIHandler(deps.PPIService, deps.Broker)
+		mux.HandleFunc("POST /api/v1/payments/charge", ppiHandler.HandleAttemptPayment)
+		mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiHandler.HandleWebhook)
+	}
 
 	var handler http.Handler = mux
 	if deps.Pool != nil {
@@ -88,11 +60,6 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 	}
 }
 
-// Handler returns the underlying http.Handler.
-func (s *Server) Handler() http.Handler {
-	return s.srv.Handler
-}
-
 // Start launches the HTTP server listener in a non-blocking background goroutine.
 func (s *Server) Start() {
 	go func() {
@@ -107,4 +74,8 @@ func (s *Server) Start() {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.log.Info("Shutting down HTTP server gracefully...")
 	return s.srv.Shutdown(ctx)
+}
+
+func (s *Server) Handler() http.Handler {
+	return s.srv.Handler
 }

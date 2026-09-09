@@ -1,4 +1,4 @@
-package tariff
+package model
 
 import (
 	"encoding/json"

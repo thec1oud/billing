@@ -16,6 +16,7 @@ import (
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/thec1oud/billing/internal/plan/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 
@@ -23,10 +24,14 @@ import (
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
 
-	"github.com/thec1oud/billing/internal/plan"
-	purchasableitem "github.com/thec1oud/billing/internal/purchasable_item"
-	"github.com/thec1oud/billing/internal/tariff"
+	planrepo "github.com/thec1oud/billing/internal/plan/repository"
+	planservice "github.com/thec1oud/billing/internal/plan/service"
+	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
+	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
 	tariffhandler "github.com/thec1oud/billing/internal/tariff/handler"
+	tariff "github.com/thec1oud/billing/internal/tariff/model"
+	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
+	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 
 	subscriptionmodel "github.com/thec1oud/billing/internal/subscription/model"
 	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
@@ -77,13 +82,13 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	accountRepo := accountrepo.New(cluster.DBPool)
 	accountSvc := accountsvc.New(accountRepo)
 
-	planRepo := plan.NewPostgresRepository(cluster.DBPool)
-	itemRepo := purchasableitem.NewPostgresRepository(cluster.DBPool)
-	itemSvc := purchasableitem.NewService(itemRepo)
-	planSvc := plan.NewService(cluster.DBPool, planRepo, itemSvc)
+	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
+	itemRepo := itemrepo.NewPostgresRepository(cluster.DBPool)
+	itemSvc := itemservice.NewService(itemRepo)
+	planSvc := planservice.NewService(planRepo)
 
-	tariffRepo := tariff.NewPostgresRepository(cluster.DBPool)
-	tariffSvc := tariff.NewService(tariffRepo)
+	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
+	_ = tariffservice.NewService(tariffRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
@@ -108,7 +113,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	_, err = sm_loader.Publish(ctx, cluster.DBPool, smRepository, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
 	require.NoError(t, err)
 
-	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, invoiceRepository, smEngine)
+	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, ppiService, invoiceRepository, smEngine)
 	invoiceSubscriber := invoicesub.NewInvoiceSubscriber(cluster.DBPool, invoiceSvc, paymentAttemptSvc)
 
 	// Register Webhook Subscriber to RabbitMQ
@@ -127,7 +132,6 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 		Pool:                cluster.DBPool,
 		AccountService:      accountSvc,
 		PlanService:         planSvc,
-		TariffService:       tariffSvc,
 		SubscriptionService: subscriptionSvc,
 		InvoiceService:      invoiceSvc,
 		PPIService:          ppiService,

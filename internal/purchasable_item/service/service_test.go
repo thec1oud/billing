@@ -1,4 +1,4 @@
-package purchasable_item
+package service
 
 import (
 	"context"
@@ -61,6 +61,20 @@ func (f *fakePurchasableItemRepository) GetByCode(
 	}
 
 	return f.item, nil
+}
+
+func (f *fakePurchasableItemRepository) ListAll(
+	_ context.Context,
+) ([]PurchasableItem, error) {
+	if f.getByIDErr != nil {
+		return nil, f.getByIDErr
+	}
+
+	if f.item.ID != 0 {
+		return []PurchasableItem{f.item}, nil
+	}
+
+	return []PurchasableItem{}, nil
 }
 
 func TestService_CreatePurchasableItem(t *testing.T) {

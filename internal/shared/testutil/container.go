@@ -49,7 +49,7 @@ func NewPostgresContainer(t *testing.T) *pgxpool.Pool {
 		postgres.WithPassword(dbPass),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
+				WithOccurrence(1).
 				WithStartupTimeout(30*time.Second),
 		),
 	)

@@ -1,4 +1,4 @@
-package tariff
+package service
 
 import (
 	"context"
@@ -7,15 +7,27 @@ import (
 
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/thec1oud/billing/internal/shared/money"
+	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
+	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
 )
 
+type Tariff = tariffmodel.Tariff
+type Tier = tariffmodel.Tier
+type TariffTypeCode = tariffmodel.TariffTypeCode
+type Quantity = tariffmodel.Quantity
+
+const TariffTypeFlatFee = tariffmodel.TariffTypeFlatFee
+const TariffTypePerUnit = tariffmodel.TariffTypePerUnit
+const TariffTypeTieredUsage = tariffmodel.TariffTypeTieredUsage
+
 type Service struct {
-	repository Repository
+	repository tariffrepo.Repository
 }
 
-func NewService(repository Repository) *Service {
+func NewService(repository tariffrepo.Repository) *Service {
 	return &Service{
 		repository: repository,
 	}
@@ -23,6 +35,7 @@ func NewService(repository Repository) *Service {
 
 func (s *Service) CreateTariff(
 	ctx context.Context,
+	tx pgx.Tx,
 	code string,
 	name string,
 	description string,
@@ -49,7 +62,7 @@ func (s *Service) CreateTariff(
 	for attempt := 0; attempt < 3; attempt++ {
 		latest, err := s.repository.LatestVersion(ctx, code)
 		if err != nil {
-			if errors.Is(err, ErrTariffNotFound) {
+			if errors.Is(err, tariffrepo.ErrTariffNotFound) {
 				latest = 0
 			} else {
 				return Tariff{}, fmt.Errorf(
@@ -78,7 +91,7 @@ func (s *Service) CreateTariff(
 			)
 		}
 
-		created, err := s.repository.Create(ctx, tariff)
+		created, err := s.repository.Create(ctx, tx, tariff)
 		if err == nil {
 			return created, nil
 		}
@@ -160,3 +173,5 @@ func (s *Service) CalculateUsageCharge(
 
 	return tariff.CalculateCharge(qty)
 }
+
+var ErrTariffNotFound = tariffrepo.ErrTariffNotFound

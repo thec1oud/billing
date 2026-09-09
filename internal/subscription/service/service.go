@@ -2,37 +2,48 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepository "github.com/thec1oud/billing/internal/account/repository"
-	"github.com/thec1oud/billing/internal/plan"
-	"github.com/thec1oud/billing/internal/shared/money"
+	planrepo "github.com/thec1oud/billing/internal/plan/repository"
+	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
+	subscription "github.com/thec1oud/billing/internal/subscription"
 	"github.com/thec1oud/billing/internal/subscription/model"
 	"github.com/thec1oud/billing/internal/subscription/repository"
-	"github.com/thec1oud/billing/internal/tariff"
+	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
+	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
 )
 
 type Service struct {
 	repository *repository.Repository
 	accounts   *accountrepository.Repository
-	plans      plan.Repository
-	tariffs    tariff.Repository
+	plans      planrepo.Repository
+	tariffs    tariffrepo.Repository
+	smEngine   *sm_engine.Engine
 }
 
 func New(
 	repository *repository.Repository,
 	accounts *accountrepository.Repository,
-	plans plan.Repository,
-	tariffs tariff.Repository,
+	plans planrepo.Repository,
+	tariffs tariffrepo.Repository,
+	smEngines ...*sm_engine.Engine,
 ) *Service {
+	var smEngine *sm_engine.Engine
+	if len(smEngines) > 0 {
+		smEngine = smEngines[0]
+	}
 	return &Service{
 		repository: repository,
 		accounts:   accounts,
 		plans:      plans,
 		tariffs:    tariffs,
+		smEngine:   smEngine,
 	}
 }
 
@@ -99,7 +110,17 @@ func (s *Service) Create(
 	input.CurrentPeriodEnd = end
 	input.BillingCycleAnchor = now
 
-	return s.repository.Create(ctx, input)
+	created, err := s.repository.Create(ctx, input)
+	if err != nil {
+		return model.Subscription{}, err
+	}
+	if s.smEngine != nil {
+		initialContext, _ := json.Marshal(map[string]any{"subscription_id": created.SubscriptionID, "status": created.Status})
+		if _, err := s.smEngine.CreateInstance(ctx, sm_model.MachineType("subscription_lifecycle"), "subscription", fmt.Sprintf("%d", created.SubscriptionID), initialContext); err != nil {
+			return model.Subscription{}, fmt.Errorf("create subscription state machine instance: %w", err)
+		}
+	}
+	return created, nil
 }
 
 func (s *Service) Get(
@@ -116,11 +137,42 @@ func (s *Service) ListAccountSubscriptions(
 	return s.repository.ListAccountSubscriptions(ctx, accountID)
 }
 
-type BillingProjection struct {
-	AccountID   int64
-	Amount      money.Money
-	PeriodStart time.Time
-	PeriodEnd   time.Time
+func (s *Service) Pause(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
+	return s.fireTransition(ctx, subscriptionID, subscriptionstatemachine.EventPause)
+}
+
+func (s *Service) Resume(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
+	return s.fireTransition(ctx, subscriptionID, subscriptionstatemachine.EventResume)
+}
+
+func (s *Service) Cancel(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
+	return s.fireTransition(ctx, subscriptionID, subscriptionstatemachine.EventCancel)
+}
+
+func (s *Service) fireTransition(
+	ctx context.Context,
+	subscriptionID int64,
+	event sm_model.EventName,
+) (model.Subscription, error) {
+	if s.smEngine == nil {
+		return model.Subscription{}, errors.New("subscription state machine is not configured")
+	}
+
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx,
+		"subscription",
+		fmt.Sprintf("%d", subscriptionID),
+		subscriptionstatemachine.SubscriptionMachineType,
+	)
+	if err != nil {
+		return model.Subscription{}, fmt.Errorf("get subscription state machine: %w", err)
+	}
+
+	if _, err := s.smEngine.Fire(ctx, instance.InstanceID, event, nil); err != nil {
+		return model.Subscription{}, fmt.Errorf("fire subscription transition %q: %w", event, err)
+	}
+
+	return s.repository.Get(ctx, subscriptionID)
 }
 
 // BillingProjection resolves the current active tariff for the subscription's
@@ -131,14 +183,14 @@ type BillingProjection struct {
 func (s *Service) BillingProjection(
 	ctx context.Context,
 	subscriptionID int64,
-) (BillingProjection, error) {
+) (subscription.BillingProjection, error) {
 	sub, err := s.repository.Get(ctx, subscriptionID)
 	if err != nil {
-		return BillingProjection{}, err
+		return subscription.BillingProjection{}, err
 	}
 
 	if s.plans == nil {
-		return BillingProjection{}, errors.New(
+		return subscription.BillingProjection{}, errors.New(
 			"plan repository is not configured",
 		)
 	}
@@ -150,7 +202,7 @@ func (s *Service) BillingProjection(
 	// must never silently invoice.
 	durations, err := s.plans.ListDurations(ctx, sub.PlanID)
 	if err != nil {
-		return BillingProjection{}, fmt.Errorf(
+		return subscription.BillingProjection{}, fmt.Errorf(
 			"list plan durations: %w",
 			err,
 		)
@@ -165,7 +217,7 @@ func (s *Service) BillingProjection(
 	}
 
 	if active != 1 {
-		return BillingProjection{}, fmt.Errorf(
+		return subscription.BillingProjection{}, fmt.Errorf(
 			"plan %d must have exactly one active billing duration, got %d",
 			sub.PlanID,
 			active,
@@ -178,27 +230,27 @@ func (s *Service) BillingProjection(
 		}
 
 		if s.tariffs == nil {
-			return BillingProjection{}, errors.New(
+			return subscription.BillingProjection{}, errors.New(
 				"tariff repository is not configured",
 			)
 		}
 
 		t, err := s.tariffs.GetByID(ctx, d.TariffID)
 		if err != nil {
-			return BillingProjection{}, fmt.Errorf(
+			return subscription.BillingProjection{}, fmt.Errorf(
 				"get billing tariff: %w",
 				err,
 			)
 		}
 
 		if !t.IsActive {
-			return BillingProjection{}, fmt.Errorf(
+			return subscription.BillingProjection{}, fmt.Errorf(
 				"billing tariff %d is inactive",
 				d.TariffID,
 			)
 		}
 
-		return BillingProjection{
+		return subscription.BillingProjection{
 			AccountID:   sub.AccountID,
 			Amount:      t.Amount,
 			PeriodStart: sub.CurrentPeriodStart,
@@ -206,7 +258,7 @@ func (s *Service) BillingProjection(
 		}, nil
 	}
 
-	return BillingProjection{}, errors.New(
+	return subscription.BillingProjection{}, errors.New(
 		"active billing duration disappeared",
 	)
 }
