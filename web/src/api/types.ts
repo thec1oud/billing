@@ -10,33 +10,33 @@ export interface Money {
 export type AccountStatus = "PENDING_VERIFICATION" | "ACTIVE" | "SUSPENDED" | "CLOSED";
 
 export interface Account {
-  AccountID: number;
-  ExternalID: string;
-  Status: AccountStatus;
-  Currency: string;
-  Timezone: string;
-  Locale: string;
-  NetTerms: number;
-  DunningProfileID?: number | null;
-  TaxIdentifiers: any;
-  BillingAddress: any;
-  ComplianceFlags: any;
-  Metadata: any;
-  PaymentMethods: string[] | null;
-  CreatedAt: string; // ISO 8601 Date string
+  id: number;
+  external_id: string;
+  status: AccountStatus;
+  currency: string;
+  timezone: string;
+  locale: string;
+  net_terms: number;
+  dunning_profile_id?: number | null;
+  tax_identifiers: any;
+  billing_address: any;
+  compliance_flags: any;
+  metadata: any;
+  payment_methods: string[] | null;
+  created_at: string; // ISO 8601 Date string
 }
 
 export interface CreateAccountInput {
-  ExternalID?: string;
-  Currency: string;
-  Timezone: string;
-  Locale?: string;
-  NetTerms: number;
-  DunningProfileID?: number | null;
-  TaxIdentifiers?: any;
-  BillingAddress?: any;
-  ComplianceFlags?: any;
-  Metadata?: any;
+  external_id?: string;
+  currency: string;
+  timezone?: string;
+  locale?: string;
+  net_terms: number;
+  dunning_profile_id?: number | null;
+  tax_identifiers?: any;
+  billing_address?: any;
+  compliance_flags?: any;
+  metadata?: any;
 }
 
 // ----------------------
@@ -123,23 +123,27 @@ export interface CreatePlanInput {
 export type SubscriptionStatus = "ACTIVE";
 
 export interface Subscription {
-  SubscriptionID: number;
-  AccountID: number;
-  PlanID: number;
-  PlanVersion: number;
-  Status: SubscriptionStatus;
-  CurrentPeriodStart: string; // ISO 8601 Date string
-  CurrentPeriodEnd: string;
-  BillingCycleAnchor: string;
+  id: number;
+  version: number;
+  account_id: number;
+  plan_id: number;
+  plan_version: number;
+  status: SubscriptionStatus;
+  quantity: number;
+  current_period_start: string;
+  current_period_end: string;
+  billing_cycle_anchor: string;
+  cancel_at_period_end: boolean;
 }
 
 export interface CreateSubscriptionInput {
-  AccountID: number;
-  PlanID: number;
-  PlanVersion: number;
-  CurrentPeriodStart?: string;
-  CurrentPeriodEnd?: string;
-  BillingCycleAnchor?: string;
+  account_id: number;
+  plan_id: number;
+  plan_version: number;
+  quantity?: number;
+  current_period_start?: string;
+  current_period_end?: string;
+  billing_cycle_anchor?: string;
 }
 
 // ----------------------

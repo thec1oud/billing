@@ -5,7 +5,6 @@ import { Plans } from './pages/Plans';
 import { DevInvoice } from './pages/DevInvoice';
 import { Checkout } from './pages/Checkout';
 import { WebhookSimulator } from './pages/WebhookSimulator';
-import './index.css';
 
 const MainNav = () => {
   const { accountId, logout } = useAppState();

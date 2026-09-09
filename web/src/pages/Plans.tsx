@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { planService, subscriptionService } from '../api/services';
+import { planService, subscriptionService, tariffService } from '../api/services';
 import { useAppState } from '../context/AppState';
 import type { Plan, Subscription } from '../api/types';
 
@@ -13,6 +13,11 @@ export const Plans: React.FC = () => {
   
   const [availablePlans, setAvailablePlans] = useState<Plan[]>([]);
   const [subscribedPlans, setSubscribedPlans] = useState<Subscription[]>([]);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [planCode, setPlanCode] = useState('');
+  const [planName, setPlanName] = useState('');
+  const [amount, setAmount] = useState('1000');
+  const [durationDays, setDurationDays] = useState('30');
 
   useEffect(() => {
     if (!accountId) {
@@ -30,7 +35,7 @@ export const Plans: React.FC = () => {
         setSubscribedPlans(activeSubs || []);
         
         // Filter out plans the user is already subscribed to
-        const subbedPlanIds = new Set((activeSubs || []).map(s => s.PlanID));
+        const subbedPlanIds = new Set((activeSubs || []).map(s => s.plan_id));
         
         // Ensure plans is an array (in case backend returns null for empty list)
         const safePlans = allPlans || [];
@@ -47,6 +52,60 @@ export const Plans: React.FC = () => {
     fetchData();
   }, [accountId, navigate]);
 
+  const refreshPlans = async () => {
+    const [allPlans, activeSubs] = await Promise.all([
+      planService.list(),
+      accountId ? subscriptionService.listForAccount(accountId) : Promise.resolve([]),
+    ]);
+    setSubscribedPlans(activeSubs);
+    const subbedPlanIds = new Set(activeSubs.map(subscription => subscription.plan_id));
+    setAvailablePlans((allPlans || []).filter(plan => !subbedPlanIds.has(plan.plan_id!)));
+  };
+
+  const handleCreatePlan = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!planCode.trim() || !planName.trim()) {
+      setError('Plan code and name are required');
+      return;
+    }
+
+    const amountMinor = Number(amount);
+    const days = Number(durationDays);
+    if (!Number.isInteger(amountMinor) || amountMinor <= 0 || !Number.isInteger(days) || days <= 0) {
+      setError('Amount and duration must be positive whole numbers');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const createdTariff = await tariffService.create({
+        code: `${planCode.trim()}_tariff`,
+        name: `${planName.trim()} pricing`,
+        description: `${planName.trim()} pricing`,
+        tariff_type_code: 'FLAT_FEE',
+        amount: { amount_minor: amountMinor, currency: 'ETB' },
+      });
+      await planService.create({
+        plan_code: planCode.trim(),
+        legacy_price_policy_code: 'KEEP_FOREVER',
+        durations: [{
+          tariff_id: createdTariff.tariff_id,
+          duration: days * 24 * 60 * 60 * 1_000_000_000,
+          is_active: true,
+        }],
+      });
+      setPlanCode('');
+      setPlanName('');
+      setShowCreateForm(false);
+      await refreshPlans();
+    } catch (err: any) {
+      setError(err.message || 'Failed to create plan');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubscribe = async (plan: Plan) => {
     if (!accountId || !plan.plan_id || !plan.version) return;
     setLoading(true);
@@ -54,13 +113,13 @@ export const Plans: React.FC = () => {
 
     try {
       const subInput = {
-        AccountID: accountId,
-        PlanID: plan.plan_id, 
-        PlanVersion: plan.version,
+        account_id: accountId,
+        plan_id: plan.plan_id,
+        plan_version: plan.version,
       };
       
       const subscription = await subscriptionService.create(subInput);
-      setSubscriptionId(subscription.SubscriptionID);
+      setSubscriptionId(subscription.id);
       
       navigate('/invoice', { state: { planId: plan.plan_id } });
     } catch (err: any) {
@@ -88,10 +147,10 @@ export const Plans: React.FC = () => {
             <h3>Your Subscriptions</h3>
             <div className="webhook-list" style={{ marginTop: '1rem' }}>
               {subscribedPlans.map(sub => (
-                <div key={sub.SubscriptionID} className="webhook-item">
+                <div key={sub.id} className="webhook-item">
                   <div className="webhook-info">
-                    <strong>Plan ID:</strong> {sub.PlanID} <br/>
-                    <strong>Status:</strong> <span className="badge badge-open">{sub.Status}</span>
+                    <strong>Plan ID:</strong> {sub.plan_id} <br/>
+                    <strong>Status:</strong> <span className="badge badge-open">{sub.status}</span>
                   </div>
                 </div>
               ))}
@@ -103,7 +162,7 @@ export const Plans: React.FC = () => {
         <h3>Plans</h3>
         {availablePlans.length === 0 ? (
           <div className="empty-state" style={{ marginTop: '1rem' }}>
-            No new plans available. You are subscribed to all of them!
+            No plans are available yet. Create the first plan below.
           </div>
         ) : (
           <div className="webhook-list" style={{ marginTop: '1rem' }}>
@@ -128,6 +187,21 @@ export const Plans: React.FC = () => {
             ))}
           </div>
         )}
+
+        <div style={{ marginTop: '2rem' }}>
+          <button className="btn btn-secondary" onClick={() => setShowCreateForm(value => !value)}>
+            {showCreateForm ? 'Cancel' : 'Create Plan'}
+          </button>
+          {showCreateForm && (
+            <form onSubmit={handleCreatePlan} style={{ display: 'grid', gap: '1rem', marginTop: '1rem' }}>
+              <input value={planCode} onChange={event => setPlanCode(event.target.value)} placeholder="Plan code, e.g. starter" />
+              <input value={planName} onChange={event => setPlanName(event.target.value)} placeholder="Plan name" />
+              <input type="number" min="1" value={amount} onChange={event => setAmount(event.target.value)} placeholder="Amount in minor units" />
+              <input type="number" min="1" value={durationDays} onChange={event => setDurationDays(event.target.value)} placeholder="Duration in days" />
+              <button className="btn btn-primary" type="submit" disabled={loading}>Create plan</button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );

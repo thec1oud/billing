@@ -26,19 +26,19 @@ export const Login: React.FC = () => {
 
     try {
       const createInput: CreateAccountInput = {
-        ExternalID: externalId.trim(),
-        Currency: currency,
-        Timezone: "UTC",
-        NetTerms: 0,
+        external_id: externalId.trim(),
+        currency,
+        timezone: "UTC",
+        net_terms: 0,
       };
       
       const newAccount = await accountService.create(createInput);
-      await accountService.activate(newAccount.AccountID);
+      await accountService.activate(newAccount.id);
 
       const savedAcc = {
-        accountId: newAccount.AccountID,
-        externalId: newAccount.ExternalID,
-        currency: newAccount.Currency,
+        accountId: newAccount.id,
+        externalId: newAccount.external_id,
+        currency: newAccount.currency,
       };
 
       addSavedAccount(savedAcc);

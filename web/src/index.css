@@ -27,6 +27,24 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+input {
+  width: 100%;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--text-main);
+  background-color: transparent;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+input:focus {
+  outline: none;
+  border-color: #0066cc;
+}
+
+
 .layout {
   display: flex;
   flex-direction: column;

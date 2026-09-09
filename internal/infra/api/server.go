@@ -13,10 +13,12 @@ import (
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	invoicemodel "github.com/thec1oud/billing/internal/invoice/model"
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
 	itemHandlers "github.com/thec1oud/billing/internal/purchasable_item/handler"
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 	subscriptionHandlers "github.com/thec1oud/billing/internal/subscription/handler"
 	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
@@ -44,17 +46,22 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 
 	if deps.PlanService != nil && deps.Pool != nil {
 		mux.HandleFunc("POST /api/v1/plans", handleCreatePlan(deps))
+		mux.HandleFunc("GET /api/v1/plans", handleListPlans(deps.PlanService))
 	}
 
 	if deps.PurchasableItemService != nil {
 		itemHandler := itemHandlers.NewPurchasableItemHandler(deps.PurchasableItemService)
 		mux.HandleFunc("GET /api/v1/purchasable-items", itemHandler.HandleList)
 	}
+	if deps.InvoiceService != nil && deps.PurchasableItemService != nil {
+		mux.HandleFunc("POST /api/v1/dev/invoices/generate", handleGenerateDevInvoice(deps))
+	}
 
 	// Subscription routes
 	if deps.SubscriptionService != nil {
 		subscriptionHandler := subscriptionHandlers.NewSubscriptionHandler(deps.SubscriptionService)
 		mux.HandleFunc("POST /api/v1/subscriptions", subscriptionHandler.HandleCreateSubscription)
+		mux.HandleFunc("GET /api/v1/accounts/{id}/subscriptions", subscriptionHandler.HandleListAccountSubscriptions)
 	}
 
 	// PPI routes
@@ -225,6 +232,62 @@ func handleCreatePlan(deps Deps) http.HandlerFunc {
 		}
 		if err := tx.Commit(r.Context()); err != nil {
 			writeAPIError(w, err)
+			return
+		}
+		response.Write(w, http.StatusCreated, created)
+	}
+}
+
+func handleListPlans(s interface {
+	ListActivePlans(context.Context) ([]planmodel.Plan, error)
+}) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		plans, err := s.ListActivePlans(r.Context())
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
+		response.Write(w, http.StatusOK, plans)
+	}
+}
+
+func handleGenerateDevInvoice(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			AccountID int64 `json:"account_id"`
+			PlanID    int64 `json:"plan_id"`
+		}
+		if !decodeRequest(w, r, &input) {
+			return
+		}
+		if input.AccountID <= 0 || input.PlanID <= 0 {
+			writeAPIError(w, errors.New("account_id and plan_id must be greater than zero"))
+			return
+		}
+
+		item, err := deps.PurchasableItemService.GetByPlanID(r.Context(), input.PlanID)
+		if err != nil {
+			writeAPIError(w, fmt.Errorf("find plan purchasable item: %w", err))
+			return
+		}
+		amount := money.MustNew(1000, money.Currency("ETB"))
+		lineItems := []invoicemodel.LineItem{{
+			ItemID:        item.ID,
+			Description:   item.Name,
+			QuantityValue: 1,
+			QuantityUnit:  "units",
+			UnitAmount:    amount,
+			TotalAmount:   amount,
+		}}
+		actor := eventmodel.Actor{Type: "system", ID: "web_dev_endpoint"}
+		draft, err := deps.InvoiceService.CreateDraftInvoice(r.Context(), actor, input.AccountID, "ETB", lineItems)
+		if err != nil {
+			writeAPIError(w, fmt.Errorf("create dev invoice: %w", err))
+			return
+		}
+		created, err := deps.InvoiceService.FinalizeInvoice(r.Context(), actor, draft.InvoiceID, 14)
+		if err != nil {
+			writeAPIError(w, fmt.Errorf("finalize dev invoice: %w", err))
 			return
 		}
 		response.Write(w, http.StatusCreated, created)

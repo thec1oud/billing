@@ -141,6 +141,40 @@ func (q *Queries) GetPurchasableItemByID(ctx context.Context, itemID int64) (Pur
 	return i, err
 }
 
+const getPurchasableItemByPlanID = `-- name: GetPurchasableItemByPlanID :one
+SELECT
+    item_id,
+    item_code,
+    item_type_code,
+    name,
+    description,
+    plan_id,
+    is_active,
+    metadata,
+    created_at
+FROM purchasable_items
+WHERE plan_id = $1
+ORDER BY item_id
+LIMIT 1
+`
+
+func (q *Queries) GetPurchasableItemByPlanID(ctx context.Context, planID pgtype.Int8) (PurchasableItem, error) {
+	row := q.db.QueryRow(ctx, getPurchasableItemByPlanID, planID)
+	var i PurchasableItem
+	err := row.Scan(
+		&i.ItemID,
+		&i.ItemCode,
+		&i.ItemTypeCode,
+		&i.Name,
+		&i.Description,
+		&i.PlanID,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listPurchasableItems = `-- name: ListPurchasableItems :many
 SELECT
     item_id,

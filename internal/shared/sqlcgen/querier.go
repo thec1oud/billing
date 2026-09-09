@@ -52,6 +52,7 @@ type Querier interface {
 	GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetPlanDurationByPlanAndDurationParams) (PlanDuration, error)
 	GetPurchasableItemByCode(ctx context.Context, itemCode string) (PurchasableItem, error)
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
+	GetPurchasableItemByPlanID(ctx context.Context, planID pgtype.Int8) (PurchasableItem, error)
 	GetSubscription(ctx context.Context, subscriptionID int64) (GetSubscriptionRow, error)
 	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
 	GetTariffByID(ctx context.Context, tariffID int64) (Tariff, error)

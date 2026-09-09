@@ -40,6 +40,10 @@ type Repository interface {
 	) ([]PurchasableItem, error)
 }
 
+type PlanLookup interface {
+	GetByPlanID(ctx context.Context, planID int64) (PurchasableItem, error)
+}
+
 type PostgresRepository struct {
 	pool *pgxpool.Pool
 }
@@ -146,6 +150,20 @@ func (r *PostgresRepository) GetByCode(
 		)
 	}
 
+	return toModel(row)
+}
+
+func (r *PostgresRepository) GetByPlanID(
+	ctx context.Context,
+	planID int64,
+) (PurchasableItem, error) {
+	row, err := sqlcgen.New(r.pool).GetPurchasableItemByPlanID(ctx, pgtype.Int8{Int64: planID, Valid: true})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PurchasableItem{}, ErrPurchasableItemNotFound
+	}
+	if err != nil {
+		return PurchasableItem{}, fmt.Errorf("get purchasable item by plan: %w", err)
+	}
 	return toModel(row)
 }
 

@@ -86,7 +86,8 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     let errorData: APIErrorResponse;
     try {
-      errorData = await response.json();
+      const payload = await response.json();
+      errorData = payload.error ?? payload;
     } catch (err) {
       errorData = {
         code: "UNKNOWN_ERROR",

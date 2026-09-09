@@ -83,6 +83,20 @@ func (s *Service) GetByCode(
 	return s.repository.GetByCode(ctx, code)
 }
 
+func (s *Service) GetByPlanID(
+	ctx context.Context,
+	planID int64,
+) (PurchasableItem, error) {
+	if planID <= 0 {
+		return PurchasableItem{}, errors.New("plan id must be greater than zero")
+	}
+	lookup, ok := s.repository.(itemrepo.PlanLookup)
+	if !ok {
+		return PurchasableItem{}, errors.New("plan item lookup is not configured")
+	}
+	return lookup.GetByPlanID(ctx, planID)
+}
+
 func (s *Service) ListAll(
 	ctx context.Context,
 ) ([]PurchasableItem, error) {
