@@ -12,7 +12,8 @@ import (
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
-	"github.com/thec1oud/billing/internal/plan/model"
+	plan "github.com/thec1oud/billing/internal/plan/model"
+	purchasableitem "github.com/thec1oud/billing/internal/purchasable_item/model"
 
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	planservice "github.com/thec1oud/billing/internal/plan/service"

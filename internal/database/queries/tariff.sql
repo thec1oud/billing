@@ -1,4 +1,11 @@
 -- name: CreateTariff :one
+WITH locked AS (
+    SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
+), next_version AS (
+    SELECT COALESCE(MAX(version), 0) + 1 AS version
+    FROM tariffs, locked
+    WHERE tariff_code = $1
+)
 INSERT INTO tariffs (
     tariff_code,
     version,
@@ -11,8 +18,9 @@ INSERT INTO tariffs (
     is_active,
     metadata
 )
-VALUES (
+SELECT
     $1,
+    next_version.version,
     $2,
     $3,
     $4,
@@ -20,9 +28,8 @@ VALUES (
     $6,
     $7,
     $8,
-    $9,
-    $10
-)
+    $9
+FROM next_version
 RETURNING
     tariff_id,
     tariff_code,

@@ -9,6 +9,7 @@ import (
 	ppiservice "github.com/thec1oud/billing/internal/ppi/service"
 	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
 	subscriptionservice "github.com/thec1oud/billing/internal/subscription/service"
+	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 )
 
 // Deps holds all domain-level service dependencies required by the HTTP handlers
@@ -19,6 +20,7 @@ type Deps struct {
 	Broker                 messaging.Broker
 	AccountService         *accountservice.Service
 	PlanService            *planservice.Service
+	TariffService          *tariffservice.Service
 	PurchasableItemService *itemservice.Service
 	SubscriptionService    *subscriptionservice.Service
 	InvoiceService         *invoiceservice.Service

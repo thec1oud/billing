@@ -50,8 +50,12 @@ func SetupTestCluster(ctx context.Context) (*TestCluster, func(), error) {
 	_, b, _, _ := runtime.Caller(0)
 	projectRoot := filepath.Join(filepath.Dir(b), "../../..")
 	migrationsPath := filepath.Join(projectRoot, "internal/database/migrations")
+	migrationsURL := "file://" + filepath.ToSlash(migrationsPath)
+	if filepath.VolumeName(migrationsPath) != "" {
+		migrationsURL = "file:" + filepath.ToSlash(migrationsPath)
+	}
 
-	m, err := migrate.New("file://"+migrationsPath, pgConnStr)
+	m, err := migrate.New(migrationsURL, pgConnStr)
 	if err != nil {
 		_ = pgContainer.Terminate(ctx)
 		return nil, nil, fmt.Errorf("failed to init migrations: %w", err)

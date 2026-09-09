@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -59,54 +57,30 @@ func (s *Service) CreateTariff(
 		)
 	}
 
-	for attempt := 0; attempt < 3; attempt++ {
-		latest, err := s.repository.LatestVersion(ctx, code)
-		if err != nil {
-			if errors.Is(err, tariffrepo.ErrTariffNotFound) {
-				latest = 0
-			} else {
-				return Tariff{}, fmt.Errorf(
-					"get latest tariff version: %w",
-					err,
-				)
-			}
-		}
+	tariff := Tariff{
+		TariffCode:     code,
+		Name:           name,
+		Description:    description,
+		TariffTypeCode: tariffType,
+		Amount:         amount,
+		Tiers:          tiers,
+		Metadata:       metadata,
+		IsActive:       true,
+	}
 
-		tariff := Tariff{
-			TariffCode:     code,
-			Version:        latest + 1,
-			Name:           name,
-			Description:    description,
-			TariffTypeCode: tariffType,
-			Amount:         amount,
-			Tiers:          tiers,
-			Metadata:       metadata,
-			IsActive:       true,
-		}
+	if err := tariff.Validate(); err != nil {
+		return Tariff{}, fmt.Errorf(
+			"validate tariff: %w",
+			err,
+		)
+	}
 
-		if err := tariff.Validate(); err != nil {
-			return Tariff{}, fmt.Errorf(
-				"validate tariff: %w",
-				err,
-			)
-		}
-
-		created, err := s.repository.Create(ctx, tx, tariff)
-		if err == nil {
-			return created, nil
-		}
-
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) &&
-			pgErr.Code == pgerrcode.UniqueViolation &&
-			pgErr.ConstraintName == "uq_tariff_code_version" {
-			continue
-		}
-
+	created, err := s.repository.Create(ctx, tx, tariff)
+	if err != nil {
 		return Tariff{}, fmt.Errorf("create tariff: %w", err)
 	}
 
-	return Tariff{}, errors.New("create tariff: retry limit exceeded")
+	return created, nil
 }
 
 func (s *Service) GetTariffVersion(

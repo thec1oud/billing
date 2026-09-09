@@ -88,7 +88,6 @@ func (r *PostgresRepository) Create(
 
 	row, err := q.CreateTariff(ctx, sqlcgen.CreateTariffParams{
 		TariffCode:     tariff.TariffCode,
-		Version:        int32(tariff.Version),
 		Name:           tariff.Name,
 		Description:    description,
 		TariffTypeCode: string(tariff.TariffTypeCode),

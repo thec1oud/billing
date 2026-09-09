@@ -98,8 +98,8 @@ func (t Tariff) Validate() error {
 		return errors.New("tariff code is required")
 	}
 
-	if t.Version < 1 {
-		return errors.New("tariff version must be greater than zero")
+	if t.Version < 0 {
+		return errors.New("tariff version cannot be negative")
 	}
 
 	if t.Name == "" {

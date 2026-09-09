@@ -31,6 +31,7 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
+	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
@@ -148,6 +149,9 @@ func run() error {
 	planSvc := planservice.NewService(planRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
+	tariffSvc := tariffservice.NewService(tariffRepo)
+	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
+	itemSvc := itemservice.NewService(itemRepo)
 
 	subscriptionRepo := subscriptionrepo.New(deps.Pool)
 	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
@@ -163,13 +167,15 @@ func run() error {
 
 	// 11. Configure & Start HTTP Server
 	srv := api.NewServer(cfg, api.Deps{
-		Pool:                deps.Pool,
-		AccountService:      accountSvc,
-		PlanService:         planSvc,
-		SubscriptionService: subscriptionSvc,
-		InvoiceService:      invoiceSvc,
-		PPIService:          ppiService,
-		Broker:              rabbitBroker,
+		Pool:                   deps.Pool,
+		AccountService:         accountSvc,
+		PlanService:            planSvc,
+		TariffService:          tariffSvc,
+		PurchasableItemService: itemSvc,
+		SubscriptionService:    subscriptionSvc,
+		InvoiceService:         invoiceSvc,
+		PPIService:             ppiService,
+		Broker:                 rabbitBroker,
 	})
 	srv.Start()
 

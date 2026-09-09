@@ -16,7 +16,7 @@ import (
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/messaging"
-	"github.com/thec1oud/billing/internal/plan/model"
+	plan "github.com/thec1oud/billing/internal/plan/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 
@@ -88,7 +88,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	planSvc := planservice.NewService(planRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
-	_ = tariffservice.NewService(tariffRepo)
+	tariffSvc := tariffservice.NewService(tariffRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
@@ -129,13 +129,15 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	// 3. Setup Server
 	cfg := &config.Config{AppPort: "8080"}
 	deps := api.Deps{
-		Pool:                cluster.DBPool,
-		AccountService:      accountSvc,
-		PlanService:         planSvc,
-		SubscriptionService: subscriptionSvc,
-		InvoiceService:      invoiceSvc,
-		PPIService:          ppiService,
-		Broker:              broker,
+		Pool:                   cluster.DBPool,
+		AccountService:         accountSvc,
+		PlanService:            planSvc,
+		TariffService:          tariffSvc,
+		PurchasableItemService: itemSvc,
+		SubscriptionService:    subscriptionSvc,
+		InvoiceService:         invoiceSvc,
+		PPIService:             ppiService,
+		Broker:                 broker,
 	}
 	server := api.NewServer(cfg, deps)
 	ts := httptest.NewServer(server.Handler())

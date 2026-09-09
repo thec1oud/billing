@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
@@ -35,6 +34,7 @@ func (m *mockRepository) Create(
 	}
 	m.created = tariff
 	tariff.ID = 1
+	tariff.Version = 3
 	return tariff, nil
 }
 
@@ -76,9 +76,7 @@ func (m *mockRepository) ListVersions(
 }
 
 func TestServiceCreateTariff(t *testing.T) {
-	repo := &mockRepository{
-		latestVersions: []int{2},
-	}
+	repo := &mockRepository{}
 
 	service := NewService(repo)
 
@@ -102,35 +100,6 @@ func TestServiceCreateTariff(t *testing.T) {
 	require.Equal(t, 1, repo.createCalls)
 }
 
-func TestServiceCreateTariff_RetriesAfterUniqueVersionConflict(t *testing.T) {
-	repo := &mockRepository{
-		latestVersions: []int{1, 2},
-		createErrs: []error{
-			&pgconn.PgError{Code: "23505", ConstraintName: "uq_tariff_code_version"},
-		},
-	}
-
-	service := NewService(repo)
-
-	amount, err := money.New(1000, "USD")
-	require.NoError(t, err)
-
-	created, err := service.CreateTariff(
-		context.Background(),
-		nil,
-		"BASIC",
-		"Basic",
-		"",
-		TariffTypeFlatFee,
-		amount,
-		nil,
-		nil,
-	)
-	require.NoError(t, err)
-	require.Equal(t, 3, created.Version)
-	require.Equal(t, 2, repo.createCalls)
-}
-
 func TestServiceListVersions_ReturnsNotFound(t *testing.T) {
 	repo := &mockRepository{listErr: ErrTariffNotFound}
 	service := NewService(repo)
@@ -140,12 +109,7 @@ func TestServiceListVersions_ReturnsNotFound(t *testing.T) {
 }
 
 func TestServiceCreateTariff_RetainsRepositoryError(t *testing.T) {
-	repo := &mockRepository{
-		latestVersions: []int{2},
-		createErrs: []error{
-			errors.New("database error"),
-		},
-	}
+	repo := &mockRepository{createErrs: []error{errors.New("database error")}}
 
 	service := NewService(repo)
 
