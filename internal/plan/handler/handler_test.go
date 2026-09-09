@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 	"github.com/thec1oud/billing/internal/plan/handler"
 	plan "github.com/thec1oud/billing/internal/plan/model"
@@ -18,7 +19,7 @@ type mockPlanService struct {
 	createErr error
 }
 
-func (m *mockPlanService) CreatePlan(ctx context.Context, p plan.Plan) (plan.Plan, error) {
+func (m *mockPlanService) CreatePlan(ctx context.Context, tx pgx.Tx, p plan.Plan) (plan.Plan, error) {
 	if m.createErr != nil {
 		return plan.Plan{}, m.createErr
 	}
@@ -30,17 +31,25 @@ func (m *mockPlanService) CreatePlan(ctx context.Context, p plan.Plan) (plan.Pla
 	return p, nil
 }
 
+func (m *mockPlanService) CreatePlanDuration(ctx context.Context, tx pgx.Tx, duration plan.PlanDuration) (plan.PlanDuration, error) {
+	duration.ID = 1
+	return duration, nil
+}
+
 func (m *mockPlanService) ListActivePlans(ctx context.Context) ([]plan.Plan, error) {
-	return nil, nil
+	return []plan.Plan{{ID: 1, PlanCode: "PRO"}}, nil
 }
 
 func TestHandleCreatePlan(t *testing.T) {
 	svc := &mockPlanService{}
-	h := handler.NewPlanHandler(svc)
+	h := handler.NewPlanHandler(nil, svc, nil)
 
 	in := plan.Plan{
 		PlanCode:              "PRO",
 		LegacyPricePolicyCode: plan.LegacyPolicyKeepForever,
+		Durations: []plan.PlanDuration{
+			{Duration: 30 * 24 * time.Hour},
+		},
 	}
 	body, _ := json.Marshal(in)
 
@@ -50,4 +59,16 @@ func TestHandleCreatePlan(t *testing.T) {
 	h.HandleCreatePlan(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestHandleListPlans(t *testing.T) {
+	svc := &mockPlanService{}
+	h := handler.NewPlanHandler(nil, svc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plans", nil)
+	w := httptest.NewRecorder()
+
+	h.HandleListPlans(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
 }

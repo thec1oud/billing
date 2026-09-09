@@ -15,6 +15,7 @@ import (
 
 type mockSubscriptionService struct {
 	createErr error
+	getFn     func(ctx context.Context, subscriptionID int64) (model.Subscription, error)
 }
 
 func (m *mockSubscriptionService) Create(ctx context.Context, input model.CreateInput) (model.Subscription, error) {
@@ -30,8 +31,18 @@ func (m *mockSubscriptionService) Create(ctx context.Context, input model.Create
 	}, nil
 }
 
+func (m *mockSubscriptionService) Get(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
+	if m.getFn != nil {
+		return m.getFn(ctx, subscriptionID)
+	}
+	return model.Subscription{
+		SubscriptionID: subscriptionID,
+		Status:         model.StatusActive,
+	}, nil
+}
+
 func (m *mockSubscriptionService) ListAccountSubscriptions(ctx context.Context, accountID int64) ([]model.Subscription, error) {
-	return nil, nil
+	return []model.Subscription{{SubscriptionID: 1, AccountID: accountID}}, nil
 }
 
 func TestHandleCreateSubscription(t *testing.T) {
@@ -51,4 +62,48 @@ func TestHandleCreateSubscription(t *testing.T) {
 	h.HandleCreateSubscription(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestHandleGetSubscription(t *testing.T) {
+	svc := &mockSubscriptionService{
+		getFn: func(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
+			if subscriptionID == 999 {
+				return model.Subscription{}, model.ErrNotFound
+			}
+			return model.Subscription{SubscriptionID: subscriptionID, Status: model.StatusActive}, nil
+		},
+	}
+	h := handler.NewSubscriptionHandler(svc)
+
+	// Success with subscriptionID
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/subscriptions/1", nil)
+	req.SetPathValue("subscriptionID", "1")
+	w := httptest.NewRecorder()
+	h.HandleGetSubscription(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// Not found
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/subscriptions/999", nil)
+	req.SetPathValue("subscriptionID", "999")
+	w = httptest.NewRecorder()
+	h.HandleGetSubscription(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+
+	// Invalid ID
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/subscriptions/abc", nil)
+	req.SetPathValue("subscriptionID", "abc")
+	w = httptest.NewRecorder()
+	h.HandleGetSubscription(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandleListAccountSubscriptions(t *testing.T) {
+	svc := &mockSubscriptionService{}
+	h := handler.NewSubscriptionHandler(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/accounts/1/subscriptions", nil)
+	req.SetPathValue("id", "1")
+	w := httptest.NewRecorder()
+	h.HandleListAccountSubscriptions(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
 }

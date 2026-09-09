@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/tariff/handler"
@@ -20,6 +21,7 @@ type mockTariffService struct {
 
 func (m *mockTariffService) CreateTariff(
 	ctx context.Context,
+	tx pgx.Tx,
 	code string,
 	name string,
 	description string,
@@ -43,7 +45,7 @@ func (m *mockTariffService) CreateTariff(
 
 func TestHandleCreateTariff(t *testing.T) {
 	svc := &mockTariffService{}
-	h := handler.NewTariffHandler(svc)
+	h := handler.NewTariffHandler(nil, svc)
 
 	in := handler.CreateInput{
 		Code:       "BASIC",

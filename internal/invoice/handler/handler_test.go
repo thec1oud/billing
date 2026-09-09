@@ -12,37 +12,44 @@ import (
 	"github.com/thec1oud/billing/internal/invoice/model"
 	"github.com/thec1oud/billing/internal/invoice/repository"
 	"github.com/thec1oud/billing/internal/ppi"
+	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 type mockInvoiceService struct {
-	getInvoiceFn         func(ctx context.Context, id int64) (model.Invoice, error)
+	getFn                func(ctx context.Context, id int64) (model.Invoice, error)
 	listInvoicesFn       func(ctx context.Context, accountID int64) ([]model.Invoice, error)
 	createDraftInvoiceFn func(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error)
 	finalizeInvoiceFn    func(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error)
 }
 
-func (m *mockInvoiceService) GetInvoice(ctx context.Context, id int64) (model.Invoice, error) {
-	return m.getInvoiceFn(ctx, id)
+func (m *mockInvoiceService) Get(ctx context.Context, id int64) (model.Invoice, error) {
+	if m.getFn != nil {
+		return m.getFn(ctx, id)
+	}
+	return model.Invoice{InvoiceID: id, Status: model.StatusOpen}, nil
 }
 
 func (m *mockInvoiceService) ListInvoices(ctx context.Context, accountID int64) ([]model.Invoice, error) {
-	return m.listInvoicesFn(ctx, accountID)
+	if m.listInvoicesFn != nil {
+		return m.listInvoicesFn(ctx, accountID)
+	}
+	return []model.Invoice{{AccountID: accountID}}, nil
 }
 
 func (m *mockInvoiceService) CreateDraftInvoice(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error) {
 	if m.createDraftInvoiceFn != nil {
 		return m.createDraftInvoiceFn(ctx, actor, accountID, currency, items)
 	}
-	return model.Invoice{}, nil
+	return model.Invoice{InvoiceID: 10, Status: model.StatusDraft}, nil
 }
 
 func (m *mockInvoiceService) FinalizeInvoice(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error) {
 	if m.finalizeInvoiceFn != nil {
 		return m.finalizeInvoiceFn(ctx, actor, invoiceID, paymentTermsDays)
 	}
-	return model.Invoice{}, nil
+	return model.Invoice{InvoiceID: invoiceID, Status: model.StatusOpen}, nil
 }
 
 type mockPPIService struct {
@@ -53,9 +60,17 @@ func (m *mockPPIService) ChargePaymentMethod(ctx context.Context, providerCode s
 	return m.charge(ctx, providerCode, invoiceID, amount, idempotencyKey)
 }
 
+type mockItemService struct {
+	item itemmodel.PurchasableItem
+}
+
+func (m *mockItemService) GetByPlanID(ctx context.Context, planID int64) (itemmodel.PurchasableItem, error) {
+	return m.item, nil
+}
+
 func TestHandleGetInvoice(t *testing.T) {
 	svc := &mockInvoiceService{
-		getInvoiceFn: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+		getFn: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
 			if invoiceID == 999 {
 				return model.Invoice{}, repository.ErrInvoiceNotFound
 			}
@@ -100,7 +115,7 @@ func TestHandleListInvoices(t *testing.T) {
 
 func TestHandlePayInvoice(t *testing.T) {
 	svc := &mockInvoiceService{
-		getInvoiceFn: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+		getFn: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
 			if invoiceID == 1 {
 				return model.Invoice{InvoiceID: 1, Status: model.StatusOpen, AmountDue: money.Money{AmountMinor: 1000, Currency: "ETB"}}, nil
 			}
@@ -136,4 +151,20 @@ func TestHandlePayInvoice(t *testing.T) {
 	mux.ServeHTTP(recInvalid, reqInvalid)
 
 	assert.Equal(t, http.StatusBadRequest, recInvalid.Code)
+}
+
+func TestHandleGenerateDevInvoice(t *testing.T) {
+	svc := &mockInvoiceService{}
+	itemSvc := &mockItemService{
+		item: itemmodel.PurchasableItem{ID: 5, Name: "Test Item"},
+	}
+	h := NewInvoiceHandler(svc, nil, itemSvc)
+
+	body, _ := json.Marshal(DevGenerateInvoiceInput{AccountID: 1, PlanID: 2})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dev/invoices/generate", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	h.HandleGenerateDevInvoice(rec, req)
+
+	assert.Equal(t, http.StatusCreated, rec.Code)
 }
