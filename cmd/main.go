@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
 	"github.com/thec1oud/billing/internal/config"
@@ -96,11 +97,11 @@ func run() error {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	// 6. Block process until SIGINT/SIGTERM for background contexts
+	//  Block process until SIGINT/SIGTERM for background contexts
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 7. Wire the state machine engine's background workers.
+	//  Wire the state machine engine's background workers.
 	smRegistry := registry.New()
 	smRepository := smRepo.NewPostgresRepository(deps.Pool)
 	smEngine := engine.NewEngine(deps.Pool, smRepository, smRegistry, engine.WithScripting(scripting.NewPool(0, 0)))
@@ -132,11 +133,11 @@ func run() error {
 	}
 	defer rabbitBroker.Close()
 
-	// 9. Initialize Payment Attempt Repository & Service
+	//  Initialize Payment Attempt Repository & Service
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
-	// 10. Initialize PPI Webhook Repository & Service
+	//  Initialize PPI Webhook Repository & Service
 	ppiRepo := repository.NewPostgresRepository()
 	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
@@ -149,7 +150,7 @@ func run() error {
 	planSvc := planservice.NewService(planRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
-	tariffSvc := tariffservice.NewService(tariffRepo)
+	tariffSvc := tariffservice.NewService(deps.Pool, tariffRepo)
 	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
 	itemSvc := itemservice.NewService(itemRepo)
 
@@ -165,7 +166,7 @@ func run() error {
 	eventSvc := eventsvc.NewService(eventRepo)
 	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, ppiService, invoiceRepository, smEngine)
 
-	// 11. Configure & Start HTTP Server
+	// Configure & Start HTTP Server
 	srv := api.NewServer(cfg, api.Deps{
 		Pool:                   deps.Pool,
 		AccountService:         accountSvc,
@@ -215,11 +216,12 @@ func SeedCatalog(
 
 	t, err := tariffSvc.CreateTariff(
 		ctx,
-		tx,
 		"STANDARD_USAGE_V1",
 		"Standard Usage Pricing",
 		"Standard per-unit pricing",
 		tariffmodel.TariffTypeFlatFee,
+		tariffmodel.TierStrategy(""),
+		tariffmodel.QuantityUnit(""),
 		amt,
 		nil,
 		nil,

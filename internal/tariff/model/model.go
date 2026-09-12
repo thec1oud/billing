@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -46,20 +47,43 @@ const (
 	UnitAPICall  QuantityUnit = "API_CALL"
 )
 
+func (u QuantityUnit) Valid() bool {
+	switch u {
+	case UnitCount,
+		UnitSeat,
+		UnitGigabyte,
+		UnitHour,
+		UnitAPICall:
+		return true
+	default:
+		return false
+	}
+}
+
 type Quantity struct {
 	Value int64        `json:"value"`
 	Unit  QuantityUnit `json:"unit"`
 }
 
-// Tier represents one tier in a TIERED_USAGE tariff.
+func (q Quantity) Validate() error {
+	if q.Value < 0 {
+		return errors.New("quantity cannot be negative")
+	}
 
+	if !q.Unit.Valid() {
+		return fmt.Errorf("invalid quantity unit %q", q.Unit)
+	}
+
+	return nil
+}
+
+// Tier represents one tier in a TIERED_USAGE tariff.
 type Tier struct {
 	UpToQuantity *int64      `json:"up_to,omitempty"`
 	UnitPrice    money.Money `json:"unit_price"`
 	FlatFee      money.Money `json:"flat_fee"`
 }
 
-// TierStrategy defines how tiered pricing is evaluated.
 type TierStrategy string
 
 const (
@@ -69,15 +93,14 @@ const (
 
 func (t TierStrategy) Valid() bool {
 	switch t {
-	case TierStrategyVolume, TierStrategyGraduated:
+	case TierStrategyVolume,
+		TierStrategyGraduated:
 		return true
 	default:
 		return false
 	}
 }
 
-// Tariffs are versioned. Once a tariff has been used in billing,
-// changes should result in a new tariff version rather than mutation.
 type Tariff struct {
 	ID             int64           `json:"tariff_id"`
 	TariffCode     string          `json:"tariff_code"`
@@ -86,6 +109,7 @@ type Tariff struct {
 	Description    string          `json:"description"`
 	TariffTypeCode TariffTypeCode  `json:"tariff_type_code"`
 	TierStrategy   TierStrategy    `json:"tier_strategy,omitempty"`
+	QuantityUnit   QuantityUnit    `json:"quantity_unit,omitempty"`
 	Amount         money.Money     `json:"amount"`
 	Tiers          []Tier          `json:"tiers,omitempty"`
 	Metadata       json.RawMessage `json:"metadata"`
@@ -94,6 +118,9 @@ type Tariff struct {
 }
 
 func (t Tariff) Validate() error {
+	t.TariffCode = strings.TrimSpace(t.TariffCode)
+	t.Name = strings.TrimSpace(t.Name)
+
 	if t.TariffCode == "" {
 		return errors.New("tariff code is required")
 	}
@@ -107,24 +134,35 @@ func (t Tariff) Validate() error {
 	}
 
 	if !t.TariffTypeCode.Valid() {
-		return fmt.Errorf(
-			"unsupported tariff type %q",
-			t.TariffTypeCode,
-		)
+		return fmt.Errorf("invalid tariff type %q", t.TariffTypeCode)
 	}
 
+	// Money always carries its currency.
 	if t.Amount.Currency == "" {
 		return errors.New("tariff amount currency is required")
 	}
 
 	switch t.TariffTypeCode {
+	case TariffTypePerUnit:
+		if !t.QuantityUnit.Valid() {
+			return fmt.Errorf(
+				"invalid quantity unit %q for per-unit tariff",
+				t.QuantityUnit,
+			)
+		}
+
 	case TariffTypeTieredUsage:
 		if len(t.Tiers) == 0 {
 			return errors.New("tiered usage tariff requires tiers")
 		}
+
 		if !t.TierStrategy.Valid() {
-			return fmt.Errorf("unsupported tier strategy %q", t.TierStrategy)
+			return fmt.Errorf(
+				"invalid tier strategy %q",
+				t.TierStrategy,
+			)
 		}
+
 		if err := validateTiers(t.Tiers, t.Amount.Currency); err != nil {
 			return err
 		}
@@ -137,9 +175,11 @@ func validateTiers(
 	tiers []Tier,
 	currency money.Currency,
 ) error {
-	var previous *int64
+	var previous int64
 
 	for i, tier := range tiers {
+		// Every monetary value must carry the same currency
+		// as the tariff.
 		if tier.UnitPrice.Currency != currency {
 			return fmt.Errorf(
 				"tier %d unit price currency %s does not match tariff currency %s",
@@ -158,41 +198,60 @@ func validateTiers(
 			)
 		}
 
-		if tier.UpToQuantity != nil {
-			if *tier.UpToQuantity <= 0 {
+		if tier.UpToQuantity == nil {
+			// Only the final tier may be unbounded.
+			if i != len(tiers)-1 {
 				return fmt.Errorf(
-					"tier %d up_to must be greater than zero",
+					"tier %d is unbounded but is not the final tier",
 					i,
 				)
 			}
 
-			if previous != nil && *tier.UpToQuantity <= *previous {
-				return fmt.Errorf(
-					"tier %d up_to must be greater than previous tier",
-					i,
-				)
-			}
-
-			previous = tier.UpToQuantity
+			continue
 		}
+
+		if *tier.UpToQuantity <= previous {
+			return fmt.Errorf(
+				"tier %d upper bound must be greater than previous tier",
+				i,
+			)
+		}
+
+		previous = *tier.UpToQuantity
+	}
+
+	// Graduated pricing needs an unbounded final tier.
+	if tiers[len(tiers)-1].UpToQuantity != nil {
+		return errors.New(
+			"final tier must be unbounded",
+		)
 	}
 
 	return nil
 }
 
-// CalculateCharge supports the tariff pricing models represented directly by
-// the current domain model. For tiered charging, the current implementation
-// models the graduated pricing behavior only.
 func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
+	if err := qty.Validate(); err != nil {
+		return money.Money{}, fmt.Errorf(
+			"validate quantity: %w",
+			err,
+		)
+	}
+
 	switch t.TariffTypeCode {
 	case TariffTypeFlatFee:
 		return t.Amount, nil
 
 	case TariffTypePerUnit:
-		return money.New(
-			t.Amount.AmountMinor*qty.Value,
-			string(t.Amount.Currency),
-		)
+		if qty.Unit != t.QuantityUnit {
+			return money.Money{}, fmt.Errorf(
+				"quantity unit %s does not match tariff unit %s",
+				qty.Unit,
+				t.QuantityUnit,
+			)
+		}
+
+		return t.Amount.MultiplyByScalar(qty.Value)
 
 	case TariffTypeTieredUsage:
 		if t.TierStrategy != TierStrategyGraduated {
@@ -201,6 +260,7 @@ func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 				t.TierStrategy,
 			)
 		}
+
 		return t.calculateGraduatedCharge(qty)
 
 	default:
@@ -220,7 +280,14 @@ func (t Tariff) calculateGraduatedCharge(
 		)
 	}
 
-	var total int64
+	total, err := money.Zero(t.Amount.Currency)
+	if err != nil {
+		return money.Money{}, fmt.Errorf(
+			"initialize charge: %w",
+			err,
+		)
+	}
+
 	remaining := qty.Value
 	var previous int64
 
@@ -234,7 +301,7 @@ func (t Tariff) calculateGraduatedCharge(
 		if tier.UpToQuantity != nil {
 			capacity = *tier.UpToQuantity - previous
 
-			if capacity < 0 {
+			if capacity <= 0 {
 				return money.Money{}, errors.New(
 					"invalid tier boundaries",
 				)
@@ -244,28 +311,43 @@ func (t Tariff) calculateGraduatedCharge(
 		}
 
 		usage := remaining
+
 		if usage > capacity {
 			usage = capacity
 		}
 
-		total += tier.FlatFee.AmountMinor
-		total += usage * tier.UnitPrice.AmountMinor
+		tierCharge, err := tier.UnitPrice.MultiplyByScalar(usage)
+		if err != nil {
+			return money.Money{}, fmt.Errorf(
+				"calculate tier usage charge: %w",
+				err,
+			)
+		}
+
+		tierCharge, err = tierCharge.Add(tier.FlatFee)
+		if err != nil {
+			return money.Money{}, fmt.Errorf(
+				"add tier flat fee: %w",
+				err,
+			)
+		}
+
+		total, err = total.Add(tierCharge)
+		if err != nil {
+			return money.Money{}, fmt.Errorf(
+				"add tier charge: %w",
+				err,
+			)
+		}
 
 		remaining -= usage
 	}
 
 	if remaining > 0 {
-		last := t.Tiers[len(t.Tiers)-1]
-
-		if last.UpToQuantity != nil {
-			return money.Money{}, errors.New(
-				"tier configuration does not contain an unbounded final tier",
-			)
-		}
+		return money.Money{}, errors.New(
+			"tier configuration does not contain an unbounded final tier",
+		)
 	}
 
-	return money.New(
-		total,
-		string(t.Amount.Currency),
-	)
+	return total, nil
 }

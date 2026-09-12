@@ -7,30 +7,37 @@ package sqlcgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createTariff = `-- name: CreateTariff :one
+
 WITH locked AS (
     SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
-), next_version AS (
+),
+next_version AS (
     SELECT COALESCE(MAX(version), 0) + 1 AS version
     FROM tariffs, locked
     WHERE tariff_code = $1
 )
+
 INSERT INTO tariffs (
     tariff_code,
     version,
     name,
     description,
     tariff_type_code,
+    tier_strategy,
+    quantity_unit,
     amount,
     currency,
     tier_brackets,
     is_active,
     metadata
 )
+
 SELECT
     $1,
     next_version.version,
@@ -41,8 +48,12 @@ SELECT
     $6,
     $7,
     $8,
-    $9
+    $9,
+    $10,
+    $11
+
 FROM next_version
+
 RETURNING
     tariff_id,
     tariff_code,
@@ -50,6 +61,8 @@ RETURNING
     name,
     description,
     tariff_type_code,
+    tier_strategy,
+    quantity_unit,
     amount,
     currency,
     tier_brackets,
@@ -63,6 +76,8 @@ type CreateTariffParams struct {
 	Name           string      `json:"name"`
 	Description    pgtype.Text `json:"description"`
 	TariffTypeCode string      `json:"tariff_type_code"`
+	TierStrategy   pgtype.Text `json:"tier_strategy"`
+	QuantityUnit   pgtype.Text `json:"quantity_unit"`
 	Amount         pgtype.Int8 `json:"amount"`
 	Currency       string      `json:"currency"`
 	TierBrackets   []byte      `json:"tier_brackets"`
@@ -70,19 +85,38 @@ type CreateTariffParams struct {
 	Metadata       []byte      `json:"metadata"`
 }
 
-func (q *Queries) CreateTariff(ctx context.Context, arg CreateTariffParams) (Tariff, error) {
+type CreateTariffRow struct {
+	TariffID       int64       `json:"tariff_id"`
+	TariffCode     string      `json:"tariff_code"`
+	Version        int32       `json:"version"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	TariffTypeCode string      `json:"tariff_type_code"`
+	TierStrategy   pgtype.Text `json:"tier_strategy"`
+	QuantityUnit   pgtype.Text `json:"quantity_unit"`
+	Amount         pgtype.Int8 `json:"amount"`
+	Currency       string      `json:"currency"`
+	TierBrackets   []byte      `json:"tier_brackets"`
+	IsActive       bool        `json:"is_active"`
+	Metadata       []byte      `json:"metadata"`
+	CreatedAt      time.Time   `json:"created_at"`
+}
+
+func (q *Queries) CreateTariff(ctx context.Context, arg CreateTariffParams) (CreateTariffRow, error) {
 	row := q.db.QueryRow(ctx, createTariff,
 		arg.TariffCode,
 		arg.Name,
 		arg.Description,
 		arg.TariffTypeCode,
+		arg.TierStrategy,
+		arg.QuantityUnit,
 		arg.Amount,
 		arg.Currency,
 		arg.TierBrackets,
 		arg.IsActive,
 		arg.Metadata,
 	)
-	var i Tariff
+	var i CreateTariffRow
 	err := row.Scan(
 		&i.TariffID,
 		&i.TariffCode,
@@ -90,6 +124,8 @@ func (q *Queries) CreateTariff(ctx context.Context, arg CreateTariffParams) (Tar
 		&i.Name,
 		&i.Description,
 		&i.TariffTypeCode,
+		&i.TierStrategy,
+		&i.QuantityUnit,
 		&i.Amount,
 		&i.Currency,
 		&i.TierBrackets,
@@ -121,6 +157,8 @@ SELECT
     name,
     description,
     tariff_type_code,
+    tier_strategy,
+    quantity_unit,
     amount,
     currency,
     tier_brackets,
@@ -137,9 +175,26 @@ type GetTariffByCodeAndVersionParams struct {
 	Version    int32  `json:"version"`
 }
 
-func (q *Queries) GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error) {
+type GetTariffByCodeAndVersionRow struct {
+	TariffID       int64       `json:"tariff_id"`
+	TariffCode     string      `json:"tariff_code"`
+	Version        int32       `json:"version"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	TariffTypeCode string      `json:"tariff_type_code"`
+	TierStrategy   pgtype.Text `json:"tier_strategy"`
+	QuantityUnit   pgtype.Text `json:"quantity_unit"`
+	Amount         pgtype.Int8 `json:"amount"`
+	Currency       string      `json:"currency"`
+	TierBrackets   []byte      `json:"tier_brackets"`
+	IsActive       bool        `json:"is_active"`
+	Metadata       []byte      `json:"metadata"`
+	CreatedAt      time.Time   `json:"created_at"`
+}
+
+func (q *Queries) GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (GetTariffByCodeAndVersionRow, error) {
 	row := q.db.QueryRow(ctx, getTariffByCodeAndVersion, arg.TariffCode, arg.Version)
-	var i Tariff
+	var i GetTariffByCodeAndVersionRow
 	err := row.Scan(
 		&i.TariffID,
 		&i.TariffCode,
@@ -147,6 +202,8 @@ func (q *Queries) GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffBy
 		&i.Name,
 		&i.Description,
 		&i.TariffTypeCode,
+		&i.TierStrategy,
+		&i.QuantityUnit,
 		&i.Amount,
 		&i.Currency,
 		&i.TierBrackets,
@@ -158,15 +215,45 @@ func (q *Queries) GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffBy
 }
 
 const getTariffByID = `-- name: GetTariffByID :one
-SELECT tariff_id, tariff_code, version, name, description, tariff_type_code,
-    amount, currency, tier_brackets, is_active, metadata, created_at
+SELECT
+    tariff_id,
+    tariff_code,
+    version,
+    name,
+    description,
+    tariff_type_code,
+    tier_strategy,
+    quantity_unit,
+    amount,
+    currency,
+    tier_brackets,
+    is_active,
+    metadata,
+    created_at
 FROM tariffs
 WHERE tariff_id = $1
 `
 
-func (q *Queries) GetTariffByID(ctx context.Context, tariffID int64) (Tariff, error) {
+type GetTariffByIDRow struct {
+	TariffID       int64       `json:"tariff_id"`
+	TariffCode     string      `json:"tariff_code"`
+	Version        int32       `json:"version"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	TariffTypeCode string      `json:"tariff_type_code"`
+	TierStrategy   pgtype.Text `json:"tier_strategy"`
+	QuantityUnit   pgtype.Text `json:"quantity_unit"`
+	Amount         pgtype.Int8 `json:"amount"`
+	Currency       string      `json:"currency"`
+	TierBrackets   []byte      `json:"tier_brackets"`
+	IsActive       bool        `json:"is_active"`
+	Metadata       []byte      `json:"metadata"`
+	CreatedAt      time.Time   `json:"created_at"`
+}
+
+func (q *Queries) GetTariffByID(ctx context.Context, tariffID int64) (GetTariffByIDRow, error) {
 	row := q.db.QueryRow(ctx, getTariffByID, tariffID)
-	var i Tariff
+	var i GetTariffByIDRow
 	err := row.Scan(
 		&i.TariffID,
 		&i.TariffCode,
@@ -174,6 +261,8 @@ func (q *Queries) GetTariffByID(ctx context.Context, tariffID int64) (Tariff, er
 		&i.Name,
 		&i.Description,
 		&i.TariffTypeCode,
+		&i.TierStrategy,
+		&i.QuantityUnit,
 		&i.Amount,
 		&i.Currency,
 		&i.TierBrackets,
@@ -192,6 +281,8 @@ SELECT
     name,
     description,
     tariff_type_code,
+    tier_strategy,
+    quantity_unit,
     amount,
     currency,
     tier_brackets,
@@ -203,15 +294,32 @@ WHERE tariff_code = $1
 ORDER BY version DESC
 `
 
-func (q *Queries) ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error) {
+type ListTariffVersionsRow struct {
+	TariffID       int64       `json:"tariff_id"`
+	TariffCode     string      `json:"tariff_code"`
+	Version        int32       `json:"version"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	TariffTypeCode string      `json:"tariff_type_code"`
+	TierStrategy   pgtype.Text `json:"tier_strategy"`
+	QuantityUnit   pgtype.Text `json:"quantity_unit"`
+	Amount         pgtype.Int8 `json:"amount"`
+	Currency       string      `json:"currency"`
+	TierBrackets   []byte      `json:"tier_brackets"`
+	IsActive       bool        `json:"is_active"`
+	Metadata       []byte      `json:"metadata"`
+	CreatedAt      time.Time   `json:"created_at"`
+}
+
+func (q *Queries) ListTariffVersions(ctx context.Context, tariffCode string) ([]ListTariffVersionsRow, error) {
 	rows, err := q.db.Query(ctx, listTariffVersions, tariffCode)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Tariff
+	var items []ListTariffVersionsRow
 	for rows.Next() {
-		var i Tariff
+		var i ListTariffVersionsRow
 		if err := rows.Scan(
 			&i.TariffID,
 			&i.TariffCode,
@@ -219,6 +327,8 @@ func (q *Queries) ListTariffVersions(ctx context.Context, tariffCode string) ([]
 			&i.Name,
 			&i.Description,
 			&i.TariffTypeCode,
+			&i.TierStrategy,
+			&i.QuantityUnit,
 			&i.Amount,
 			&i.Currency,
 			&i.TierBrackets,

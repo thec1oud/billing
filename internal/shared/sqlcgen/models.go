@@ -385,6 +385,8 @@ type Tariff struct {
 	IsActive       bool        `json:"is_active"`
 	Metadata       []byte      `json:"metadata"`
 	CreatedAt      time.Time   `json:"created_at"`
+	TierStrategy   pgtype.Text `json:"tier_strategy"`
+	QuantityUnit   pgtype.Text `json:"quantity_unit"`
 }
 
 type TariffType struct {

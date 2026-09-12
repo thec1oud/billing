@@ -27,7 +27,7 @@ type Querier interface {
 	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
 	CreatePurchasableItem(ctx context.Context, arg CreatePurchasableItemParams) (PurchasableItem, error)
 	CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (CreateSubscriptionRow, error)
-	CreateTariff(ctx context.Context, arg CreateTariffParams) (Tariff, error)
+	CreateTariff(ctx context.Context, arg CreateTariffParams) (CreateTariffRow, error)
 	DeactivateDefinitionsForMachineType(ctx context.Context, machineType string) error
 	DeletePaymentAttempt(ctx context.Context, attemptID int64) (pgconn.CommandTag, error)
 	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error)
@@ -54,8 +54,8 @@ type Querier interface {
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
 	GetPurchasableItemByPlanID(ctx context.Context, planID pgtype.Int8) (PurchasableItem, error)
 	GetSubscription(ctx context.Context, subscriptionID int64) (GetSubscriptionRow, error)
-	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
-	GetTariffByID(ctx context.Context, tariffID int64) (Tariff, error)
+	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (GetTariffByCodeAndVersionRow, error)
+	GetTariffByID(ctx context.Context, tariffID int64) (GetTariffByIDRow, error)
 	InsertActionBinding(ctx context.Context, arg InsertActionBindingParams) (uuid.UUID, error)
 	InsertDefinition(ctx context.Context, arg InsertDefinitionParams) (InsertDefinitionRow, error)
 	InsertGuardBinding(ctx context.Context, arg InsertGuardBindingParams) error
@@ -76,7 +76,7 @@ type Querier interface {
 	ListPlans(ctx context.Context) ([]Plan, error)
 	ListPurchasableItems(ctx context.Context) ([]PurchasableItem, error)
 	ListStatesByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmState, error)
-	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
+	ListTariffVersions(ctx context.Context, tariffCode string) ([]ListTariffVersionsRow, error)
 	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)

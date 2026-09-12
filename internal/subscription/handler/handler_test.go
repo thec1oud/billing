@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"github.com/thec1oud/billing/internal/subscription/handler"
 	"github.com/thec1oud/billing/internal/subscription/model"
 )

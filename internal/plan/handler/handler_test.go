@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+
 	"github.com/thec1oud/billing/internal/plan/handler"
 	plan "github.com/thec1oud/billing/internal/plan/model"
 )

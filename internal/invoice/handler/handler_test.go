@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	"github.com/thec1oud/billing/internal/invoice/model"
 	"github.com/thec1oud/billing/internal/invoice/repository"
 	"github.com/thec1oud/billing/internal/ppi"

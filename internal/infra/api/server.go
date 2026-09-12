@@ -39,7 +39,7 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 	}
 
 	if deps.TariffService != nil && deps.Pool != nil {
-		tariffHandler := tariffHandlers.NewTariffHandler(deps.Pool, deps.TariffService)
+		tariffHandler := tariffHandlers.NewTariffHandler(deps.TariffService)
 		mux.HandleFunc("POST /api/v1/tariffs", tariffHandler.HandleCreateTariff)
 	}
 

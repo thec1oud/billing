@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	planmodel "github.com/thec1oud/billing/internal/plan/model"

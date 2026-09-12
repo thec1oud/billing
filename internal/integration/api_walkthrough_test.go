@@ -13,51 +13,45 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/thec1oud/billing/internal/config"
-	"github.com/thec1oud/billing/internal/infra/api"
-	"github.com/thec1oud/billing/internal/infra/messaging"
-	plan "github.com/thec1oud/billing/internal/plan/model"
-	"github.com/thec1oud/billing/internal/shared/money"
-	"github.com/thec1oud/billing/internal/shared/testutil"
-
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
-
-	planrepo "github.com/thec1oud/billing/internal/plan/repository"
-	planservice "github.com/thec1oud/billing/internal/plan/service"
-	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
-	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
-	tariffhandler "github.com/thec1oud/billing/internal/tariff/handler"
-	tariff "github.com/thec1oud/billing/internal/tariff/model"
-	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
-	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
-
-	subscriptionmodel "github.com/thec1oud/billing/internal/subscription/model"
-	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
-	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
-
-	attemptrepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
-	attemptsvc "github.com/thec1oud/billing/internal/payment_attempt/service"
-
-	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
-	ppirepo "github.com/thec1oud/billing/internal/ppi/repository"
-	ppisvc "github.com/thec1oud/billing/internal/ppi/service"
-
+	"github.com/thec1oud/billing/internal/config"
+	"github.com/thec1oud/billing/internal/infra/api"
+	"github.com/thec1oud/billing/internal/infra/messaging"
 	invoicemodel "github.com/thec1oud/billing/internal/invoice/model"
 	invoicerepo "github.com/thec1oud/billing/internal/invoice/repository"
 	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	invoicesub "github.com/thec1oud/billing/internal/invoice/subscriber"
+	attemptrepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
+	attemptsvc "github.com/thec1oud/billing/internal/payment_attempt/service"
+	plan "github.com/thec1oud/billing/internal/plan/model"
+	planrepo "github.com/thec1oud/billing/internal/plan/repository"
+	planservice "github.com/thec1oud/billing/internal/plan/service"
+	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
+	ppirepo "github.com/thec1oud/billing/internal/ppi/repository"
+	ppisvc "github.com/thec1oud/billing/internal/ppi/service"
 	ppisub "github.com/thec1oud/billing/internal/ppi/subscriber"
+	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
+	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	"github.com/thec1oud/billing/internal/shared/money"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_loader "github.com/thec1oud/billing/internal/shared/statemachine/loader"
 	sm_registry "github.com/thec1oud/billing/internal/shared/statemachine/registry"
 	sm_repo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
+	"github.com/thec1oud/billing/internal/shared/testutil"
+	subscriptionmodel "github.com/thec1oud/billing/internal/subscription/model"
+	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
+	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
+	tariffhandler "github.com/thec1oud/billing/internal/tariff/handler"
+	tariff "github.com/thec1oud/billing/internal/tariff/model"
+	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
+	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 )
 
 func TestAPI_E2E_Walkthrough(t *testing.T) {
@@ -88,7 +82,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	planSvc := planservice.NewService(planRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
-	tariffSvc := tariffservice.NewService(tariffRepo)
+	tariffSvc := tariffservice.NewService(cluster.DBPool, tariffRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)

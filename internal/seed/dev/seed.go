@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	planservice "github.com/thec1oud/billing/internal/plan/service"
 	"github.com/thec1oud/billing/internal/shared/money"
-	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
 	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 )
 
@@ -46,14 +46,15 @@ func Seed(
 		}
 		createdTariff, err := tariffSvc.CreateTariff(
 			ctx,
-			tx,
 			defaultTariffCode,
 			"Standard Per Unit 1000",
 			"A dev mock tariff",
-			tariffmodel.TariffTypePerUnit,
+			tariffservice.TariffTypePerUnit,
+			"",
+			"",
 			money.Money{AmountMinor: 1000, Currency: "ETB"},
-			nil, // tiers
-			nil, // metadata
+			nil,
+			nil,
 		)
 		if err != nil {
 			_ = tx.Rollback(ctx)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 )

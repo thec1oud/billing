@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/shared/money"
 	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
@@ -16,28 +16,51 @@ type Tariff = tariffmodel.Tariff
 type Tier = tariffmodel.Tier
 type TariffTypeCode = tariffmodel.TariffTypeCode
 type Quantity = tariffmodel.Quantity
+type QuantityUnit = tariffmodel.QuantityUnit
+type TierStrategy = tariffmodel.TierStrategy
 
-const TariffTypeFlatFee = tariffmodel.TariffTypeFlatFee
-const TariffTypePerUnit = tariffmodel.TariffTypePerUnit
-const TariffTypeTieredUsage = tariffmodel.TariffTypeTieredUsage
+const (
+	TariffTypeFlatFee     = tariffmodel.TariffTypeFlatFee
+	TariffTypePerUnit     = tariffmodel.TariffTypePerUnit
+	TariffTypeTieredUsage = tariffmodel.TariffTypeTieredUsage
+)
+
+const (
+	TierStrategyVolume    = tariffmodel.TierStrategyVolume
+	TierStrategyGraduated = tariffmodel.TierStrategyGraduated
+)
+
+const (
+	UnitCount    = tariffmodel.UnitCount
+	UnitSeat     = tariffmodel.UnitSeat
+	UnitGigabyte = tariffmodel.UnitGigabyte
+	UnitHour     = tariffmodel.UnitHour
+	UnitAPICall  = tariffmodel.UnitAPICall
+)
 
 type Service struct {
+	db         *pgxpool.Pool
 	repository tariffrepo.Repository
 }
 
-func NewService(repository tariffrepo.Repository) *Service {
+func NewService(
+	db *pgxpool.Pool,
+	repository tariffrepo.Repository,
+) *Service {
 	return &Service{
+		db:         db,
 		repository: repository,
 	}
 }
 
 func (s *Service) CreateTariff(
 	ctx context.Context,
-	tx pgx.Tx,
 	code string,
 	name string,
 	description string,
 	tariffType TariffTypeCode,
+	tierStrategy TierStrategy,
+	quantityUnit QuantityUnit,
 	amount money.Money,
 	tiers []Tier,
 	metadata []byte,
@@ -62,6 +85,8 @@ func (s *Service) CreateTariff(
 		Name:           name,
 		Description:    description,
 		TariffTypeCode: tariffType,
+		TierStrategy:   tierStrategy,
+		QuantityUnit:   quantityUnit,
 		Amount:         amount,
 		Tiers:          tiers,
 		Metadata:       metadata,
@@ -75,9 +100,28 @@ func (s *Service) CreateTariff(
 		)
 	}
 
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Tariff{}, fmt.Errorf(
+			"begin transaction: %w",
+			err,
+		)
+	}
+	defer tx.Rollback(ctx)
+
 	created, err := s.repository.Create(ctx, tx, tariff)
 	if err != nil {
-		return Tariff{}, fmt.Errorf("create tariff: %w", err)
+		return Tariff{}, fmt.Errorf(
+			"create tariff: %w",
+			err,
+		)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Tariff{}, fmt.Errorf(
+			"commit transaction: %w",
+			err,
+		)
 	}
 
 	return created, nil
@@ -145,7 +189,15 @@ func (s *Service) CalculateUsageCharge(
 		)
 	}
 
-	return tariff.CalculateCharge(qty)
+	charge, err := tariff.CalculateCharge(qty)
+	if err != nil {
+		return money.Money{}, fmt.Errorf(
+			"calculate usage charge: %w",
+			err,
+		)
+	}
+
+	return charge, nil
 }
 
 var ErrTariffNotFound = tariffrepo.ErrTariffNotFound
