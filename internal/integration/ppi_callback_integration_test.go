@@ -170,7 +170,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 
 	log.Info("📩 [4/5] Sending HTTP POST Webhook callback to /api/v1/webhooks/fake...")
 
-	webhookHandler.ServeHTTP(rec, req)
+	webhookHandler.HandleWebhook(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected HTTP 200 OK from webhook handler, got %d. Body: %s", rec.Code, rec.Body.String())
