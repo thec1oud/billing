@@ -22,7 +22,7 @@ var log = logger.ForComponent("receipt_worker")
 
 // InvoiceFetcher defines the interface for fetching invoices, decoupling the receipt module from the invoice repository.
 type InvoiceFetcher interface {
-	GetInvoice(ctx context.Context, invoiceID int64) (invoicemodel.Invoice, error)
+	Get(ctx context.Context, invoiceID int64) (invoicemodel.Invoice, error)
 }
 
 type Consumer struct {
@@ -81,7 +81,7 @@ func (c *Consumer) handleInvoicePaid(ctx context.Context, msg []byte) error {
 	log.Info("Receipt worker received invoice.paid event", slog.Int64("invoice_id", invoiceID))
 
 	// 2. Fetch the invoice details
-	invoice, err := c.invoiceFetcher.GetInvoice(ctx, invoiceID)
+	invoice, err := c.invoiceFetcher.Get(ctx, invoiceID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch invoice %d: %w", invoiceID, err)
 	}

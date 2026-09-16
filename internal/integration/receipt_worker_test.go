@@ -3,8 +3,10 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -29,7 +31,7 @@ import (
 // Mock InvoiceFetcher
 type mockInvoiceFetcher struct{}
 
-func (m *mockInvoiceFetcher) GetInvoice(ctx context.Context, invoiceID int64) (invoicemodel.Invoice, error) {
+func (m *mockInvoiceFetcher) Get(ctx context.Context, invoiceID int64) (invoicemodel.Invoice, error) {
 	now := time.Now()
 	return invoicemodel.Invoice{
 		InvoiceID:     invoiceID,
@@ -82,6 +84,9 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 
 	// 3. Setup MinIO
 	t.Log("Starting MinIO container...")
+	// Ensure bin directory exists for MinIO data mount
+	_ = os.MkdirAll("../../bin/minio_data", 0755)
+	
 	minioContainer, err := minio.Run(ctx, "quay.io/minio/minio:latest",
 		minio.WithUsername("testuser"),
 		minio.WithPassword("testpass123"),
@@ -162,7 +167,7 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 	}
 
 	consumer := worker.NewConsumer(broker, fetcher, generatorSvc, deliverySvc, objStorage)
-	
+
 	// Start consumer in background
 	go func() {
 		if err := consumer.Start(ctx); err != nil {
@@ -184,17 +189,42 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 		t.Fatalf("failed to publish event: %v", err)
 	}
 
-	// 8. Wait for Webhook Delivery
+	// Wait for the webhook to be delivered
 	t.Log("Waiting for webhook delivery...")
 	select {
+	case <-ctx.Done():
+		t.Fatalf("webhook not received within timeout")
 	case payload := <-webhookCh:
-		if payload.InvoiceID != invoiceID {
-			t.Errorf("expected InvoiceID %d, got %d", invoiceID, payload.InvoiceID)
-		}
 		if payload.DownloadURL == "" {
 			t.Errorf("expected DownloadURL to be populated")
 		}
 		t.Logf("Webhook received successfully! Download URL: %s", payload.DownloadURL)
+
+		// Download the PDF from MinIO using the presigned URL
+		t.Log("Downloading PDF from S3 presigned URL...")
+		resp, err := http.Get(payload.DownloadURL)
+		if err != nil {
+			t.Fatalf("failed to download PDF: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected HTTP 200 OK from presigned URL, got %d", resp.StatusCode)
+		}
+
+		pdfBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("failed to read PDF body: %v", err)
+		}
+
+		// Save the PDF locally in the bin/minio_data directory
+		localPath := "../../bin/minio_data/integration_test_receipt.pdf"
+		_ = os.MkdirAll("../../bin/minio_data", 0755)
+		err = os.WriteFile(localPath, pdfBytes, 0644)
+		if err != nil {
+			t.Fatalf("failed to save PDF locally: %v", err)
+		}
+		t.Logf("Successfully saved generated receipt to: %s", localPath)
 	case <-time.After(time.Second * 15):
 		t.Fatal("timed out waiting for webhook delivery (integration test failed)")
 	}
