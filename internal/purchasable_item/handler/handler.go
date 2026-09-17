@@ -1,34 +1,58 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
-	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
+	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 )
 
 var log = logger.ForComponent("purchasable_item_handler")
 
-type PurchasableItemHandler struct {
-	svc *itemservice.Service
+type PurchasableItemService interface {
+	ListAll(ctx context.Context) ([]itemmodel.PurchasableItem, error)
 }
 
-func NewPurchasableItemHandler(svc *itemservice.Service) *PurchasableItemHandler {
+type PurchasableItemHandler struct {
+	svc PurchasableItemService
+}
+
+func NewPurchasableItemHandler(
+	svc PurchasableItemService,
+) *PurchasableItemHandler {
 	return &PurchasableItemHandler{
 		svc: svc,
 	}
 }
 
-func (h *PurchasableItemHandler) HandleList(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func New(svc PurchasableItemService) *PurchasableItemHandler {
+	return NewPurchasableItemHandler(svc)
+}
 
-	items, err := h.svc.ListAll(ctx)
+func (h *PurchasableItemHandler) HandleList(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	items, err := h.svc.ListAll(r.Context())
 	if err != nil {
-		log.Error("Failed to list purchasable items", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to list purchasable items")
+		log.Error(
+			"Failed to list purchasable items",
+			logger.Err(err),
+		)
+
+		response.Write(
+			w,
+			http.StatusInternalServerError,
+			"Failed to list purchasable items",
+		)
 		return
 	}
 
-	response.Write(w, http.StatusOK, items)
+	response.Write(
+		w,
+		http.StatusOK,
+		items,
+	)
 }

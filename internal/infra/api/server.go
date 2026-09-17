@@ -44,7 +44,7 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 	}
 
 	if deps.PlanService != nil && deps.Pool != nil {
-		planHandler := planHandlers.NewPlanHandler(deps.Pool, deps.PlanService, deps.PurchasableItemService)
+		planHandler := planHandlers.NewPlanHandler(deps.PlanService)
 		mux.HandleFunc("POST /api/v1/plans", planHandler.HandleCreatePlan)
 		mux.HandleFunc("GET /api/v1/plans", planHandler.HandleListPlans)
 	}

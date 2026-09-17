@@ -19,19 +19,25 @@ type Plan = planmodel.Plan
 type PlanDuration = planmodel.PlanDuration
 type LegacyPricePolicy = planmodel.LegacyPricePolicy
 
-var ErrPlanNotFound = errors.New("plan not found")
-var ErrPlanDurationNotFound = errors.New("plan duration not found")
+var (
+	ErrPlanNotFound         = errors.New("plan not found")
+	ErrPlanDurationNotFound = errors.New("plan duration not found")
+)
+
+type DBTX interface {
+	sqlcgen.DBTX
+}
 
 type Repository interface {
 	Create(
 		ctx context.Context,
-		tx pgx.Tx,
+		db DBTX,
 		plan Plan,
 	) (Plan, error)
 
 	CreateDuration(
 		ctx context.Context,
-		tx pgx.Tx,
+		db DBTX,
 		duration PlanDuration,
 	) (PlanDuration, error)
 
@@ -40,7 +46,11 @@ type Repository interface {
 		code string,
 		version int,
 	) (Plan, error)
-	GetByID(ctx context.Context, id int64) (Plan, error)
+
+	GetByID(
+		ctx context.Context,
+		id int64,
+	) (Plan, error)
 
 	LatestVersion(
 		ctx context.Context,
@@ -55,6 +65,7 @@ type Repository interface {
 	ListActivePlans(
 		ctx context.Context,
 	) ([]Plan, error)
+
 	GetDuration(
 		ctx context.Context,
 		id int64,
@@ -73,25 +84,11 @@ type Repository interface {
 
 	UpdateDurationTariff(
 		ctx context.Context,
-		tx pgx.Tx,
+		db DBTX,
 		durationID int64,
 		tariffID int64,
 		isActive bool,
 	) (PlanDuration, error)
-}
-
-func (r *PostgresRepository) GetByID(ctx context.Context, id int64) (Plan, error) {
-	if id <= 0 {
-		return Plan{}, errors.New("plan id must be greater than zero")
-	}
-	row, err := sqlcgen.New(r.pool).GetPlanByID(ctx, id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Plan{}, ErrPlanNotFound
-	}
-	if err != nil {
-		return Plan{}, fmt.Errorf("get plan by id: %w", err)
-	}
-	return toPlanModel(row), nil
 }
 
 type PostgresRepository struct {
@@ -104,9 +101,19 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	}
 }
 
+func (r *PostgresRepository) getQuerier(db DBTX) *sqlcgen.Queries {
+	if db != nil {
+		return sqlcgen.New(db)
+	}
+
+	return sqlcgen.New(r.pool)
+}
+
+var _ Repository = (*PostgresRepository)(nil)
+
 func (r *PostgresRepository) Create(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	plan Plan,
 ) (Plan, error) {
 	if err := plan.Validate(); err != nil {
@@ -132,7 +139,7 @@ func (r *PostgresRepository) Create(
 		}
 	}
 
-	q := sqlcgen.New(tx)
+	q := r.getQuerier(db)
 
 	row, err := q.CreatePlan(
 		ctx,
@@ -154,7 +161,7 @@ func (r *PostgresRepository) Create(
 
 func (r *PostgresRepository) CreateDuration(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	duration PlanDuration,
 ) (PlanDuration, error) {
 	if err := duration.Validate(); err != nil {
@@ -164,7 +171,7 @@ func (r *PostgresRepository) CreateDuration(
 		)
 	}
 
-	q := sqlcgen.New(tx)
+	q := r.getQuerier(db)
 
 	row, err := q.CreatePlanDuration(
 		ctx,
@@ -190,7 +197,7 @@ func (r *PostgresRepository) GetByCodeAndVersion(
 	code string,
 	version int,
 ) (Plan, error) {
-	q := sqlcgen.New(r.pool)
+	q := r.getQuerier(nil)
 
 	row, err := q.GetPlanByCodeAndVersion(
 		ctx,
@@ -210,11 +217,38 @@ func (r *PostgresRepository) GetByCodeAndVersion(
 	return toPlanModel(row), nil
 }
 
+func (r *PostgresRepository) GetByID(
+	ctx context.Context,
+	id int64,
+) (Plan, error) {
+	if id <= 0 {
+		return Plan{}, errors.New(
+			"plan id must be greater than zero",
+		)
+	}
+
+	q := r.getQuerier(nil)
+
+	row, err := q.GetPlanByID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Plan{}, ErrPlanNotFound
+	}
+
+	if err != nil {
+		return Plan{}, fmt.Errorf(
+			"get plan by id: %w",
+			err,
+		)
+	}
+
+	return toPlanModel(row), nil
+}
+
 func (r *PostgresRepository) LatestVersion(
 	ctx context.Context,
 	code string,
 ) (int, error) {
-	q := sqlcgen.New(r.pool)
+	q := r.getQuerier(nil)
 
 	version, err := q.GetLatestPlanVersion(ctx, code)
 	if err != nil {
@@ -231,7 +265,7 @@ func (r *PostgresRepository) ListVersions(
 	ctx context.Context,
 	code string,
 ) ([]Plan, error) {
-	q := sqlcgen.New(r.pool)
+	q := r.getQuerier(nil)
 
 	rows, err := q.ListPlanVersions(ctx, code)
 	if err != nil {
@@ -257,7 +291,7 @@ func (r *PostgresRepository) ListVersions(
 func (r *PostgresRepository) ListActivePlans(
 	ctx context.Context,
 ) ([]Plan, error) {
-	q := sqlcgen.New(r.pool)
+	q := r.getQuerier(nil)
 
 	rows, err := q.ListActivePlans(ctx)
 	if err != nil {
@@ -268,18 +302,22 @@ func (r *PostgresRepository) ListActivePlans(
 	}
 
 	plans := make([]Plan, 0, len(rows))
+
 	for _, row := range rows {
-		plans = append(plans, toPlanModel(sqlcgen.Plan{
-			PlanID:                row.PlanID,
-			PlanCode:              row.PlanCode,
-			Version:               row.Version,
-			EffectiveFrom:         row.EffectiveFrom,
-			EffectiveUntil:        row.EffectiveUntil,
-			LegacyPricePolicyCode: row.LegacyPricePolicyCode,
-			MigrationPath:         row.MigrationPath,
-			Metadata:              row.Metadata,
-			CreatedAt:             row.CreatedAt,
-		}))
+		plans = append(
+			plans,
+			toPlanModel(sqlcgen.Plan{
+				PlanID:                row.PlanID,
+				PlanCode:              row.PlanCode,
+				Version:               row.Version,
+				EffectiveFrom:         row.EffectiveFrom,
+				EffectiveUntil:        row.EffectiveUntil,
+				LegacyPricePolicyCode: row.LegacyPricePolicyCode,
+				MigrationPath:         row.MigrationPath,
+				Metadata:              row.Metadata,
+				CreatedAt:             row.CreatedAt,
+			}),
+		)
 	}
 
 	return plans, nil
@@ -289,7 +327,13 @@ func (r *PostgresRepository) GetDuration(
 	ctx context.Context,
 	id int64,
 ) (PlanDuration, error) {
-	q := sqlcgen.New(r.pool)
+	if id <= 0 {
+		return PlanDuration{}, errors.New(
+			"plan duration id must be greater than zero",
+		)
+	}
+
+	q := r.getQuerier(nil)
 
 	row, err := q.GetPlanDuration(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -311,7 +355,19 @@ func (r *PostgresRepository) GetDurationByPlanAndDuration(
 	planID int64,
 	duration time.Duration,
 ) (PlanDuration, error) {
-	q := sqlcgen.New(r.pool)
+	if planID <= 0 {
+		return PlanDuration{}, errors.New(
+			"plan id must be greater than zero",
+		)
+	}
+
+	if duration <= 0 {
+		return PlanDuration{}, errors.New(
+			"duration must be greater than zero",
+		)
+	}
+
+	q := r.getQuerier(nil)
 
 	row, err := q.GetPlanDurationByPlanAndDuration(
 		ctx,
@@ -326,9 +382,9 @@ func (r *PostgresRepository) GetDurationByPlanAndDuration(
 
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
-			"get plan duration by plan and duration: %w",
-			err,
-		)
+		"get plan duration by plan and duration: %w",
+		err,
+	)
 	}
 
 	return toPlanDurationModel(row), nil
@@ -338,7 +394,13 @@ func (r *PostgresRepository) ListDurations(
 	ctx context.Context,
 	planID int64,
 ) ([]PlanDuration, error) {
-	q := sqlcgen.New(r.pool)
+	if planID <= 0 {
+		return nil, errors.New(
+			"plan id must be greater than zero",
+		)
+	}
+
+	q := r.getQuerier(nil)
 
 	rows, err := q.ListPlanDurations(ctx, planID)
 	if err != nil {
@@ -362,7 +424,7 @@ func (r *PostgresRepository) ListDurations(
 
 func (r *PostgresRepository) UpdateDurationTariff(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	durationID int64,
 	tariffID int64,
 	isActive bool,
@@ -379,7 +441,7 @@ func (r *PostgresRepository) UpdateDurationTariff(
 		)
 	}
 
-	q := sqlcgen.New(tx)
+	q := r.getQuerier(db)
 
 	row, err := q.UpdatePlanDurationTariff(
 		ctx,

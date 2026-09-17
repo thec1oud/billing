@@ -79,7 +79,7 @@ func Seed(
 		if txErr != nil {
 			return txErr
 		}
-		_, err = planSvc.CreatePlan(ctx, tx, planmodel.Plan{
+		_, err = planSvc.CreatePlan(ctx, planmodel.Plan{
 			PlanCode:              defaultPlanCode,
 			LegacyPricePolicyCode: planmodel.LegacyPolicyKeepForever,
 			EffectiveFrom:         time.Now().UTC(),

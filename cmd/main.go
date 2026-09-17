@@ -147,12 +147,12 @@ func run() error {
 	accountSvc := accountsvc.New(accountRepo)
 
 	planRepo := planrepo.NewPostgresRepository(deps.Pool)
-	planSvc := planservice.NewService(planRepo)
+	planSvc := planservice.NewService(deps.Pool,planRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
 	tariffSvc := tariffservice.NewService(deps.Pool, tariffRepo)
 	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
-	itemSvc := itemservice.NewService(itemRepo)
+	itemSvc := itemservice.NewService(deps.Pool,itemRepo)
 
 	subscriptionRepo := subscriptionrepo.New(deps.Pool)
 	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
@@ -234,7 +234,7 @@ func SeedCatalog(
 		return fmt.Errorf("create tariff: %w", err)
 	}
 
-	p, err := planSvc.CreatePlan(ctx, tx, planmodel.Plan{
+	p, err := planSvc.CreatePlan(ctx,  planmodel.Plan{
 		PlanCode:              "USAGE_PLAN_A",
 		LegacyPricePolicyCode: planmodel.LegacyPolicyKeepForever,
 	})
@@ -242,7 +242,7 @@ func SeedCatalog(
 		return fmt.Errorf("create plan: %w", err)
 	}
 
-	_, err = planSvc.CreatePlanDuration(ctx, tx, planmodel.PlanDuration{
+	_, err = planSvc.CreatePlanDuration(ctx,  planmodel.PlanDuration{
 		PlanID:   p.ID,
 		TariffID: t.ID,
 		Duration: 30 * 24 * time.Hour,
@@ -251,7 +251,7 @@ func SeedCatalog(
 		return fmt.Errorf("create plan duration: %w", err)
 	}
 
-	_, err = itemSvc.Create(ctx, tx, itemmodel.PurchasableItem{
+	_, err = itemSvc.Create(ctx, itemmodel.PurchasableItem{
 		ItemCode:     "API_REQUEST",
 		ItemTypeCode: itemmodel.ItemTypePlan,
 		Name:         "API Requests",

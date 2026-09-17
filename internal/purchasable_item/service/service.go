@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
@@ -21,18 +21,22 @@ const ItemTypeOneTimeService = itemmodel.ItemTypeOneTimeService
 const ItemTypeProduct = itemmodel.ItemTypeProduct
 
 type Service struct {
+	db         *pgxpool.Pool
 	repository itemrepo.Repository
 }
 
-func NewService(repository itemrepo.Repository) *Service {
+func NewService(
+	db *pgxpool.Pool,
+	repository itemrepo.Repository,
+) *Service {
 	return &Service{
+		db:         db,
 		repository: repository,
 	}
 }
 
 func (s *Service) Create(
 	ctx context.Context,
-	tx pgx.Tx,
 	item PurchasableItem,
 ) (PurchasableItem, error) {
 	if err := item.Validate(); err != nil {
@@ -45,6 +49,7 @@ func (s *Service) Create(
 	switch item.ItemTypeCode {
 	case ItemTypePlan:
 		// A PLAN item may have a nil PlanID.
+
 	case ItemTypeOneTimeService,
 		ItemTypeProduct:
 		if item.PlanID != nil {
@@ -55,7 +60,28 @@ func (s *Service) Create(
 		}
 	}
 
-	return s.repository.Create(ctx, tx, item)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PurchasableItem{}, fmt.Errorf(
+			"begin transaction: %w",
+			err,
+		)
+	}
+	defer tx.Rollback(ctx)
+
+	created, err := s.repository.Create(ctx, tx, item)
+	if err != nil {
+		return PurchasableItem{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return PurchasableItem{}, fmt.Errorf(
+			"commit transaction: %w",
+			err,
+		)
+	}
+
+	return created, nil
 }
 
 func (s *Service) GetByID(
@@ -89,13 +115,12 @@ func (s *Service) GetByPlanID(
 	planID int64,
 ) (PurchasableItem, error) {
 	if planID <= 0 {
-		return PurchasableItem{}, errors.New("plan id must be greater than zero")
+		return PurchasableItem{}, errors.New(
+			"plan id must be greater than zero",
+		)
 	}
-	lookup, ok := s.repository.(itemrepo.PlanLookup)
-	if !ok {
-		return PurchasableItem{}, errors.New("plan item lookup is not configured")
-	}
-	return lookup.GetByPlanID(ctx, planID)
+
+	return s.repository.GetByPlanID(ctx, planID)
 }
 
 func (s *Service) ListAll(

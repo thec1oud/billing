@@ -112,12 +112,12 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	accountSvc := accountsvc.New(accountRepo)
 
 	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
-	planSvc := planservice.NewService(planRepo)
+	planSvc := planservice.NewService(cluster.DBPool, planRepo)
 	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
 	tariffSvc := tariffservice.NewService(cluster.DBPool, tariffRepo)
 
 	itemRepo := itemrepo.NewPostgresRepository(cluster.DBPool)
-	itemSvc := itemservice.NewService(itemRepo)
+	itemSvc := itemservice.NewService(cluster.DBPool,itemRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
@@ -203,7 +203,6 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 
 	createdPlan, err := planSvc.CreatePlan(
 		ctx,
-		tx,
 		plan.Plan{
 			PlanCode:              "e2e_premium",
 			LegacyPricePolicyCode: plan.LegacyPolicyKeepForever,
@@ -223,7 +222,6 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	planID := createdPlan.ID
 	createdItem, err := itemSvc.Create(
 		ctx,
-		tx,
 		purchasableitem.PurchasableItem{
 			ItemCode:     "api_usage",
 			ItemTypeCode: purchasableitem.ItemTypePlan,

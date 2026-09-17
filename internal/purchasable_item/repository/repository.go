@@ -18,10 +18,14 @@ type PurchasableItem = itemmodel.PurchasableItem
 
 var ErrPurchasableItemNotFound = errors.New("purchasable item not found")
 
+type DBTX interface {
+	sqlcgen.DBTX
+}
+
 type Repository interface {
 	Create(
 		ctx context.Context,
-		tx pgx.Tx,
+		db DBTX,
 		item PurchasableItem,
 	) (PurchasableItem, error)
 
@@ -35,13 +39,14 @@ type Repository interface {
 		code string,
 	) (PurchasableItem, error)
 
+	GetByPlanID(
+		ctx context.Context,
+		planID int64,
+	) (PurchasableItem, error)
+
 	ListAll(
 		ctx context.Context,
 	) ([]PurchasableItem, error)
-}
-
-type PlanLookup interface {
-	GetByPlanID(ctx context.Context, planID int64) (PurchasableItem, error)
 }
 
 type PostgresRepository struct {
@@ -54,9 +59,17 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	}
 }
 
+func (r *PostgresRepository) getQuerier(db DBTX) *sqlcgen.Queries {
+	if db != nil {
+		return sqlcgen.New(db)
+	}
+
+	return sqlcgen.New(r.pool)
+}
+
 func (r *PostgresRepository) Create(
 	ctx context.Context,
-	tx pgx.Tx,
+	db DBTX,
 	item PurchasableItem,
 ) (PurchasableItem, error) {
 	if err := item.Validate(); err != nil {
@@ -87,9 +100,7 @@ func (r *PostgresRepository) Create(
 		}
 	}
 
-	q := sqlcgen.New(tx)
-
-	row, err := q.CreatePurchasableItem(
+	row, err := r.getQuerier(db).CreatePurchasableItem(
 		ctx,
 		sqlcgen.CreatePurchasableItemParams{
 			ItemCode:     item.ItemCode,
@@ -115,9 +126,7 @@ func (r *PostgresRepository) GetByID(
 	ctx context.Context,
 	id int64,
 ) (PurchasableItem, error) {
-	q := sqlcgen.New(r.pool)
-
-	row, err := q.GetPurchasableItemByID(ctx, id)
+	row, err := r.getQuerier(nil).GetPurchasableItemByID(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PurchasableItem{}, ErrPurchasableItemNotFound
 	}
@@ -136,9 +145,7 @@ func (r *PostgresRepository) GetByCode(
 	ctx context.Context,
 	code string,
 ) (PurchasableItem, error) {
-	q := sqlcgen.New(r.pool)
-
-	row, err := q.GetPurchasableItemByCode(ctx, code)
+	row, err := r.getQuerier(nil).GetPurchasableItemByCode(ctx, code)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PurchasableItem{}, ErrPurchasableItemNotFound
 	}
@@ -157,22 +164,31 @@ func (r *PostgresRepository) GetByPlanID(
 	ctx context.Context,
 	planID int64,
 ) (PurchasableItem, error) {
-	row, err := sqlcgen.New(r.pool).GetPurchasableItemByPlanID(ctx, pgtype.Int8{Int64: planID, Valid: true})
+	row, err := r.getQuerier(nil).GetPurchasableItemByPlanID(
+		ctx,
+		pgtype.Int8{
+			Int64: planID,
+			Valid: true,
+		},
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PurchasableItem{}, ErrPurchasableItemNotFound
 	}
+
 	if err != nil {
-		return PurchasableItem{}, fmt.Errorf("get purchasable item by plan: %w", err)
+		return PurchasableItem{}, fmt.Errorf(
+			"get purchasable item by plan: %w",
+			err,
+		)
 	}
+
 	return toModel(row)
 }
 
 func (r *PostgresRepository) ListAll(
 	ctx context.Context,
 ) ([]PurchasableItem, error) {
-	q := sqlcgen.New(r.pool)
-
-	rows, err := q.ListPurchasableItems(ctx)
+	rows, err := r.getQuerier(nil).ListPurchasableItems(ctx)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"list purchasable items: %w",
@@ -181,11 +197,13 @@ func (r *PostgresRepository) ListAll(
 	}
 
 	items := make([]PurchasableItem, 0, len(rows))
+
 	for _, row := range rows {
 		item, err := toModel(row)
 		if err != nil {
 			return nil, err
 		}
+
 		items = append(items, item)
 	}
 
@@ -224,3 +242,5 @@ func toModel(row sqlcgen.PurchasableItem) (PurchasableItem, error) {
 		CreatedAt:    row.CreatedAt,
 	}, nil
 }
+
+var _ Repository = (*PostgresRepository)(nil)
