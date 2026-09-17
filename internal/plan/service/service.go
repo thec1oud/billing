@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
@@ -16,39 +16,37 @@ type Plan = planmodel.Plan
 type PlanDuration = planmodel.PlanDuration
 type LegacyPricePolicy = planmodel.LegacyPricePolicy
 
-var ErrPlanNotFound = planrepo.ErrPlanNotFound
-var ErrPlanDurationNotFound = planrepo.ErrPlanDurationNotFound
+var (
+	ErrPlanNotFound         = planrepo.ErrPlanNotFound
+	ErrPlanDurationNotFound = planrepo.ErrPlanDurationNotFound
+)
 
-const LegacyPolicyKeepForever = planmodel.LegacyPolicyKeepForever
-const LegacyPolicyMigrateImmediately = planmodel.LegacyPolicyMigrateImmediately
-const LegacyPolicyMigrateOnRenewal = planmodel.LegacyPolicyMigrateOnRenewal
+const (
+	LegacyPolicyKeepForever        = planmodel.LegacyPolicyKeepForever
+	LegacyPolicyMigrateImmediately = planmodel.LegacyPolicyMigrateImmediately
+	LegacyPolicyMigrateOnRenewal   = planmodel.LegacyPolicyMigrateOnRenewal
+)
 
 type Service struct {
+	db         *pgxpool.Pool
 	repository planrepo.Repository
 }
 
-func NewService(repository planrepo.Repository) *Service {
+func NewService(
+	db *pgxpool.Pool,
+	repository planrepo.Repository,
+) *Service {
 	return &Service{
+		db:         db,
 		repository: repository,
 	}
 }
 
+
 func (s *Service) CreatePlan(
 	ctx context.Context,
-	tx pgx.Tx,
 	plan Plan,
 ) (Plan, error) {
-	if plan.PlanCode == "" {
-		return Plan{}, errors.New("plan code is required")
-	}
-
-	if !plan.LegacyPricePolicyCode.Valid() {
-		return Plan{}, fmt.Errorf(
-			"unsupported legacy price policy %q",
-			plan.LegacyPricePolicyCode,
-		)
-	}
-
 	if plan.EffectiveFrom.IsZero() {
 		plan.EffectiveFrom = time.Now().UTC()
 	}
@@ -59,6 +57,15 @@ func (s *Service) CreatePlan(
 			err,
 		)
 	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Plan{}, fmt.Errorf(
+			"begin create plan transaction: %w",
+			err,
+		)
+	}
+	defer tx.Rollback(ctx)
 
 	created, err := s.repository.Create(
 		ctx,
@@ -72,12 +79,41 @@ func (s *Service) CreatePlan(
 		)
 	}
 
+	for i, duration := range plan.Durations {
+		duration.PlanID = created.ID
+		duration.IsActive = true
+
+		createdDuration, err := s.repository.CreateDuration(
+			ctx,
+			tx,
+			duration,
+		)
+		if err != nil {
+			return Plan{}, fmt.Errorf(
+				"create plan duration %d: %w",
+				i,
+				err,
+			)
+		}
+
+		created.Durations = append(
+			created.Durations,
+			createdDuration,
+		)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Plan{}, fmt.Errorf(
+			"commit create plan transaction: %w",
+			err,
+		)
+	}
+
 	return created, nil
 }
 
 func (s *Service) CreatePlanDuration(
 	ctx context.Context,
-	tx pgx.Tx,
 	duration PlanDuration,
 ) (PlanDuration, error) {
 	if err := duration.Validate(); err != nil {
@@ -89,6 +125,15 @@ func (s *Service) CreatePlanDuration(
 
 	duration.IsActive = true
 
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PlanDuration{}, fmt.Errorf(
+			"begin create plan duration transaction: %w",
+			err,
+		)
+	}
+	defer tx.Rollback(ctx)
+
 	created, err := s.repository.CreateDuration(
 		ctx,
 		tx,
@@ -97,6 +142,13 @@ func (s *Service) CreatePlanDuration(
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
 			"create plan duration: %w",
+			err,
+		)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return PlanDuration{}, fmt.Errorf(
+			"commit create plan duration transaction: %w",
 			err,
 		)
 	}
@@ -189,7 +241,10 @@ func (s *Service) ListActivePlans(
 ) ([]Plan, error) {
 	plans, err := s.repository.ListActivePlans(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list active plans: %w", err)
+		return nil, fmt.Errorf(
+			"list active plans: %w",
+			err,
+		)
 	}
 
 	return plans, nil
@@ -219,7 +274,7 @@ func (s *Service) GetDuration(
 	return duration, nil
 }
 
-func (s *Service) GetDurationByPlanAndCode(
+func (s *Service) GetDurationByPlanAndDuration(
 	ctx context.Context,
 	planID int64,
 	duration time.Duration,
@@ -227,6 +282,12 @@ func (s *Service) GetDurationByPlanAndCode(
 	if planID <= 0 {
 		return PlanDuration{}, errors.New(
 			"plan id must be greater than zero",
+		)
+	}
+
+	if duration <= 0 {
+		return PlanDuration{}, errors.New(
+			"duration must be greater than zero",
 		)
 	}
 
@@ -271,7 +332,6 @@ func (s *Service) ListDurations(
 
 func (s *Service) UpdateDurationTariff(
 	ctx context.Context,
-	tx pgx.Tx,
 	durationID int64,
 	tariffID int64,
 	isActive bool,
@@ -288,6 +348,15 @@ func (s *Service) UpdateDurationTariff(
 		)
 	}
 
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PlanDuration{}, fmt.Errorf(
+			"begin update plan duration transaction: %w",
+			err,
+		)
+	}
+	defer tx.Rollback(ctx)
+
 	duration, err := s.repository.UpdateDurationTariff(
 		ctx,
 		tx,
@@ -298,6 +367,13 @@ func (s *Service) UpdateDurationTariff(
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
 			"update plan duration tariff: %w",
+			err,
+		)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return PlanDuration{}, fmt.Errorf(
+			"commit update plan duration transaction: %w",
 			err,
 		)
 	}

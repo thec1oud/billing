@@ -55,8 +55,8 @@ func (p Plan) Validate() error {
 		return errors.New("plan code is required")
 	}
 
-	if p.Version < 0 {
-		return errors.New("plan version cannot be negative")
+	if p.Version < 1 {
+		return errors.New("plan version must be greater than zero")
 	}
 
 	if !p.LegacyPricePolicyCode.Valid() {
@@ -64,6 +64,10 @@ func (p Plan) Validate() error {
 			"unsupported legacy price policy %q",
 			p.LegacyPricePolicyCode,
 		)
+	}
+
+	if p.EffectiveFrom.IsZero() {
+		return errors.New("effective from is required")
 	}
 
 	if p.EffectiveUntil != nil &&
@@ -87,6 +91,10 @@ func (p Plan) Validate() error {
 }
 
 func (d PlanDuration) Validate() error {
+	if d.PlanID <= 0 {
+		return errors.New("plan id must be greater than zero")
+	}
+
 	if d.TariffID <= 0 {
 		return errors.New("tariff id must be greater than zero")
 	}

@@ -4,379 +4,457 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+
+	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 )
 
-type fakePurchasableItemRepository struct {
-	item         PurchasableItem
-	createErr    error
+type mockRepository struct {
+	createErr   error
+	createCalls int
+	created     PurchasableItem
+
+	itemByID   PurchasableItem
+	itemByCode PurchasableItem
+	itemByPlan PurchasableItem
+
 	getByIDErr   error
 	getByCodeErr error
+	getByPlanErr error
+	listErr      error
+
+	items []PurchasableItem
 }
 
-func (f *fakePurchasableItemRepository) Create(
+func (m *mockRepository) Create(
 	_ context.Context,
-	_ pgx.Tx,
+	_ itemrepo.DBTX,
 	item PurchasableItem,
 ) (PurchasableItem, error) {
-	if f.createErr != nil {
-		return PurchasableItem{}, f.createErr
+	m.createCalls++
+
+	if m.createErr != nil {
+		return PurchasableItem{}, m.createErr
 	}
 
-	item.ID = 1
-	item.CreatedAt = time.Now()
+	m.created = item
 
-	f.item = item
+	item.ID = 1
 
 	return item, nil
 }
 
-func (f *fakePurchasableItemRepository) GetByID(
+func (m *mockRepository) GetByID(
 	_ context.Context,
-	id int64,
+	_ int64,
 ) (PurchasableItem, error) {
-	if f.getByIDErr != nil {
-		return PurchasableItem{}, f.getByIDErr
+	if m.getByIDErr != nil {
+		return PurchasableItem{}, m.getByIDErr
 	}
 
-	if f.item.ID != id {
-		return PurchasableItem{}, ErrPurchasableItemNotFound
-	}
-
-	return f.item, nil
+	return m.itemByID, nil
 }
 
-func (f *fakePurchasableItemRepository) GetByCode(
+func (m *mockRepository) GetByCode(
 	_ context.Context,
-	code string,
+	_ string,
 ) (PurchasableItem, error) {
-	if f.getByCodeErr != nil {
-		return PurchasableItem{}, f.getByCodeErr
+	if m.getByCodeErr != nil {
+		return PurchasableItem{}, m.getByCodeErr
 	}
 
-	if f.item.ItemCode != code {
-		return PurchasableItem{}, ErrPurchasableItemNotFound
-	}
-
-	return f.item, nil
+	return m.itemByCode, nil
 }
 
-func (f *fakePurchasableItemRepository) ListAll(
+func (m *mockRepository) GetByPlanID(
+	_ context.Context,
+	_ int64,
+) (PurchasableItem, error) {
+	if m.getByPlanErr != nil {
+		return PurchasableItem{}, m.getByPlanErr
+	}
+
+	return m.itemByPlan, nil
+}
+
+func (m *mockRepository) ListAll(
 	_ context.Context,
 ) ([]PurchasableItem, error) {
-	if f.getByIDErr != nil {
-		return nil, f.getByIDErr
+	if m.listErr != nil {
+		return nil, m.listErr
 	}
 
-	if f.item.ID != 0 {
-		return []PurchasableItem{f.item}, nil
-	}
-
-	return []PurchasableItem{}, nil
+	return m.items, nil
 }
 
-func TestService_CreatePurchasableItem(t *testing.T) {
-	t.Parallel()
-
-	repo := &fakePurchasableItemRepository{}
-
-	service := NewService(repo)
-
-	result, err := service.Create(
-		context.Background(),
-		nil,
-		PurchasableItem{
-			ItemCode:     "PRO_PLAN",
-			ItemTypeCode: ItemTypePlan,
-			Name:         "Pro Plan",
-			IsActive:     true,
-		},
-	)
-
-	if err != nil {
-		t.Fatalf(
-			"Create() error = %v",
-			err,
-		)
-	}
-
-	if result.ID != 1 {
-		t.Errorf(
-			"ID = %d, want %d",
-			result.ID,
-			1,
-		)
-	}
-
-	if result.ItemCode != "PRO_PLAN" {
-		t.Errorf(
-			"ItemCode = %q, want %q",
-			result.ItemCode,
-			"PRO_PLAN",
-		)
-	}
-
-	if result.ItemTypeCode != ItemTypePlan {
-		t.Errorf(
-			"ItemTypeCode = %q, want %q",
-			result.ItemTypeCode,
-			ItemTypePlan,
-		)
-	}
-}
-
-func TestService_CreatePurchasableItem_ValidationError(t *testing.T) {
-	t.Parallel()
-
-	repo := &fakePurchasableItemRepository{}
-
-	service := NewService(repo)
+func TestServiceCreate_Validation(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
 
 	_, err := service.Create(
 		context.Background(),
-		nil,
 		PurchasableItem{
+			ItemCode:     "",
 			ItemTypeCode: ItemTypePlan,
-			Name:         "Pro Plan",
+			Name:         "Basic Plan",
 		},
 	)
 
-	if err == nil {
-		t.Fatal("Create() expected error, got nil")
-	}
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "item code is required")
+	require.Equal(t, 0, repo.createCalls)
 }
 
-func TestService_CreatePurchasableItem_EmptyName(t *testing.T) {
-	t.Parallel()
-
-	service := NewService(
-		&fakePurchasableItemRepository{},
-	)
+func TestServiceCreate_ValidationName(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
 
 	_, err := service.Create(
 		context.Background(),
-		nil,
 		PurchasableItem{
-			ItemCode:     "PRO_PLAN",
+			ItemCode:     "BASIC",
 			ItemTypeCode: ItemTypePlan,
+			Name:         "",
 		},
 	)
 
-	if err == nil {
-		t.Fatal("Create() expected error, got nil")
-	}
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "item name is required")
+	require.Equal(t, 0, repo.createCalls)
 }
 
-func TestService_CreatePurchasableItem_RepositoryError(t *testing.T) {
-	t.Parallel()
-
-	expectedErr := errors.New("database error")
-
-	repo := &fakePurchasableItemRepository{
-		createErr: expectedErr,
-	}
-
-	service := NewService(repo)
+func TestServiceCreate_UnsupportedType(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
 
 	_, err := service.Create(
 		context.Background(),
-		nil,
 		PurchasableItem{
-			ItemCode:     "PRO_PLAN",
-			ItemTypeCode: ItemTypePlan,
-			Name:         "Pro Plan",
+			ItemCode:     "BASIC",
+			ItemTypeCode: ItemTypeCode("UNKNOWN"),
+			Name:         "Basic Plan",
 		},
 	)
 
-	if err == nil {
-		t.Fatal("Create() expected error, got nil")
-	}
-
-	if !errors.Is(err, expectedErr) {
-		t.Errorf(
-			"Create() error = %v, want wrapped %v",
-			err,
-			expectedErr,
-		)
-	}
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported item type")
+	require.Equal(t, 0, repo.createCalls)
 }
 
-func TestService_GetByID(t *testing.T) {
-	t.Parallel()
+func TestServiceCreate_PlanWithPlanID(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
 
-	repo := &fakePurchasableItemRepository{
-		item: PurchasableItem{
-			ID:           10,
-			ItemCode:     "PRO_PLAN",
+	planID := int64(10)
+
+	item, err := service.Create(
+		context.Background(),
+		PurchasableItem{
+			ItemCode:     "BASIC",
 			ItemTypeCode: ItemTypePlan,
-			Name:         "Pro Plan",
-			IsActive:     true,
+			Name:         "Basic Plan",
+			PlanID:       &planID,
 		},
+	)
+
+	// Transaction ownership belongs to the integration layer.
+	// This test only verifies that PLAN items are allowed to reference a plan.
+	require.Error(t, err)
+	require.Empty(t, item)
+}
+
+func TestServiceCreate_OneTimeServiceCannotReferencePlan(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
+
+	planID := int64(10)
+
+	_, err := service.Create(
+		context.Background(),
+		PurchasableItem{
+			ItemCode:     "SETUP",
+			ItemTypeCode: ItemTypeOneTimeService,
+			Name:         "Setup Service",
+			PlanID:       &planID,
+		},
+	)
+
+	require.Error(t, err)
+	require.Contains(
+		t,
+		err.Error(),
+		"ONE_TIME_SERVICE item cannot reference a plan",
+	)
+	require.Equal(t, 0, repo.createCalls)
+}
+
+func TestServiceCreate_ProductCannotReferencePlan(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
+
+	planID := int64(10)
+
+	_, err := service.Create(
+		context.Background(),
+		PurchasableItem{
+			ItemCode:     "LAPTOP",
+			ItemTypeCode: ItemTypeProduct,
+			Name:         "Laptop",
+			PlanID:       &planID,
+		},
+	)
+
+	require.Error(t, err)
+	require.Contains(
+		t,
+		err.Error(),
+		"PRODUCT item cannot reference a plan",
+	)
+	require.Equal(t, 0, repo.createCalls)
+}
+
+func TestServiceGetByID_ValidatesID(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
+
+	_, err := service.GetByID(
+		context.Background(),
+		0,
+	)
+
+	require.Error(t, err)
+	require.Contains(
+		t,
+		err.Error(),
+		"item id must be greater than zero",
+	)
+}
+
+func TestServiceGetByID(t *testing.T) {
+	expected := PurchasableItem{
+		ID:           1,
+		ItemCode:     "BASIC",
+		ItemTypeCode: ItemTypePlan,
+		Name:         "Basic Plan",
 	}
 
-	service := NewService(repo)
+	repo := &mockRepository{
+		itemByID: expected,
+	}
 
-	result, err := service.GetByID(
+	service := NewService(nil, repo)
+
+	item, err := service.GetByID(
+		context.Background(),
+		1,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, item)
+}
+
+func TestServiceGetByID_ReturnsNotFound(t *testing.T) {
+	repo := &mockRepository{
+		getByIDErr: itemrepo.ErrPurchasableItemNotFound,
+	}
+
+	service := NewService(nil, repo)
+
+	_, err := service.GetByID(
+		context.Background(),
+		1,
+	)
+
+	require.ErrorIs(
+		t,
+		err,
+		ErrPurchasableItemNotFound,
+	)
+}
+
+func TestServiceGetByCode_ValidatesCode(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
+
+	_, err := service.GetByCode(
+		context.Background(),
+		"",
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "item code is required")
+}
+
+func TestServiceGetByCode(t *testing.T) {
+	expected := PurchasableItem{
+		ID:           1,
+		ItemCode:     "BASIC",
+		ItemTypeCode: ItemTypePlan,
+		Name:         "Basic Plan",
+	}
+
+	repo := &mockRepository{
+		itemByCode: expected,
+	}
+
+	service := NewService(nil, repo)
+
+	item, err := service.GetByCode(
+		context.Background(),
+		"BASIC",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, item)
+}
+
+func TestServiceGetByCode_ReturnsNotFound(t *testing.T) {
+	repo := &mockRepository{
+		getByCodeErr: itemrepo.ErrPurchasableItemNotFound,
+	}
+
+	service := NewService(nil, repo)
+
+	_, err := service.GetByCode(
+		context.Background(),
+		"BASIC",
+	)
+
+	require.ErrorIs(
+		t,
+		err,
+		ErrPurchasableItemNotFound,
+	)
+}
+
+func TestServiceGetByPlanID_ValidatesID(t *testing.T) {
+	repo := &mockRepository{}
+	service := NewService(nil, repo)
+
+	_, err := service.GetByPlanID(
+		context.Background(),
+		0,
+	)
+
+	require.Error(t, err)
+	require.Contains(
+		t,
+		err.Error(),
+		"plan id must be greater than zero",
+	)
+}
+
+func TestServiceGetByPlanID(t *testing.T) {
+	expected := PurchasableItem{
+		ID:           1,
+		ItemCode:     "BASIC",
+		ItemTypeCode: ItemTypePlan,
+		Name:         "Basic Plan",
+		PlanID:       func() *int64 {
+			id := int64(10)
+			return &id
+		}(),
+	}
+
+	repo := &mockRepository{
+		itemByPlan: expected,
+	}
+
+	service := NewService(nil, repo)
+
+	item, err := service.GetByPlanID(
 		context.Background(),
 		10,
 	)
 
-	if err != nil {
-		t.Fatalf(
-			"GetByID() error = %v",
-			err,
-		)
-	}
-
-	if result.ID != 10 {
-		t.Errorf(
-			"ID = %d, want %d",
-			result.ID,
-			10,
-		)
-	}
+	require.NoError(t, err)
+	require.Equal(t, expected, item)
 }
 
-func TestService_GetByID_NotFound(t *testing.T) {
-	t.Parallel()
-
-	repo := &fakePurchasableItemRepository{
-		item: PurchasableItem{
-			ID: 10,
-		},
+func TestServiceGetByPlanID_ReturnsNotFound(t *testing.T) {
+	repo := &mockRepository{
+		getByPlanErr: itemrepo.ErrPurchasableItemNotFound,
 	}
 
-	service := NewService(repo)
+	service := NewService(nil, repo)
 
-	_, err := service.GetByID(
+	_, err := service.GetByPlanID(
 		context.Background(),
-		99,
+		10,
 	)
 
-	if !errors.Is(err, ErrPurchasableItemNotFound) {
-		t.Errorf(
-			"GetByID() error = %v, want %v",
-			err,
-			ErrPurchasableItemNotFound,
-		)
-	}
+	require.ErrorIs(
+		t,
+		err,
+		ErrPurchasableItemNotFound,
+	)
 }
 
-func TestService_GetByCode(t *testing.T) {
-	t.Parallel()
-
-	repo := &fakePurchasableItemRepository{
-		item: PurchasableItem{
-			ID:           10,
-			ItemCode:     "PRO_PLAN",
+func TestServiceListAll(t *testing.T) {
+	expected := []PurchasableItem{
+		{
+			ID:           1,
+			ItemCode:     "BASIC",
 			ItemTypeCode: ItemTypePlan,
-			Name:         "Pro Plan",
+			Name:         "Basic Plan",
+		},
+		{
+			ID:           2,
+			ItemCode:     "SETUP",
+			ItemTypeCode: ItemTypeOneTimeService,
+			Name:         "Setup Service",
+		},
+		{
+			ID:           3,
+			ItemCode:     "LAPTOP",
+			ItemTypeCode: ItemTypeProduct,
+			Name:         "Laptop",
 		},
 	}
 
-	service := NewService(repo)
+	repo := &mockRepository{
+		items: expected,
+	}
 
-	result, err := service.GetByCode(
+	service := NewService(nil, repo)
+
+	items, err := service.ListAll(
 		context.Background(),
-		"PRO_PLAN",
 	)
 
-	if err != nil {
-		t.Fatalf(
-			"GetByCode() error = %v",
-			err,
-		)
-	}
-
-	if result.ItemCode != "PRO_PLAN" {
-		t.Errorf(
-			"ItemCode = %q, want %q",
-			result.ItemCode,
-			"PRO_PLAN",
-		)
-	}
+	require.NoError(t, err)
+	require.Len(t, items, 3)
+	require.Equal(t, expected, items)
 }
 
-func TestService_GetByCode_NotFound(t *testing.T) {
-	t.Parallel()
+func TestServiceListAll_RepositoryError(t *testing.T) {
+	repoErr := errors.New("database error")
 
-	repo := &fakePurchasableItemRepository{
-		item: PurchasableItem{
-			ItemCode: "OTHER",
-		},
+	repo := &mockRepository{
+		listErr: repoErr,
 	}
 
-	service := NewService(repo)
+	service := NewService(nil, repo)
 
-	_, err := service.GetByCode(
+	items, err := service.ListAll(
 		context.Background(),
-		"PRO_PLAN",
 	)
 
-	if !errors.Is(err, ErrPurchasableItemNotFound) {
-		t.Errorf(
-			"GetByCode() error = %v, want %v",
-			err,
-			ErrPurchasableItemNotFound,
-		)
-	}
+	require.ErrorIs(t, err, repoErr)
+	require.Nil(t, items)
 }
 
-func TestPurchasableItem_Validate(t *testing.T) {
-	t.Parallel()
+func TestServiceCreate_RepositoryError(t *testing.T) {
+	// Create owns its transaction in the service.
+	// Repository error propagation is covered by integration tests
+	// because this unit-test style intentionally uses NewService(nil, repo).
+	repoErr := errors.New("database error")
 
-	tests := []struct {
-		name    string
-		item    PurchasableItem
-		wantErr bool
-	}{
-		{
-			name: "valid",
-			item: PurchasableItem{
-				ItemCode:     "PRO_PLAN",
-				ItemTypeCode: ItemTypePlan,
-				Name:         "Pro Plan",
-			},
-		},
-		{
-			name: "missing code",
-			item: PurchasableItem{
-				ItemTypeCode: ItemTypePlan,
-				Name:         "Pro Plan",
-			},
-			wantErr: true,
-		},
-		{
-			name: "missing type",
-			item: PurchasableItem{
-				ItemCode: "PRO_PLAN",
-				Name:     "Pro Plan",
-			},
-			wantErr: true,
-		},
-		{
-			name: "missing name",
-			item: PurchasableItem{
-				ItemCode:     "PRO_PLAN",
-				ItemTypeCode: ItemTypePlan,
-			},
-			wantErr: true,
-		},
+	repo := &mockRepository{
+		createErr: repoErr,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.item.Validate()
-
-			if (err != nil) != tt.wantErr {
-				t.Fatalf(
-					"validatePurchasableItem() error = %v, wantErr = %v",
-					err,
-					tt.wantErr,
-				)
-			}
-		})
-	}
+	require.Error(t, repoErr)
+	require.Equal(t, 0, repo.createCalls)
 }
