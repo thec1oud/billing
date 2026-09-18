@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/infra/storage"
@@ -26,11 +24,11 @@ type InvoiceFetcher interface {
 }
 
 type Consumer struct {
-	broker        messaging.Broker
+	broker         messaging.Broker
 	invoiceFetcher InvoiceFetcher
-	generator     service.GeneratorService
-	delivery      service.DeliveryService
-	storage       storage.ObjectStorage
+	generator      service.GeneratorService
+	delivery       service.DeliveryService
+	storage        storage.ObjectStorage
 }
 
 func NewConsumer(
@@ -93,8 +91,8 @@ func (c *Consumer) handleInvoicePaid(ctx context.Context, msg []byte) error {
 	}
 
 	// 4. Upload to Object Storage
-	receiptID := uuid.New().String()
-	objectKey := fmt.Sprintf("receipts/%d/%s.pdf", invoice.AccountID, receiptID)
+	receiptID := model.GenerateReceiptID(invoice.InvoiceID)
+	objectKey := model.GenerateReceiptObjectKey(invoice.AccountID, receiptID)
 
 	err = c.storage.UploadFile(ctx, objectKey, bytes.NewReader(pdfBytes), "application/pdf")
 	if err != nil {
@@ -108,14 +106,7 @@ func (c *Consumer) handleInvoicePaid(ctx context.Context, msg []byte) error {
 	}
 
 	// 6. Deliver via Webhook
-	receiptPayload := model.ReceiptPayload{
-		ReceiptID:     receiptID,
-		InvoiceID:     invoice.InvoiceID,
-		InvoiceNumber: invoice.InvoiceNumber,
-		AccountID:     invoice.AccountID,
-		DownloadURL:   downloadURL,
-		GeneratedAt:   time.Now().UTC(),
-	}
+	receiptPayload := model.MapInvoiceToPayload(&invoice, receiptID, downloadURL)
 
 	err = c.delivery.Deliver(ctx, receiptPayload)
 	if err != nil {
