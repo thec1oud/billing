@@ -10,16 +10,17 @@ import (
 	"github.com/thec1oud/billing/internal/account/model"
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 )
 
 type AccountService interface {
-	Create(ctx context.Context, in model.CreateInput) (model.Account, error)
+	Create(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error)
 	Get(ctx context.Context, id int64) (model.Account, error)
-	Activate(ctx context.Context, id int64) (model.Account, error)
-	Reactivate(ctx context.Context, id int64) (model.Account, error)
-	Suspend(ctx context.Context, id int64, reason string) (model.Account, error)
-	Close(ctx context.Context, id int64, reason string) (model.Account, error)
-	AddPaymentMethod(ctx context.Context, id int64, paymentMethodID string) (model.Account, error)
+	Activate(ctx context.Context, actor eventmodel.Actor, id int64) (model.Account, error)
+	Reactivate(ctx context.Context, actor eventmodel.Actor, id int64) (model.Account, error)
+	Suspend(ctx context.Context, actor eventmodel.Actor, id int64, reason string) (model.Account, error)
+	Close(ctx context.Context, actor eventmodel.Actor, id int64, reason string) (model.Account, error)
+	AddPaymentMethod(ctx context.Context, actor eventmodel.Actor, id int64, paymentMethodID string) (model.Account, error)
 }
 
 // Service is an alias for AccountService for backward compatibility with earlier drafts.
@@ -57,7 +58,8 @@ func (h *AccountHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	created, err := h.svc.Create(r.Context(), input)
+	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	created, err := h.svc.Create(r.Context(), actor, input)
 	if err != nil {
 		response.WriteError(w, h.log, "create account failed", err)
 		return
@@ -91,7 +93,8 @@ func (h *AccountHandler) HandleActivate(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	account, err := h.svc.Activate(r.Context(), id)
+	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	account, err := h.svc.Activate(r.Context(), actor, id)
 	if err != nil {
 		response.WriteError(w, h.log, "activate account failed", err)
 		return
@@ -108,7 +111,8 @@ func (h *AccountHandler) HandleReactivate(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	account, err := h.svc.Reactivate(r.Context(), id)
+	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	account, err := h.svc.Reactivate(r.Context(), actor, id)
 	if err != nil {
 		response.WriteError(w, h.log, "reactivate account failed", err)
 		return
@@ -132,7 +136,8 @@ func (h *AccountHandler) HandleSuspend(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	account, err := h.svc.Suspend(r.Context(), id, body.Reason)
+	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	account, err := h.svc.Suspend(r.Context(), actor, id, body.Reason)
 	if err != nil {
 		response.WriteError(w, h.log, "suspend account failed", err)
 		return
@@ -156,7 +161,8 @@ func (h *AccountHandler) HandleClose(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	account, err := h.svc.Close(r.Context(), id, body.Reason)
+	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	account, err := h.svc.Close(r.Context(), actor, id, body.Reason)
 	if err != nil {
 		response.WriteError(w, h.log, "close account failed", err)
 		return
@@ -180,7 +186,8 @@ func (h *AccountHandler) HandleAddPaymentMethod(w http.ResponseWriter, r *http.R
 		})
 		return
 	}
-	account, err := h.svc.AddPaymentMethod(r.Context(), id, body.PaymentMethodID)
+	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	account, err := h.svc.AddPaymentMethod(r.Context(), actor, id, body.PaymentMethodID)
 	if err != nil {
 		response.WriteError(w, h.log, "add payment method failed", err)
 		return

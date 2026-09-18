@@ -11,21 +11,22 @@ import (
 
 	"github.com/thec1oud/billing/internal/account/handler"
 	"github.com/thec1oud/billing/internal/account/model"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 )
 
 type mockAccountService struct {
-	createFn           func(ctx context.Context, in model.CreateInput) (model.Account, error)
+	createFn           func(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error)
 	getFn              func(ctx context.Context, id int64) (model.Account, error)
-	activateFn         func(ctx context.Context, accountID int64) (model.Account, error)
-	reactivateFn       func(ctx context.Context, accountID int64) (model.Account, error)
-	suspendFn          func(ctx context.Context, accountID int64, reason string) (model.Account, error)
-	closeFn            func(ctx context.Context, accountID int64, reason string) (model.Account, error)
-	addPaymentMethodFn func(ctx context.Context, accountID int64, paymentMethodID string) (model.Account, error)
+	activateFn         func(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error)
+	reactivateFn       func(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error)
+	suspendFn          func(ctx context.Context, actor eventmodel.Actor, accountID int64, reason string) (model.Account, error)
+	closeFn            func(ctx context.Context, actor eventmodel.Actor, accountID int64, reason string) (model.Account, error)
+	addPaymentMethodFn func(ctx context.Context, actor eventmodel.Actor, accountID int64, paymentMethodID string) (model.Account, error)
 }
 
-func (m *mockAccountService) Create(ctx context.Context, in model.CreateInput) (model.Account, error) {
+func (m *mockAccountService) Create(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error) {
 	if m.createFn != nil {
-		return m.createFn(ctx, in)
+		return m.createFn(ctx, actor, in)
 	}
 	return model.Account{AccountID: 1}, nil
 }
@@ -37,37 +38,37 @@ func (m *mockAccountService) Get(ctx context.Context, id int64) (model.Account, 
 	return model.Account{AccountID: id}, nil
 }
 
-func (m *mockAccountService) Activate(ctx context.Context, accountID int64) (model.Account, error) {
+func (m *mockAccountService) Activate(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error) {
 	if m.activateFn != nil {
-		return m.activateFn(ctx, accountID)
+		return m.activateFn(ctx, actor, accountID)
 	}
 	return model.Account{AccountID: accountID, Status: model.StatusActive}, nil
 }
 
-func (m *mockAccountService) Reactivate(ctx context.Context, accountID int64) (model.Account, error) {
+func (m *mockAccountService) Reactivate(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error) {
 	if m.reactivateFn != nil {
-		return m.reactivateFn(ctx, accountID)
+		return m.reactivateFn(ctx, actor, accountID)
 	}
 	return model.Account{AccountID: accountID, Status: model.StatusActive}, nil
 }
 
-func (m *mockAccountService) Suspend(ctx context.Context, accountID int64, reason string) (model.Account, error) {
+func (m *mockAccountService) Suspend(ctx context.Context, actor eventmodel.Actor, accountID int64, reason string) (model.Account, error) {
 	if m.suspendFn != nil {
-		return m.suspendFn(ctx, accountID, reason)
+		return m.suspendFn(ctx, actor, accountID, reason)
 	}
 	return model.Account{AccountID: accountID, Status: model.StatusSuspended}, nil
 }
 
-func (m *mockAccountService) Close(ctx context.Context, accountID int64, reason string) (model.Account, error) {
+func (m *mockAccountService) Close(ctx context.Context, actor eventmodel.Actor, accountID int64, reason string) (model.Account, error) {
 	if m.closeFn != nil {
-		return m.closeFn(ctx, accountID, reason)
+		return m.closeFn(ctx, actor, accountID, reason)
 	}
 	return model.Account{AccountID: accountID, Status: model.StatusClosed}, nil
 }
 
-func (m *mockAccountService) AddPaymentMethod(ctx context.Context, accountID int64, paymentMethodID string) (model.Account, error) {
+func (m *mockAccountService) AddPaymentMethod(ctx context.Context, actor eventmodel.Actor, accountID int64, paymentMethodID string) (model.Account, error) {
 	if m.addPaymentMethodFn != nil {
-		return m.addPaymentMethodFn(ctx, accountID, paymentMethodID)
+		return m.addPaymentMethodFn(ctx, actor, accountID, paymentMethodID)
 	}
 	return model.Account{AccountID: accountID}, nil
 }
@@ -76,7 +77,7 @@ func TestHandleCreateAccount(t *testing.T) {
 	tests := []struct {
 		name           string
 		body           any
-		mockCreate     func(ctx context.Context, in model.CreateInput) (model.Account, error)
+		mockCreate     func(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error)
 		expectedStatus int
 	}{
 		{
@@ -85,7 +86,7 @@ func TestHandleCreateAccount(t *testing.T) {
 				ExternalID: "ext-1",
 				Currency:   "ETB",
 			},
-			mockCreate: func(ctx context.Context, in model.CreateInput) (model.Account, error) {
+			mockCreate: func(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error) {
 				return model.Account{AccountID: 1, ExternalID: "ext-1", Currency: "ETB"}, nil
 			},
 			expectedStatus: http.StatusCreated,
@@ -98,7 +99,7 @@ func TestHandleCreateAccount(t *testing.T) {
 		{
 			name: "service validation error",
 			body: model.CreateInput{},
-			mockCreate: func(ctx context.Context, in model.CreateInput) (model.Account, error) {
+			mockCreate: func(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error) {
 				return model.Account{}, errors.New("currency is required")
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -106,7 +107,7 @@ func TestHandleCreateAccount(t *testing.T) {
 		{
 			name: "service internal error",
 			body: model.CreateInput{},
-			mockCreate: func(ctx context.Context, in model.CreateInput) (model.Account, error) {
+			mockCreate: func(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error) {
 				return model.Account{}, errors.New("db connection down")
 			},
 			expectedStatus: http.StatusInternalServerError,
@@ -189,13 +190,13 @@ func TestHandleActivateAccount(t *testing.T) {
 	tests := []struct {
 		name           string
 		pathID         string
-		mockActivate   func(ctx context.Context, accountID int64) (model.Account, error)
+		mockActivate   func(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error)
 		expectedStatus int
 	}{
 		{
 			name:   "success",
 			pathID: "1",
-			mockActivate: func(ctx context.Context, accountID int64) (model.Account, error) {
+			mockActivate: func(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error) {
 				return model.Account{AccountID: 1, Status: model.StatusActive}, nil
 			},
 			expectedStatus: http.StatusOK,
@@ -208,7 +209,7 @@ func TestHandleActivateAccount(t *testing.T) {
 		{
 			name:   "not found",
 			pathID: "99",
-			mockActivate: func(ctx context.Context, accountID int64) (model.Account, error) {
+			mockActivate: func(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error) {
 				return model.Account{}, model.ErrNotFound
 			},
 			expectedStatus: http.StatusNotFound,
@@ -216,7 +217,7 @@ func TestHandleActivateAccount(t *testing.T) {
 		{
 			name:   "invalid state",
 			pathID: "1",
-			mockActivate: func(ctx context.Context, accountID int64) (model.Account, error) {
+			mockActivate: func(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error) {
 				return model.Account{}, model.ErrInvalidStateTransition
 			},
 			expectedStatus: http.StatusConflict,
@@ -243,10 +244,10 @@ func TestHandleActivateAccount(t *testing.T) {
 
 func TestHandleSuspendAndReactivate(t *testing.T) {
 	svc := &mockAccountService{
-		suspendFn: func(ctx context.Context, accountID int64, reason string) (model.Account, error) {
+		suspendFn: func(ctx context.Context, actor eventmodel.Actor, accountID int64, reason string) (model.Account, error) {
 			return model.Account{AccountID: accountID, Status: model.StatusSuspended}, nil
 		},
-		reactivateFn: func(ctx context.Context, accountID int64) (model.Account, error) {
+		reactivateFn: func(ctx context.Context, actor eventmodel.Actor, accountID int64) (model.Account, error) {
 			return model.Account{AccountID: accountID, Status: model.StatusActive}, nil
 		},
 	}
@@ -274,10 +275,10 @@ func TestHandleSuspendAndReactivate(t *testing.T) {
 
 func TestHandleCloseAndPaymentMethod(t *testing.T) {
 	svc := &mockAccountService{
-		closeFn: func(ctx context.Context, accountID int64, reason string) (model.Account, error) {
+		closeFn: func(ctx context.Context, actor eventmodel.Actor, accountID int64, reason string) (model.Account, error) {
 			return model.Account{AccountID: accountID, Status: model.StatusClosed}, nil
 		},
-		addPaymentMethodFn: func(ctx context.Context, accountID int64, paymentMethodID string) (model.Account, error) {
+		addPaymentMethodFn: func(ctx context.Context, actor eventmodel.Actor, accountID int64, paymentMethodID string) (model.Account, error) {
 			return model.Account{AccountID: accountID}, nil
 		},
 	}

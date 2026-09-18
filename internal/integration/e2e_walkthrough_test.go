@@ -160,7 +160,8 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 
 	// Phase 1: Account Creation
 	e2eLog.Info("Finished configuration and setup")
-	account, err := accountSvc.Create(ctx, accountmodel.CreateInput{
+	actor := eventmodel.Actor{Type: "system", ID: "e2e_test"}
+	account, err := accountSvc.Create(ctx, actor, accountmodel.CreateInput{
 		Currency: "ETB",
 		Timezone: "Africa/Addis_Ababa",
 		NetTerms: 0,
@@ -169,7 +170,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 		t.Fatalf("failed to create account: %v", err)
 	}
 
-	account, err = accountSvc.Activate(ctx, account.AccountID)
+	account, err = accountSvc.Activate(ctx, actor, account.AccountID)
 	if err != nil {
 		t.Fatalf("failed to activate account: %v", err)
 	}
@@ -248,7 +249,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 
 	// Phase 3: Invoice Lifecycle
 
-	actor := eventmodel.Actor{Type: "system", ID: "e2e_test"}
+
 	lineItems := []invoicemodel.LineItem{
 		{
 			ItemID:         createdItem.ID,

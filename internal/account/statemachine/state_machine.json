@@ -1,0 +1,89 @@
+{
+  "MachineType": "account_lifecycle",
+  "Version": 1,
+  "InitialState": "PENDING_VERIFICATION",
+  "Activate": true,
+  "States": [
+    { "Name": "PENDING_VERIFICATION" },
+    { "Name": "ACTIVE" },
+    { "Name": "SUSPENDED" },
+    { "Name": "CLOSED", "IsFinal": true }
+  ],
+  "Transitions": [
+    {
+      "FromState": "PENDING_VERIFICATION",
+      "EventName": "activate",
+      "ToState": "ACTIVE",
+      "EmitEventType": "billing.account.activated",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "account.action.activate",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "SUSPENDED",
+      "EventName": "reactivate",
+      "ToState": "ACTIVE",
+      "EmitEventType": "billing.account.activated",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "account.action.reactivate",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "ACTIVE",
+      "EventName": "suspend",
+      "ToState": "SUSPENDED",
+      "EmitEventType": "billing.account.suspended",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "account.action.suspend",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "ACTIVE",
+      "EventName": "close",
+      "ToState": "CLOSED",
+      "EmitEventType": "billing.account.closed",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "account.action.close",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "SUSPENDED",
+      "EventName": "close",
+      "ToState": "CLOSED",
+      "EmitEventType": "billing.account.closed",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "account.action.close",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    }
+  ]
+}

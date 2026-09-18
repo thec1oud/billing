@@ -14,6 +14,7 @@ import (
 
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
+	accountstatemachine "github.com/thec1oud/billing/internal/account/statemachine"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
@@ -144,15 +145,25 @@ func run() error {
 
 	// Initialize other domain services
 	accountRepo := accountrepo.New(deps.Pool)
-	accountSvc := accountsvc.New(accountRepo)
+
+	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
+	eventSvc := eventsvc.NewService(eventRepo)
+
+	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
+	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, accountstatemachine.BuildAccountDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		return fmt.Errorf("failed to bootstrap account state machine: %w", err)
+	}
+
+	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
 
 	planRepo := planrepo.NewPostgresRepository(deps.Pool)
-	planSvc := planservice.NewService(deps.Pool,planRepo)
+	planSvc := planservice.NewService(deps.Pool, planRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
 	tariffSvc := tariffservice.NewService(deps.Pool, tariffRepo)
 	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
-	itemSvc := itemservice.NewService(deps.Pool,itemRepo)
+	itemSvc := itemservice.NewService(deps.Pool, itemRepo)
 
 	subscriptionRepo := subscriptionrepo.New(deps.Pool)
 	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
@@ -162,8 +173,6 @@ func run() error {
 	}
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine)
 
-	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
-	eventSvc := eventsvc.NewService(eventRepo)
 	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, ppiService, invoiceRepository, smEngine)
 
 	// Configure & Start HTTP Server
@@ -234,7 +243,7 @@ func SeedCatalog(
 		return fmt.Errorf("create tariff: %w", err)
 	}
 
-	p, err := planSvc.CreatePlan(ctx,  planmodel.Plan{
+	p, err := planSvc.CreatePlan(ctx, planmodel.Plan{
 		PlanCode:              "USAGE_PLAN_A",
 		LegacyPricePolicyCode: planmodel.LegacyPolicyKeepForever,
 	})
@@ -242,7 +251,7 @@ func SeedCatalog(
 		return fmt.Errorf("create plan: %w", err)
 	}
 
-	_, err = planSvc.CreatePlanDuration(ctx,  planmodel.PlanDuration{
+	_, err = planSvc.CreatePlanDuration(ctx, planmodel.PlanDuration{
 		PlanID:   p.ID,
 		TariffID: t.ID,
 		Duration: 30 * 24 * time.Hour,

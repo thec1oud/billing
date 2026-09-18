@@ -17,6 +17,7 @@ type Querier interface {
 	CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error)
 	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error)
 	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
+	ClearDefaultPaymentMethod(ctx context.Context, accountID int64) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (CreateAccountRow, error)
 	CreateInstance(ctx context.Context, arg CreateInstanceParams) (CreateInstanceRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
@@ -78,6 +79,7 @@ type Querier interface {
 	ListStatesByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmState, error)
 	ListTariffVersions(ctx context.Context, tariffCode string) ([]ListTariffVersionsRow, error)
 	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
+	LockAccountForUpdate(ctx context.Context, accountID int64) (string, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) error
@@ -93,6 +95,7 @@ type Querier interface {
 	ReapStuckSchedules(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
 	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
 	UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error
+	UpdateAccountStatusFrom(ctx context.Context, arg UpdateAccountStatusFromParams) (int64, error)
 	UpdateInstanceState(ctx context.Context, arg UpdateInstanceStateParams) (int64, error)
 	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.

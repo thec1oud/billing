@@ -2,26 +2,29 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/thec1oud/billing/internal/account"
 	"github.com/thec1oud/billing/internal/account/model"
 	"github.com/thec1oud/billing/internal/account/repository"
+	"github.com/thec1oud/billing/internal/account/statemachine"
 	"github.com/thec1oud/billing/internal/ppi/adapters"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
+	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
 )
 
 type Service struct {
 	repository *repository.Repository
 	events     *eventservice.Service
+	smEngine   *engine.Engine
 }
 
 func New(repository *repository.Repository) *Service {
@@ -33,15 +36,18 @@ func New(repository *repository.Repository) *Service {
 func NewWithEvents(
 	repository *repository.Repository,
 	events *eventservice.Service,
+	smEngine *engine.Engine,
 ) *Service {
 	return &Service{
 		repository: repository,
 		events:     events,
+		smEngine:   smEngine,
 	}
 }
 
 func (s *Service) Create(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	in model.CreateInput,
 ) (model.Account, error) {
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
@@ -65,85 +71,106 @@ func (s *Service) Create(
 		)
 	}
 
-	if s.events == nil {
-		return s.repository.Create(ctx, in)
+	tx, err := s.repository.Pool().Begin(ctx)
+	if err != nil {
+		return model.Account{}, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	result, err := s.repository.Create(ctx, tx, in)
+	if err != nil {
+		return model.Account{}, err
 	}
 
-	return s.inTransaction(
-		ctx,
-		func(tx pgx.Tx) (
-			model.Account,
-			eventmodel.EventType,
-			any,
-			error,
-		) {
-			result, err := s.repository.CreateTx(ctx, tx, in)
+	initialContext, _ := json.Marshal(map[string]any{
+		"account_id": result.AccountID,
+	})
+	_, err = s.smEngine.CreateInstance(ctx, sm_model.MachineType(statemachine.AccountMachineType), "account", fmt.Sprintf("%d", result.AccountID), initialContext)
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to create state machine instance: %w", err)
+	}
 
-			return result,
-				eventmodel.AccountCreated,
-				account.AccountCreated{
-					AccountID:        result.AccountID,
-					ExternalID:       result.ExternalID,
-					Currency:         result.Currency,
-					Timezone:         result.Timezone,
-					Locale:           result.Locale,
-					NetTerms:         result.NetTerms,
-					DunningProfileID: result.DunningProfileID,
-					TaxIdentifiers:   result.TaxIdentifiers,
-					BillingAddress:   result.BillingAddress,
-					ComplianceFlags:  result.ComplianceFlags,
-					Metadata:         result.Metadata,
-				},
-				err
+	_, err = s.events.AppendEvent(
+		ctx,
+		tx,
+		eventmodel.AppendRequest{
+			AggregateType: eventmodel.AggregateAccount,
+			AggregateID:   strconv.FormatInt(result.AccountID, 10),
+			EventType:     eventmodel.AccountCreated,
+			EventVersion:  1,
+			Actor: actor,
+			Payload: account.AccountCreated{
+				AccountID:        result.AccountID,
+				ExternalID:       result.ExternalID,
+				Currency:         result.Currency,
+				Timezone:         result.Timezone,
+				Locale:           result.Locale,
+				NetTerms:         result.NetTerms,
+				DunningProfileID: result.DunningProfileID,
+				TaxIdentifiers:   result.TaxIdentifiers,
+				BillingAddress:   result.BillingAddress,
+				ComplianceFlags:  result.ComplianceFlags,
+				Metadata:         result.Metadata,
+			},
 		},
 	)
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to append event: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return model.Account{}, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return result, nil
 }
 
 func (s *Service) Get(
 	ctx context.Context,
 	id int64,
 ) (model.Account, error) {
-	return s.repository.Get(ctx, id)
+	return s.repository.Get(ctx, s.repository.Pool(), id)
 }
 
 func (s *Service) Activate(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	id int64,
 ) (model.Account, error) {
-	return s.transition(
-		ctx,
-		id,
-		model.StatusPendingVerification,
-		model.StatusActive,
-		eventmodel.AccountActivated,
-		func(a model.Account) any {
-			return account.AccountActivated{
-				AccountID: a.AccountID,
-			}
-		},
-	)
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
+	}
+
+	_, err = s.smEngine.Fire(ctx, instance.InstanceID, "activate", nil, engine.WithEventActor(actor))
+	if err != nil {
+		return model.Account{}, err
+	}
+
+	return s.repository.Get(ctx, s.repository.Pool(), id)
 }
 
 func (s *Service) Reactivate(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	id int64,
 ) (model.Account, error) {
-	return s.transition(
-		ctx,
-		id,
-		model.StatusSuspended,
-		model.StatusActive,
-		eventmodel.AccountActivated,
-		func(a model.Account) any {
-			return account.AccountActivated{
-				AccountID: a.AccountID,
-			}
-		},
-	)
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
+	}
+
+	_, err = s.smEngine.Fire(ctx, instance.InstanceID, "reactivate", nil, engine.WithEventActor(actor))
+	if err != nil {
+		return model.Account{}, err
+	}
+
+	return s.repository.Get(ctx, s.repository.Pool(), id)
 }
 
 func (s *Service) Suspend(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	id int64,
 	reason string,
 ) (model.Account, error) {
@@ -153,23 +180,29 @@ func (s *Service) Suspend(
 		)
 	}
 
-	return s.transition(
-		ctx,
-		id,
-		model.StatusActive,
-		model.StatusSuspended,
-		eventmodel.AccountSuspended,
-		func(a model.Account) any {
-			return account.AccountSuspended{
-				AccountID: a.AccountID,
-				Reason:    reason,
-			}
-		},
-	)
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
+	}
+
+	payloadBytes, err := json.Marshal(map[string]any{
+		"reason": reason,
+	})
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	_, err = s.smEngine.Fire(ctx, instance.InstanceID, "suspend", payloadBytes, engine.WithEventActor(actor))
+	if err != nil {
+		return model.Account{}, err
+	}
+
+	return s.repository.Get(ctx, s.repository.Pool(), id)
 }
 
 func (s *Service) Close(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	id int64,
 	reason string,
 ) (model.Account, error) {
@@ -179,80 +212,29 @@ func (s *Service) Close(
 		)
 	}
 
-	if s.events == nil {
-		a, err := s.repository.Get(ctx, id)
-		if err != nil {
-			return model.Account{}, err
-		}
-
-		if a.Status != model.StatusActive &&
-			a.Status != model.StatusSuspended {
-			return model.Account{}, fmt.Errorf(
-				"%w: cannot close account from %s",
-				model.ErrInvalidStateTransition,
-				a.Status,
-			)
-		}
-
-		if err = s.repository.UpdateStatus(
-			ctx,
-			id,
-			a.Status,
-			model.StatusClosed,
-		); err != nil {
-			return model.Account{}, err
-		}
-
-		return s.repository.Get(ctx, id)
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
 
-	return s.inTransaction(
-		ctx,
-		func(tx pgx.Tx) (
-			model.Account,
-			eventmodel.EventType,
-			any,
-			error,
-		) {
-			a, err := s.repository.GetTx(ctx, tx, id)
-			if err != nil {
-				return model.Account{}, "", nil, err
-			}
+	payloadBytes, err := json.Marshal(map[string]any{
+		"reason": reason,
+	})
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to marshal payload: %w", err)
+	}
 
-			if a.Status != model.StatusActive &&
-				a.Status != model.StatusSuspended {
-				return model.Account{}, "", nil, fmt.Errorf(
-					"%w: cannot close account from %s",
-					model.ErrInvalidStateTransition,
-					a.Status,
-				)
-			}
+	_, err = s.smEngine.Fire(ctx, instance.InstanceID, "close", payloadBytes, engine.WithEventActor(actor))
+	if err != nil {
+		return model.Account{}, err
+	}
 
-			if err = s.repository.UpdateStatusTx(
-				ctx,
-				tx,
-				id,
-				a.Status,
-				model.StatusClosed,
-			); err != nil {
-				return model.Account{}, "", nil, err
-			}
-
-			result, err := s.repository.GetTx(ctx, tx, id)
-
-			return result,
-				eventmodel.AccountClosed,
-				account.AccountClosed{
-					AccountID: id,
-					Reason:    reason,
-				},
-				err
-		},
-	)
+	return s.repository.Get(ctx, s.repository.Pool(), id)
 }
 
 func (s *Service) AddPaymentMethod(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	id int64,
 	paymentMethodID string,
 ) (model.Account, error) {
@@ -260,164 +242,50 @@ func (s *Service) AddPaymentMethod(
 		return model.Account{}, ErrPaymentMethodNotFound
 	}
 
-	if s.events == nil {
-		if err := s.repository.AddPaymentMethod(
-			ctx,
-			id,
-			paymentMethodID,
-		); err != nil {
-			return model.Account{}, err
-		}
+	tx, err := s.repository.Pool().Begin(ctx)
+	if err != nil {
+		return model.Account{}, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-		return s.repository.Get(ctx, id)
+	if err := s.repository.AddPaymentMethod(
+		ctx,
+		tx,
+		id,
+		paymentMethodID,
+	); err != nil {
+		return model.Account{}, err
 	}
 
-	return s.inTransaction(
-		ctx,
-		func(tx pgx.Tx) (
-			model.Account,
-			eventmodel.EventType,
-			any,
-			error,
-		) {
-			if err := s.repository.AddPaymentMethodTx(
-				ctx,
-				tx,
-				id,
-				paymentMethodID,
-			); err != nil {
-				return model.Account{}, "", nil, err
-			}
-
-			result, err := s.repository.GetTx(ctx, tx, id)
-
-			return result,
-				eventmodel.PaymentMethodAdded,
-				account.PaymentMethodAdded{
-					AccountID:       id,
-					PaymentMethodID: paymentMethodID,
-				},
-				err
-		},
-	)
-}
-
-func (s *Service) transition(
-	ctx context.Context,
-	id int64,
-	from,
-	to model.Status,
-	eventType eventmodel.EventType,
-	payload func(model.Account) any,
-) (model.Account, error) {
-	if s.events == nil {
-		a, err := s.repository.Get(ctx, id)
-		if err != nil {
-			return model.Account{}, err
-		}
-
-		if a.Status != from {
-			return model.Account{}, fmt.Errorf(
-				"%w: cannot transition account from %s",
-				model.ErrInvalidStateTransition,
-				a.Status,
-			)
-		}
-
-		if err = s.repository.UpdateStatus(
-			ctx,
-			id,
-			from,
-			to,
-		); err != nil {
-			return model.Account{}, err
-		}
-
-		return s.repository.Get(ctx, id)
+	result, err := s.repository.Get(ctx, tx, id)
+	if err != nil {
+		return model.Account{}, err
 	}
 
-	return s.inTransaction(
+	_, err = s.events.AppendEvent(
 		ctx,
-		func(tx pgx.Tx) (
-			model.Account,
-			eventmodel.EventType,
-			any,
-			error,
-		) {
-			a, err := s.repository.GetTx(ctx, tx, id)
-			if err != nil {
-				return model.Account{}, "", nil, err
-			}
-
-			if a.Status != from {
-				return model.Account{}, "", nil, fmt.Errorf(
-					"%w: cannot transition account from %s",
-					model.ErrInvalidStateTransition,
-					a.Status,
-				)
-			}
-
-			if err = s.repository.UpdateStatusTx(
-				ctx,
-				tx,
-				id,
-				from,
-				to,
-			); err != nil {
-				return model.Account{}, "", nil, err
-			}
-
-			result, err := s.repository.GetTx(ctx, tx, id)
-
-			return result,
-				eventType,
-				payload(result),
-				err
+		tx,
+		eventmodel.AppendRequest{
+			AggregateType: eventmodel.AggregateAccount,
+			AggregateID:   strconv.FormatInt(id, 10),
+			EventType:     eventmodel.PaymentMethodAdded,
+			EventVersion:  1,
+			Actor: actor,
+			Payload: account.PaymentMethodAdded{
+				AccountID:       id,
+				PaymentMethodID: paymentMethodID,
+			},
 		},
 	)
-}
+	if err != nil {
+		return model.Account{}, fmt.Errorf("failed to append event: %w", err)
+	}
 
-func (s *Service) inTransaction(
-	ctx context.Context,
-	work func(
-		pgx.Tx,
-	) (model.Account, eventmodel.EventType, any, error),
-) (model.Account, error) {
-	var result model.Account
+	if err := tx.Commit(ctx); err != nil {
+		return model.Account{}, fmt.Errorf("commit transaction: %w", err)
+	}
 
-	err := s.repository.Transaction(
-		ctx,
-		func(tx pgx.Tx) error {
-			var eventType eventmodel.EventType
-			var payload any
-			var err error
-
-			result, eventType, payload, err = work(tx)
-			if err != nil {
-				return err
-			}
-
-			_, err = s.events.AppendEvent(
-				ctx,
-				tx,
-				eventmodel.AppendRequest{
-					AggregateType: eventmodel.AggregateAccount,
-					AggregateID:   strconv.FormatInt(result.AccountID, 10),
-					EventType:     eventType,
-					EventVersion:  1,
-					Actor: eventmodel.Actor{
-						ID:   "billing-service",
-						Type: eventmodel.ActorTypeSystem,
-					},
-					Payload: payload,
-				},
-			)
-
-			return err
-		},
-	)
-
-	return result, err
+	return result, nil
 }
 
 var ErrPaymentMethodNotFound = errors.New(
