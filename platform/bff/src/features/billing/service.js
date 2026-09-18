@@ -1,16 +1,15 @@
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from '../../config/index.js';
 
-/**
- * Billing domain: reverse-proxy client to the Go billing service.
- * Paths are preserved (/api/v1/* → upstream /api/v1/*).
- */
+// Billing domain: reverse-proxy client to the Go billing service.
+ 
 export function createUpstreamProxy() {
   return createProxyMiddleware({
     target: config.billingServiceUrl,
     changeOrigin: true,
     proxyTimeout: config.proxy.timeoutMs,
     timeout: config.proxy.timeoutMs,
+    pathRewrite: (path) => `/api/v1${path}`,
     on: {
       proxyReq: (proxyReq, req) => {
         if (req.requestId) {

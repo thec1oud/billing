@@ -145,14 +145,15 @@ func run() error {
 	// Initialize other domain services
 	accountRepo := accountrepo.New(deps.Pool)
 	accountSvc := accountsvc.New(accountRepo)
+	
+	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
+	itemSvc := itemservice.NewService(deps.Pool,itemRepo)
 
 	planRepo := planrepo.NewPostgresRepository(deps.Pool)
-	planSvc := planservice.NewService(deps.Pool,planRepo)
+	planSvc := planservice.NewService(deps.Pool,planRepo, itemRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
 	tariffSvc := tariffservice.NewService(deps.Pool, tariffRepo)
-	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
-	itemSvc := itemservice.NewService(deps.Pool,itemRepo)
 
 	subscriptionRepo := subscriptionrepo.New(deps.Pool)
 	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)

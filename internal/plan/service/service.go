@@ -10,7 +10,9 @@ import (
 
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
-)
+	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
+    itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
+ )
 
 type Plan = planmodel.Plan
 type PlanDuration = planmodel.PlanDuration
@@ -30,18 +32,21 @@ const (
 type Service struct {
 	db         *pgxpool.Pool
 	repository planrepo.Repository
+	itemRepo   itemrepo.Repository 
 }
 
 func NewService(
 	db *pgxpool.Pool,
 	repository planrepo.Repository,
+	itemRepo itemrepo.Repository,
 ) *Service {
 	return &Service{
 		db:         db,
 		repository: repository,
+		itemRepo: itemRepo,
+		
 	}
 }
-
 
 func (s *Service) CreatePlan(
 	ctx context.Context,
@@ -52,61 +57,53 @@ func (s *Service) CreatePlan(
 	}
 
 	if err := plan.Validate(); err != nil {
-		return Plan{}, fmt.Errorf(
-			"validate plan: %w",
-			err,
-		)
+		return Plan{}, fmt.Errorf("validate plan: %w", err)
 	}
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return Plan{}, fmt.Errorf(
-			"begin create plan transaction: %w",
-			err,
-		)
+		return Plan{}, fmt.Errorf("begin create plan transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	created, err := s.repository.Create(
-		ctx,
-		tx,
-		plan,
-	)
+	created, err := s.repository.Create(ctx, tx, plan)
 	if err != nil {
-		return Plan{}, fmt.Errorf(
-			"create plan: %w",
-			err,
-		)
+		return Plan{}, fmt.Errorf("create plan: %w", err)
 	}
 
 	for i, duration := range plan.Durations {
 		duration.PlanID = created.ID
 		duration.IsActive = true
 
-		createdDuration, err := s.repository.CreateDuration(
-			ctx,
-			tx,
-			duration,
-		)
-		if err != nil {
-			return Plan{}, fmt.Errorf(
-				"create plan duration %d: %w",
-				i,
-				err,
-			)
+		if err := duration.Validate(); err != nil {
+			return Plan{}, fmt.Errorf("invalid duration at index %d: %w", i, err)
 		}
 
-		created.Durations = append(
-			created.Durations,
-			createdDuration,
-		)
+		createdDuration, err := s.repository.CreateDuration(ctx, tx, duration)
+		if err != nil {
+			return Plan{}, fmt.Errorf("create plan duration %d: %w", i, err)
+		}
+
+		created.Durations = append(created.Durations, createdDuration)
+	}
+
+	if s.itemRepo != nil {
+		planID := created.ID
+		item := itemmodel.PurchasableItem{
+			ItemCode:     created.PlanCode, // unique code (same as plan_code)
+			ItemTypeCode: itemmodel.ItemTypePlan,
+			Name:         created.PlanCode, // or a nicer display name if you prefer
+			PlanID:       &planID,
+			IsActive:     true,
+		}
+
+		if _, err := s.itemRepo.Create(ctx, tx, item); err != nil {
+			return Plan{}, fmt.Errorf("create plan purchasable item: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return Plan{}, fmt.Errorf(
-			"commit create plan transaction: %w",
-			err,
-		)
+		return Plan{}, fmt.Errorf("commit create plan transaction: %w", err)
 	}
 
 	return created, nil

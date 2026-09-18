@@ -111,13 +111,14 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	accountRepo := accountrepo.New(cluster.DBPool)
 	accountSvc := accountsvc.New(accountRepo)
 
-	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
-	planSvc := planservice.NewService(cluster.DBPool, planRepo)
 	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
 	tariffSvc := tariffservice.NewService(cluster.DBPool, tariffRepo)
 
+	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
 	itemRepo := itemrepo.NewPostgresRepository(cluster.DBPool)
-	itemSvc := itemservice.NewService(cluster.DBPool,itemRepo)
+
+	planSvc := planservice.NewService(cluster.DBPool, planRepo, itemRepo)
+	itemSvc := itemservice.NewService(cluster.DBPool, itemRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
@@ -177,14 +178,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	e2eLog.Info("Account ready\n" + toJSON(account))
 
 	// Phase 2: Plan & Subscription
-
-	// Use Domain Services to setup pricing model
-	tx, err := cluster.DBPool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin tx: %v", err)
-	}
-	defer tx.Rollback(ctx)
-
+	// Use domain services to setup pricing model.
 	createdTariff, err := tariffSvc.CreateTariff(
 		ctx,
 		"standard_per_unit_1000",
@@ -227,15 +221,23 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 			ItemTypeCode: purchasableitem.ItemTypePlan,
 			Name:         "API Usage",
 			PlanID:       &planID,
+			IsActive:     true,
 		},
 	)
 	if err != nil {
 		t.Fatalf("failed to create purchasable item: %v", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("failed to commit tx: %v", err)
-	}
+	e2eLog.Info("Pricing model ready\n" + toJSON(struct {
+		Tariff          any `json:"tariff"`
+		Plan            any `json:"plan"`
+		PurchasableItem any `json:"purchasable_item"`
+	}{
+		Tariff:          createdTariff,
+		Plan:            createdPlan,
+		PurchasableItem: createdItem,
+	}))
+
 	sub, err := subscriptionSvc.Create(ctx, subscriptionmodel.CreateInput{
 		AccountID:   account.AccountID,
 		PlanID:      createdPlan.ID,

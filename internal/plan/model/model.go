@@ -55,8 +55,8 @@ func (p Plan) Validate() error {
 		return errors.New("plan code is required")
 	}
 
-	if p.Version < 1 {
-		return errors.New("plan version must be greater than zero")
+	if p.Version < 0 {
+		return errors.New("plan version cannot be negative")
 	}
 
 	if !p.LegacyPricePolicyCode.Valid() {
@@ -76,17 +76,6 @@ func (p Plan) Validate() error {
 			"effective until must be after effective from",
 		)
 	}
-
-	for i, duration := range p.Durations {
-		if err := duration.Validate(); err != nil {
-			return fmt.Errorf(
-				"invalid duration at index %d: %w",
-				i,
-				err,
-			)
-		}
-	}
-
 	return nil
 }
 

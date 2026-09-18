@@ -1,0 +1,94 @@
+# Production overrides for docker-compose.yaml.
+# The base file is written for local development: every service publishes a
+# host port so you can hit Postgres/Redis/RabbitMQ/the Go service/the BFF
+# directly while iterating. In production none of that should be reachable
+# from outside the Docker network — only `web` (nginx) is a public entrypoint,
+# and it talks to `platform-bff` and `platform-bff` talks to `billing-service`
+# over the internal compose network, by service name.
+
+# Usage:
+#   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up --build -d
+
+services:
+  billing-service:
+    ports: !reset []   # internal only — reached by platform-bff via the compose network
+    environment:
+      - APP_ENV=production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+  platform-bff:
+    ports: !reset []   # internal only — reached by the `web` nginx container
+    environment:
+      - NODE_ENV=production
+      - TRUST_PROXY=true
+      # nginx serves the SPA and proxies /api same-origin, so the browser
+      # never calls the BFF cross-origin in production. Lock CORS down;
+      - CORS_ORIGIN=false
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+
+  web:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.1"
+          memory: 32M
+    # `ports` is inherited as-is from the base file (${WEB_PORT:-80}:80) —
+    # this is meant to be the one publicly reachable service. Add a 443:443
+    # mapping here once you've wired up TLS termination (either in nginx
+    # itself with real certs, or in front of it via a load balancer/ingress).
+
+  app-db:
+    ports: !reset []   # no public exposure; use `docker compose exec app-db psql ...` for access
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  app-redis:
+    ports: !reset []
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+
+  app-rabbitmq:
+    ports: !reset []   # AMQP (5672) and the management UI (15672) are both internal-only in prod
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M

@@ -27,6 +27,12 @@ type Server struct {
 func NewServer(cfg *config.Config, deps Deps) *Server {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"status":"ok"}`))
+})
+
 	if deps.AccountService != nil {
 		accountHandler := accountHandlers.NewAccountHandler(deps.AccountService)
 		mux.HandleFunc("POST /api/v1/accounts", accountHandler.HandleCreate)
