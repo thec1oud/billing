@@ -30,7 +30,10 @@ export const config = {
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
     max: Number(process.env.RATE_LIMIT_MAX || 120),
   },
-  proxy: {
-    timeoutMs: Number(process.env.PROXY_TIMEOUT_MS || 30_000),
+  billing: {
+    // PROXY_TIMEOUT_MS is the pre-refactor name, still honoured.
+    timeoutMs: Number(
+      process.env.BILLING_TIMEOUT_MS || process.env.PROXY_TIMEOUT_MS || 30_000
+    ),
   },
 };
