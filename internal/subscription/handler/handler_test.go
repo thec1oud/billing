@@ -12,6 +12,7 @@ import (
 
 	"github.com/thec1oud/billing/internal/subscription/handler"
 	"github.com/thec1oud/billing/internal/subscription/model"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 )
 
 type mockSubscriptionService struct {
@@ -19,7 +20,7 @@ type mockSubscriptionService struct {
 	getFn     func(ctx context.Context, subscriptionID int64) (model.Subscription, error)
 }
 
-func (m *mockSubscriptionService) Create(ctx context.Context, input model.CreateInput) (model.Subscription, error) {
+func (m *mockSubscriptionService) Create(ctx context.Context, actor eventmodel.Actor, input model.CreateInput) (model.Subscription, error) {
 	if m.createErr != nil {
 		return model.Subscription{}, m.createErr
 	}
@@ -43,7 +44,22 @@ func (m *mockSubscriptionService) Get(ctx context.Context, subscriptionID int64)
 }
 
 func (m *mockSubscriptionService) ListAccountSubscriptions(ctx context.Context, accountID int64) ([]model.Subscription, error) {
-	return []model.Subscription{{SubscriptionID: 1, AccountID: accountID}}, nil
+	return []model.Subscription{
+		{SubscriptionID: 1, AccountID: accountID, Status: model.StatusActive},
+		{SubscriptionID: 2, AccountID: accountID, Status: model.StatusPaused},
+	}, nil
+}
+
+func (m *mockSubscriptionService) Pause(ctx context.Context, actor eventmodel.Actor, subscriptionID int64) (model.Subscription, error) {
+	return model.Subscription{SubscriptionID: subscriptionID, Status: model.StatusPaused}, nil
+}
+
+func (m *mockSubscriptionService) Resume(ctx context.Context, actor eventmodel.Actor, subscriptionID int64) (model.Subscription, error) {
+	return model.Subscription{SubscriptionID: subscriptionID, Status: model.StatusActive}, nil
+}
+
+func (m *mockSubscriptionService) Cancel(ctx context.Context, actor eventmodel.Actor, subscriptionID int64, atPeriodEnd bool) (model.Subscription, error) {
+	return model.Subscription{SubscriptionID: subscriptionID, Status: model.StatusCanceled}, nil
 }
 
 func TestHandleCreateSubscription(t *testing.T) {

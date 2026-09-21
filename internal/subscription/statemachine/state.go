@@ -2,6 +2,7 @@ package statemachine
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 
@@ -13,7 +14,7 @@ import (
 	"github.com/thec1oud/billing/internal/subscription/repository"
 )
 
-const SubscriptionMachineType sm_model.MachineType = "subscription_lifecycle"
+const SubscriptionMachineType = "subscription_lifecycle"
 
 const (
 	EventPause  sm_model.EventName = "pause"
@@ -21,80 +22,126 @@ const (
 	EventCancel sm_model.EventName = "cancel"
 )
 
+//go:embed state_machine.json
+var subscriptionStateMachineJSON []byte
+
+// BuildSubscriptionDefinitionSpec returns the Version 1 blueprint parsed from embedded JSON
 func BuildSubscriptionDefinitionSpec() loader.DefinitionSpec {
-	return loader.DefinitionSpec{
-		MachineType:  SubscriptionMachineType,
-		Version:      1,
-		Activate:     true,
-		InitialState: sm_model.StateName(model.StatusActive),
-		States: []loader.StateSpec{
-			{Name: sm_model.StateName(model.StatusActive)},
-			{Name: sm_model.StateName(model.StatusPaused)},
-			{Name: sm_model.StateName(model.StatusCanceled), IsFinal: true},
-		},
-		Transitions: []loader.TransitionSpec{
-			transition(model.StatusActive, EventPause, model.StatusPaused),
-			transition(model.StatusPaused, EventResume, model.StatusActive),
-			transition(model.StatusActive, EventCancel, model.StatusCanceled),
-			transition(model.StatusPaused, EventCancel, model.StatusCanceled),
-		},
+	var spec loader.DefinitionSpec
+	if err := json.Unmarshal(subscriptionStateMachineJSON, &spec); err != nil {
+		panic(fmt.Errorf("failed to unmarshal embedded subscription state machine: %w", err))
 	}
+	return spec
 }
 
-func transition(from model.Status, event sm_model.EventName, to model.Status) loader.TransitionSpec {
-	params, _ := json.Marshal(map[string]string{"to": string(to)})
-	return loader.TransitionSpec{
-		FromState: sm_model.StateName(from),
-		EventName: event,
-		ToState:   sm_model.StateName(to),
-		Actions: []loader.ActionBindingSpec{{
-			Seq:        1,
-			ActionName: "subscription.transition",
-			ParamsKind: sm_model.ParamsKindStatic,
-			Params:     params,
-			Mode:       sm_model.ActionModeSync,
-			OnError:    sm_model.OnErrorAbort,
-		}},
-	}
+// RegisterStateMachineActions registers the Subscription-related Database Actions into the global registry
+func RegisterStateMachineActions(
+	reg *registry.Registry,
+	repo *repository.Repository,
+) {
+	_ = reg.RegisterAction(&PauseAction{repo: repo})
+	_ = reg.RegisterAction(&ResumeAction{repo: repo})
+	_ = reg.RegisterAction(&CancelAction{repo: repo})
 }
 
-func RegisterStateMachineActions(reg *registry.Registry, repo *repository.Repository) {
-	_ = reg.RegisterAction(&transitionAction{repo: repo})
-}
+// --- Action Implementation: Pause ---
 
-type transitionAction struct {
+type PauseAction struct {
 	repo *repository.Repository
 }
 
-func (a *transitionAction) Name() string { return "subscription.transition" }
+func (a *PauseAction) Name() string { return "subscription.action.pause" }
 
-func (a *transitionAction) Execute(
-	ctx context.Context,
-	db sqlcgen.DBTX,
-	ec *sm_model.ExecutionContext,
-	params json.RawMessage,
+func (a *PauseAction) Execute(
+	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
 ) error {
-	var input struct {
-		To model.Status `json:"to"`
-	}
-	if err := json.Unmarshal(params, &input); err != nil {
-		return fmt.Errorf("decode subscription transition params: %w", err)
+	var intID int64
+	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
+		return fmt.Errorf("failed to parse subscription ID %q: %w", ec.SubjectID, err)
 	}
 
-	var id int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &id); err != nil {
-		return fmt.Errorf("parse subscription id %q: %w", ec.SubjectID, err)
-	}
-
-	if err := a.repo.TransitionTx(ctx, db, id, model.Status(ec.FromState), input.To, ec.Now); err != nil {
+	err := a.repo.Transition(ctx, db, intID, model.StatusActive, model.StatusPaused, ec.Now)
+	if err != nil {
 		return err
 	}
 
-	ec.Context, _ = json.Marshal(map[string]any{
-		"subscription_id": id,
-		"from_status":     ec.FromState,
-		"status":          input.To,
-		"transitioned_at": ec.Now,
+	newCtx, err := json.Marshal(map[string]any{
+		"subscription_id": intID,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal new context: %w", err)
+	}
+	ec.Context = newCtx
+	return nil
+}
+
+// --- Action Implementation: Resume ---
+
+type ResumeAction struct {
+	repo *repository.Repository
+}
+
+func (a *ResumeAction) Name() string { return "subscription.action.resume" }
+
+func (a *ResumeAction) Execute(
+	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
+) error {
+	var intID int64
+	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
+		return fmt.Errorf("failed to parse subscription ID %q: %w", ec.SubjectID, err)
+	}
+
+	err := a.repo.Transition(ctx, db, intID, model.StatusPaused, model.StatusActive, ec.Now)
+	if err != nil {
+		return err
+	}
+
+	newCtx, err := json.Marshal(map[string]any{
+		"subscription_id": intID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal new context: %w", err)
+	}
+	ec.Context = newCtx
+	return nil
+}
+
+// --- Action Implementation: Cancel ---
+
+type CancelAction struct {
+	repo *repository.Repository
+}
+
+func (a *CancelAction) Name() string { return "subscription.action.cancel" }
+
+func (a *CancelAction) Execute(
+	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
+) error {
+	var intID int64
+	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
+		return fmt.Errorf("failed to parse subscription ID %q: %w", ec.SubjectID, err)
+	}
+
+	// Default to immediate cancellation unless specified in payload
+	var p struct {
+		AtPeriodEnd bool `json:"at_period_end"`
+	}
+	if len(ec.EventPayload) > 0 {
+		_ = json.Unmarshal(ec.EventPayload, &p)
+	}
+
+	err := a.repo.Cancel(ctx, db, intID, p.AtPeriodEnd, ec.Now)
+	if err != nil {
+		return err
+	}
+
+	newCtx, err := json.Marshal(map[string]any{
+		"subscription_id": intID,
+		"at_period_end":   p.AtPeriodEnd,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal new context: %w", err)
+	}
+	ec.Context = newCtx
 	return nil
 }

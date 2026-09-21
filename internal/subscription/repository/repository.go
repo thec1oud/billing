@@ -24,162 +24,111 @@ func New(pool *pgxpool.Pool) *Repository {
 	}
 }
 
-const subscriptionColumns = `
-	subscription_id,
-	version,
-	account_id,
-	plan_id,
-	plan_version,
-	subscription_status_code,
-	quantity,
-	current_period_start_at,
-	current_period_end_at,
-	billing_cycle_anchor,
-	cancel_at_period_end,
-	canceled_at,
-	ended_at,
-	paused_at,
-	resumes_at
-`
+func (r *Repository) Pool() *pgxpool.Pool {
+	return r.pool
+}
 
 func (r *Repository) Create(
 	ctx context.Context,
+	db sqlcgen.DBTX,
 	in model.CreateInput,
 ) (model.Subscription, error) {
-	if r == nil || r.pool == nil {
-		return model.Subscription{}, errors.New(
-			"subscription repository: database is not configured",
-		)
-	}
-
 	quantity := in.Quantity
 	if quantity == 0 {
 		quantity = 1
 	}
 
-	row := r.pool.QueryRow(
-		ctx,
-		`INSERT INTO subscriptions (
-			account_id,
-			plan_id,
-			plan_version,
-			subscription_status_code,
-			quantity,
-			current_period_start_at,
-			current_period_end_at,
-			billing_cycle_anchor
-		) VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6, $7)
-		RETURNING `+subscriptionColumns,
-		in.AccountID,
-		in.PlanID,
-		in.PlanVersion,
-		quantity,
-		in.CurrentPeriodStart,
-		in.CurrentPeriodEnd,
-		in.BillingCycleAnchor,
-	)
+	row, err := sqlcgen.New(db).CreateSubscription(ctx, sqlcgen.CreateSubscriptionParams{
+		AccountID:            in.AccountID,
+		PlanID:               in.PlanID,
+		PlanVersion:          int32(in.PlanVersion),
+		Quantity:             quantity,
+		CurrentPeriodStartAt: in.CurrentPeriodStart,
+		CurrentPeriodEndAt:   in.CurrentPeriodEnd,
+		BillingCycleAnchor:   in.BillingCycleAnchor,
+	})
+	if err != nil {
+		return model.Subscription{}, fmt.Errorf("create subscription: %w", err)
+	}
 
-	return scanSubscription(row)
+	return model.Subscription{
+		SubscriptionID:     row.SubscriptionID,
+		Version:            row.Version,
+		AccountID:          row.AccountID,
+		PlanID:             row.PlanID,
+		PlanVersion:        int(row.PlanVersion),
+		Status:             model.Status(row.SubscriptionStatusCode),
+		Quantity:           row.Quantity,
+		CurrentPeriodStart: row.CurrentPeriodStartAt,
+		CurrentPeriodEnd:   row.CurrentPeriodEndAt,
+		BillingCycleAnchor: row.BillingCycleAnchor,
+		CancelAtPeriodEnd:  row.CancelAtPeriodEnd,
+		CanceledAt:         timestampPtr(row.CanceledAt),
+		EndedAt:            timestampPtr(row.EndedAt),
+		PausedAt:           timestampPtr(row.PausedAt),
+		ResumesAt:          timestampPtr(row.ResumesAt),
+	}, nil
 }
 
 func (r *Repository) Get(
 	ctx context.Context,
+	db sqlcgen.DBTX,
 	id int64,
 ) (model.Subscription, error) {
 	if id <= 0 {
-		return model.Subscription{}, errors.New(
-			"subscription id must be greater than zero",
-		)
+		return model.Subscription{}, errors.New("subscription id must be greater than zero")
 	}
 
-	if r == nil || r.pool == nil {
-		return model.Subscription{}, errors.New(
-			"subscription repository: database is not configured",
-		)
+	row, err := sqlcgen.New(db).GetSubscription(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Subscription{}, model.ErrNotFound
+	}
+	if err != nil {
+		return model.Subscription{}, fmt.Errorf("get subscription: %w", err)
 	}
 
-	row := r.pool.QueryRow(
-		ctx,
-		`SELECT `+subscriptionColumns+`
-		 FROM subscriptions
-		 WHERE subscription_id = $1`,
-		id,
-	)
-
-	return scanSubscription(row)
+	return model.Subscription{
+		SubscriptionID:     row.SubscriptionID,
+		Version:            row.Version,
+		AccountID:          row.AccountID,
+		PlanID:             row.PlanID,
+		PlanVersion:        int(row.PlanVersion),
+		Status:             model.Status(row.SubscriptionStatusCode),
+		Quantity:           row.Quantity,
+		CurrentPeriodStart: row.CurrentPeriodStartAt,
+		CurrentPeriodEnd:   row.CurrentPeriodEndAt,
+		BillingCycleAnchor: row.BillingCycleAnchor,
+		CancelAtPeriodEnd:  row.CancelAtPeriodEnd,
+		CanceledAt:         timestampPtr(row.CanceledAt),
+		EndedAt:            timestampPtr(row.EndedAt),
+		PausedAt:           timestampPtr(row.PausedAt),
+		ResumesAt:          timestampPtr(row.ResumesAt),
+	}, nil
 }
 
 func (r *Repository) Transition(
 	ctx context.Context,
+	db sqlcgen.DBTX,
 	id int64,
 	from,
 	to model.Status,
 	now time.Time,
 ) error {
 	if id <= 0 {
-		return errors.New(
-			"subscription id must be greater than zero",
-		)
+		return errors.New("subscription id must be greater than zero")
 	}
 
-	if r == nil || r.pool == nil {
-		return errors.New(
-			"subscription repository: database is not configured",
-		)
-	}
-
-	return r.transitionTx(ctx, r.pool, id, from, to, now)
-}
-
-func (r *Repository) TransitionTx(
-	ctx context.Context,
-	db sqlcgen.DBTX,
-	id int64,
-	from,
-	to model.Status,
-	now time.Time,
-) error {
-	return r.transitionTx(ctx, db, id, from, to, now)
-}
-
-func (r *Repository) transitionTx(
-	ctx context.Context,
-	db sqlcgen.DBTX,
-	id int64,
-	from,
-	to model.Status,
-	now time.Time,
-) error {
-	tag, err := db.Exec(
-		ctx,
-		`UPDATE subscriptions
-		 SET subscription_status_code = $3,
-		     version = version + 1,
-		     canceled_at = CASE WHEN $3 = 'CANCELED' THEN $4 ELSE canceled_at END,
-		     ended_at = CASE WHEN $3 = 'CANCELED' THEN $4 ELSE ended_at END,
-		     paused_at = CASE
-		         WHEN $3 = 'PAUSED' THEN $4
-		         ELSE paused_at
-		     END,
-		     resumes_at = CASE
-		         WHEN $3 = 'ACTIVE' THEN $4
-		         ELSE resumes_at
-		     END
-		 WHERE subscription_id = $1
-		   AND subscription_status_code = $2`,
-		id,
-		string(from),
-		string(to),
-		now,
-	)
+	rows, err := sqlcgen.New(db).TransitionSubscription(ctx, sqlcgen.TransitionSubscriptionParams{
+		SubscriptionID:           id,
+		SubscriptionStatusCode:   string(from),
+		SubscriptionStatusCode_2: string(to),
+		CanceledAt:               pgtype.Timestamptz{Time: now, Valid: true},
+	})
 	if err != nil {
-		return fmt.Errorf(
-			"transition subscription: %w",
-			err,
-		)
+		return fmt.Errorf("transition subscription: %w", err)
 	}
 
-	if tag.RowsAffected() != 1 {
+	if rows != 1 {
 		return model.ErrInvalidStateTransition
 	}
 
@@ -188,160 +137,78 @@ func (r *Repository) transitionTx(
 
 func (r *Repository) Cancel(
 	ctx context.Context,
+	db sqlcgen.DBTX,
 	id int64,
 	atPeriodEnd bool,
 	now time.Time,
 ) error {
-	if r == nil || r.pool == nil {
-		return errors.New(
-			"subscription repository: database is not configured",
-		)
-	}
-
 	if atPeriodEnd {
-		tag, err := r.pool.Exec(
-			ctx,
-			`UPDATE subscriptions
-			 SET cancel_at_period_end = TRUE,
-			     version = version + 1
-			 WHERE subscription_id = $1
-			   AND subscription_status_code IN ('ACTIVE', 'PAUSED')`,
-			id,
-		)
+		rows, err := sqlcgen.New(db).ScheduleSubscriptionCancellation(ctx, id)
 		if err != nil {
-			return fmt.Errorf(
-				"schedule cancellation: %w",
-				err,
-			)
+			return fmt.Errorf("schedule cancellation: %w", err)
 		}
-
-		if tag.RowsAffected() != 1 {
+		if rows != 1 {
 			return model.ErrInvalidStateTransition
 		}
-
 		return nil
 	}
 
-	tag, err := r.pool.Exec(
-		ctx,
-		`UPDATE subscriptions
-		 SET subscription_status_code = 'CANCELED',
-		     version = version + 1,
-		     canceled_at = $2,
-		     ended_at = $2,
-		     cancel_at_period_end = FALSE
-		 WHERE subscription_id = $1
-		   AND subscription_status_code IN ('ACTIVE', 'PAUSED')`,
-		id,
-		now,
-	)
+	rows, err := sqlcgen.New(db).CancelSubscriptionNow(ctx, sqlcgen.CancelSubscriptionNowParams{
+		SubscriptionID: id,
+		CanceledAt:     pgtype.Timestamptz{Time: now, Valid: true},
+	})
 	if err != nil {
-		return fmt.Errorf(
-			"cancel subscription: %w",
-			err,
-		)
+		return fmt.Errorf("cancel subscription: %w", err)
 	}
-
-	if tag.RowsAffected() != 1 {
+	if rows != 1 {
 		return model.ErrInvalidStateTransition
 	}
 
 	return nil
 }
 
-func scanSubscription(
-	row pgx.Row,
-) (model.Subscription, error) {
-	var value model.Subscription
-	var canceledAt pgtype.Timestamptz
-	var endedAt pgtype.Timestamptz
-	var pausedAt pgtype.Timestamptz
-	var resumesAt pgtype.Timestamptz
-
-	err := row.Scan(
-		&value.SubscriptionID,
-		&value.Version,
-		&value.AccountID,
-		&value.PlanID,
-		&value.PlanVersion,
-		&value.Status,
-		&value.Quantity,
-		&value.CurrentPeriodStart,
-		&value.CurrentPeriodEnd,
-		&value.BillingCycleAnchor,
-		&value.CancelAtPeriodEnd,
-		&canceledAt,
-		&endedAt,
-		&pausedAt,
-		&resumesAt,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return model.Subscription{}, model.ErrNotFound
-	}
-
-	if err != nil {
-		return model.Subscription{}, fmt.Errorf(
-			"get subscription: %w",
-			err,
-		)
-	}
-
-	value.CanceledAt = timestampPtr(canceledAt)
-	value.EndedAt = timestampPtr(endedAt)
-	value.PausedAt = timestampPtr(pausedAt)
-	value.ResumesAt = timestampPtr(resumesAt)
-
-	return value, nil
-}
-
-func timestampPtr(
-	value pgtype.Timestamptz,
-) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-
-	result := value.Time
-
-	return &result
-}
-
 func (r *Repository) ListAccountSubscriptions(
 	ctx context.Context,
+	db sqlcgen.DBTX,
 	accountID int64,
 ) ([]model.Subscription, error) {
 	if accountID <= 0 {
 		return nil, errors.New("account id must be greater than zero")
 	}
 
-	if r == nil || r.pool == nil {
-		return nil, errors.New("subscription repository: database is not configured")
-	}
-
-	rows, err := r.pool.Query(
-		ctx,
-		`SELECT `+subscriptionColumns+`
-		 FROM subscriptions
-		 WHERE account_id = $1
-		 ORDER BY subscription_id`,
-		accountID,
-	)
+	rows, err := sqlcgen.New(db).ListAccountSubscriptions(ctx, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("list account subscriptions: %w", err)
 	}
-	defer rows.Close()
 
-	result := make([]model.Subscription, 0)
-	for rows.Next() {
-		value, err := scanSubscription(rows)
-		if err != nil {
-			return nil, err
+	result := make([]model.Subscription, len(rows))
+	for i, row := range rows {
+		result[i] = model.Subscription{
+			SubscriptionID:     row.SubscriptionID,
+			Version:            row.Version,
+			AccountID:          row.AccountID,
+			PlanID:             row.PlanID,
+			PlanVersion:        int(row.PlanVersion),
+			Status:             model.Status(row.SubscriptionStatusCode),
+			Quantity:           row.Quantity,
+			CurrentPeriodStart: row.CurrentPeriodStartAt,
+			CurrentPeriodEnd:   row.CurrentPeriodEndAt,
+			BillingCycleAnchor: row.BillingCycleAnchor,
+			CancelAtPeriodEnd:  row.CancelAtPeriodEnd,
+			CanceledAt:         timestampPtr(row.CanceledAt),
+			EndedAt:            timestampPtr(row.EndedAt),
+			PausedAt:           timestampPtr(row.PausedAt),
+			ResumesAt:          timestampPtr(row.ResumesAt),
 		}
-		result = append(result, value)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list account subscriptions: %w", err)
 	}
 
 	return result, nil
+}
+
+func timestampPtr(value pgtype.Timestamptz) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	result := value.Time
+	return &result
 }

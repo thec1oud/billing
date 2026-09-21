@@ -19,18 +19,21 @@ var (
 type EventType string
 
 const (
-	AccountCreated      EventType = "billing.account.created"
-	AccountActivated    EventType = "billing.account.activated"
-	AccountSuspended    EventType = "billing.account.suspended"
-	AccountClosed       EventType = "billing.account.closed"
-	PaymentMethodAdded  EventType = "billing.account.payment_method_added"
-	SubscriptionCreated EventType = "billing.subscription.created"
-	InvoiceCreated      EventType = "billing.invoice.created"
-	InvoiceFinalized    EventType = "billing.invoice.finalized"
-	InvoicePaid         EventType = "billing.invoice.paid"
-	PaymentAttempted    EventType = "billing.payment.attempted"
-	PaymentSucceeded    EventType = "billing.payment.succeeded"
-	PaymentFailed       EventType = "billing.payment.failed"
+	AccountCreated       EventType = "billing.account.created"
+	AccountActivated     EventType = "billing.account.activated"
+	AccountSuspended     EventType = "billing.account.suspended"
+	AccountClosed        EventType = "billing.account.closed"
+	PaymentMethodAdded   EventType = "billing.account.payment_method_added"
+	SubscriptionCreated  EventType = "billing.subscription.created"
+	SubscriptionPaused   EventType = "billing.subscription.paused"
+	SubscriptionResumed  EventType = "billing.subscription.resumed"
+	SubscriptionCanceled EventType = "billing.subscription.canceled"
+	InvoiceCreated       EventType = "billing.invoice.created"
+	InvoiceFinalized     EventType = "billing.invoice.finalized"
+	InvoicePaid          EventType = "billing.invoice.paid"
+	PaymentAttempted     EventType = "billing.payment.attempted"
+	PaymentSucceeded     EventType = "billing.payment.succeeded"
+	PaymentFailed        EventType = "billing.payment.failed"
 )
 
 type AggregateType string

@@ -14,6 +14,7 @@ import (
 
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
+	CancelSubscriptionNow(ctx context.Context, arg CancelSubscriptionNowParams) (int64, error)
 	CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error)
 	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error)
 	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
@@ -94,6 +95,8 @@ type Querier interface {
 	ReapStuckOutbox(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
 	ReapStuckSchedules(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
 	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
+	ScheduleSubscriptionCancellation(ctx context.Context, subscriptionID int64) (int64, error)
+	TransitionSubscription(ctx context.Context, arg TransitionSubscriptionParams) (int64, error)
 	UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error
 	UpdateAccountStatusFrom(ctx context.Context, arg UpdateAccountStatusFromParams) (int64, error)
 	UpdateInstanceState(ctx context.Context, arg UpdateInstanceStateParams) (int64, error)

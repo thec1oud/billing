@@ -10,6 +10,7 @@ import (
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepository "github.com/thec1oud/billing/internal/account/repository"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
 	subscription "github.com/thec1oud/billing/internal/subscription"
@@ -17,6 +18,7 @@ import (
 	"github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
+	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 )
 
 type Service struct {
@@ -25,6 +27,7 @@ type Service struct {
 	plans      planrepo.Repository
 	tariffs    tariffrepo.Repository
 	smEngine   *sm_engine.Engine
+	events     *eventservice.Service
 }
 
 func New(
@@ -32,18 +35,16 @@ func New(
 	accounts *accountrepository.Repository,
 	plans planrepo.Repository,
 	tariffs tariffrepo.Repository,
-	smEngines ...*sm_engine.Engine,
+	smEngine *sm_engine.Engine,
+	events *eventservice.Service,
 ) *Service {
-	var smEngine *sm_engine.Engine
-	if len(smEngines) > 0 {
-		smEngine = smEngines[0]
-	}
 	return &Service{
 		repository: repository,
 		accounts:   accounts,
 		plans:      plans,
 		tariffs:    tariffs,
 		smEngine:   smEngine,
+		events:     events,
 	}
 }
 
@@ -51,6 +52,7 @@ func New(
 // and immutable plan version.
 func (s *Service) Create(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	input model.CreateInput,
 ) (model.Subscription, error) {
 	if input.AccountID <= 0 || input.PlanID <= 0 {
@@ -88,7 +90,7 @@ func (s *Service) Create(
 		)
 	}
 
-	a, err := s.accounts.Get(ctx, input.AccountID)
+	a, err := s.accounts.Get(ctx, s.accounts.Pool(), input.AccountID)
 	if err != nil {
 		return model.Subscription{}, err
 	}
@@ -110,7 +112,13 @@ func (s *Service) Create(
 	input.CurrentPeriodEnd = end
 	input.BillingCycleAnchor = now
 
-	created, err := s.repository.Create(ctx, input)
+	tx, err := s.repository.Pool().Begin(ctx)
+	if err != nil {
+		return model.Subscription{}, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	created, err := s.repository.Create(ctx, tx, input)
 	if err != nil {
 		return model.Subscription{}, err
 	}
@@ -120,6 +128,29 @@ func (s *Service) Create(
 			return model.Subscription{}, fmt.Errorf("create subscription state machine instance: %w", err)
 		}
 	}
+
+	payload := map[string]any{
+		"subscription_id": created.SubscriptionID,
+		"account_id":      created.AccountID,
+		"plan_id":         created.PlanID,
+		"plan_version":    created.PlanVersion,
+		"quantity":        created.Quantity,
+	}
+	if _, err := s.events.AppendEvent(ctx, tx, eventmodel.AppendRequest{
+		AggregateType: eventmodel.AggregateSubscription,
+		AggregateID:   fmt.Sprintf("%d", created.SubscriptionID),
+		EventType:     eventmodel.SubscriptionCreated,
+		EventVersion:  1,
+		Actor:         actor,
+		Payload:       payload,
+	}); err != nil {
+		return model.Subscription{}, fmt.Errorf("append SubscriptionCreated: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return model.Subscription{}, fmt.Errorf("commit transaction: %w", err)
+	}
+
 	return created, nil
 }
 
@@ -127,32 +158,35 @@ func (s *Service) Get(
 	ctx context.Context,
 	subscriptionID int64,
 ) (model.Subscription, error) {
-	return s.repository.Get(ctx, subscriptionID)
+	return s.repository.Get(ctx, s.repository.Pool(), subscriptionID)
 }
 
 func (s *Service) ListAccountSubscriptions(
 	ctx context.Context,
 	accountID int64,
 ) ([]model.Subscription, error) {
-	return s.repository.ListAccountSubscriptions(ctx, accountID)
+	return s.repository.ListAccountSubscriptions(ctx, s.repository.Pool(), accountID)
 }
 
-func (s *Service) Pause(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
-	return s.fireTransition(ctx, subscriptionID, subscriptionstatemachine.EventPause)
+func (s *Service) Pause(ctx context.Context, actor eventmodel.Actor, subscriptionID int64) (model.Subscription, error) {
+	return s.fireTransition(ctx, actor, subscriptionID, subscriptionstatemachine.EventPause, nil)
 }
 
-func (s *Service) Resume(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
-	return s.fireTransition(ctx, subscriptionID, subscriptionstatemachine.EventResume)
+func (s *Service) Resume(ctx context.Context, actor eventmodel.Actor, subscriptionID int64) (model.Subscription, error) {
+	return s.fireTransition(ctx, actor, subscriptionID, subscriptionstatemachine.EventResume, nil)
 }
 
-func (s *Service) Cancel(ctx context.Context, subscriptionID int64) (model.Subscription, error) {
-	return s.fireTransition(ctx, subscriptionID, subscriptionstatemachine.EventCancel)
+func (s *Service) Cancel(ctx context.Context, actor eventmodel.Actor, subscriptionID int64, atPeriodEnd bool) (model.Subscription, error) {
+	payload, _ := json.Marshal(map[string]any{"at_period_end": atPeriodEnd})
+	return s.fireTransition(ctx, actor, subscriptionID, subscriptionstatemachine.EventCancel, payload)
 }
 
 func (s *Service) fireTransition(
 	ctx context.Context,
+	actor eventmodel.Actor,
 	subscriptionID int64,
 	event sm_model.EventName,
+	payload []byte,
 ) (model.Subscription, error) {
 	if s.smEngine == nil {
 		return model.Subscription{}, errors.New("subscription state machine is not configured")
@@ -168,11 +202,11 @@ func (s *Service) fireTransition(
 		return model.Subscription{}, fmt.Errorf("get subscription state machine: %w", err)
 	}
 
-	if _, err := s.smEngine.Fire(ctx, instance.InstanceID, event, nil); err != nil {
+	if _, err := s.smEngine.Fire(ctx, instance.InstanceID, event, payload, sm_engine.WithEventActor(actor)); err != nil {
 		return model.Subscription{}, fmt.Errorf("fire subscription transition %q: %w", event, err)
 	}
 
-	return s.repository.Get(ctx, subscriptionID)
+	return s.repository.Get(ctx, s.repository.Pool(), subscriptionID)
 }
 
 // BillingProjection resolves the current active tariff for the subscription's
@@ -184,7 +218,7 @@ func (s *Service) BillingProjection(
 	ctx context.Context,
 	subscriptionID int64,
 ) (subscription.BillingProjection, error) {
-	sub, err := s.repository.Get(ctx, subscriptionID)
+	sub, err := s.repository.Get(ctx, s.repository.Pool(), subscriptionID)
 	if err != nil {
 		return subscription.BillingProjection{}, err
 	}
