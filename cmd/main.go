@@ -172,7 +172,7 @@ func run() error {
 	if err != nil && !strings.Contains(err.Error(), "23505") {
 		return fmt.Errorf("failed to bootstrap subscription state machine: %w", err)
 	}
-	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine)
+	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine, eventSvc)
 
 	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, ppiService, invoiceRepository, smEngine)
 

@@ -12,6 +12,7 @@ import (
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
+	accountstatemachine "github.com/thec1oud/billing/internal/account/statemachine"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
 	invoicemodel "github.com/thec1oud/billing/internal/invoice/model"
@@ -35,6 +36,7 @@ import (
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	"github.com/thec1oud/billing/internal/shared/money"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_loader "github.com/thec1oud/billing/internal/shared/statemachine/loader"
@@ -108,22 +110,37 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	defer smScheduler.Stop()
 
 	// 3. Wire Domain Services
+
+	eventRepo := eventrepo.NewPostgresEventStore(cluster.DBPool)
+	eventSvc := eventsvc.NewService(eventRepo)
+
 	accountRepo := accountrepo.New(cluster.DBPool)
-	accountSvc := accountsvc.New(accountRepo)
+
+	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
+	_, err = sm_loader.Publish(ctx, cluster.DBPool, smRepository, smRegistry, accountstatemachine.BuildAccountDefinitionSpec())
+	if err != nil {
+		t.Fatalf("failed to publish account state machine: %v", err)
+	}
+
+	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
 
 	itemRepo := itemrepo.NewPostgresRepository(cluster.DBPool)
 	itemSvc := itemservice.NewService(cluster.DBPool, itemRepo)
 
 	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
-	planSvc := planservice.NewService(cluster.DBPool, planRepo)
+	planSvc := planservice.NewService(cluster.DBPool, planRepo, itemRepo)
 	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
 	tariffSvc := tariffservice.NewService(cluster.DBPool, tariffRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
-	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
 
-	eventRepo := eventrepo.NewPostgresEventStore(cluster.DBPool)
-	eventSvc := eventsvc.NewService(eventRepo)
+	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
+	_, err = sm_loader.Publish(ctx, cluster.DBPool, smRepository, smRegistry, subscriptionstatemachine.BuildSubscriptionDefinitionSpec())
+	if err != nil {
+		t.Fatalf("failed to publish subscription state machine: %v", err)
+	}
+
+	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine, eventSvc)
 
 	paymentAttemptRepo := attemptrepo.NewPostgresRepository(cluster.DBPool)
 	paymentAttemptSvc := attemptsvc.NewService(paymentAttemptRepo)
@@ -186,7 +203,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 		"Basic per unit pricing",
 		tariff.TariffTypePerUnit,
 		"",
-		"",
+		tariff.UnitAPICall,
 		money.Money{AmountMinor: 1000, Currency: "ETB"},
 		nil, // no tiers
 		nil, // metadata
@@ -199,6 +216,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 		ctx,
 		plan.Plan{
 			PlanCode:              "e2e_premium",
+			Version:               1,
 			LegacyPricePolicyCode: plan.LegacyPolicyKeepForever,
 			Durations: []plan.PlanDuration{
 				{
@@ -238,11 +256,15 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 		PurchasableItem: createdItem,
 	}))
 
-	sub, err := subscriptionSvc.Create(ctx, subscriptionmodel.CreateInput{
+	sub, err := subscriptionSvc.Create(ctx, eventmodel.Actor{
+		ID:   "e2e-test",
+		Type: eventmodel.ActorTypeSystem,
+	}, subscriptionmodel.CreateInput{
 		AccountID:   account.AccountID,
 		PlanID:      createdPlan.ID,
 		PlanVersion: createdPlan.Version,
 	})
+
 	if err != nil {
 		t.Fatalf("failed to create subscription: %v", err)
 	}

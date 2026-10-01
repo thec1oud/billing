@@ -89,9 +89,9 @@ func (s *Service) CreatePlan(
 	if s.itemRepo != nil {
 		planID := created.ID
 		item := itemmodel.PurchasableItem{
-			ItemCode:     created.PlanCode, // unique code (same as plan_code)
+			ItemCode:     fmt.Sprintf("%s_v%d", created.PlanCode, created.Version),
 			ItemTypeCode: itemmodel.ItemTypePlan,
-			Name:         created.PlanCode, // or a nicer display name if you prefer
+			Name:         fmt.Sprintf("%s (v%d)", created.PlanCode, created.Version),
 			PlanID:       &planID,
 			IsActive:     true,
 		}
@@ -103,36 +103,6 @@ func (s *Service) CreatePlan(
 
 	if err := tx.Commit(ctx); err != nil {
 		return Plan{}, fmt.Errorf("commit create plan transaction: %w", err)
-	}
-
-	for i, duration := range plan.Durations {
-		duration.PlanID = created.ID
-		duration.IsActive = true
-
-		createdDuration, err := s.repository.CreateDuration(
-			ctx,
-			tx,
-			duration,
-		)
-		if err != nil {
-			return Plan{}, fmt.Errorf(
-				"create plan duration %d: %w",
-				i,
-				err,
-			)
-		}
-
-		created.Durations = append(
-			created.Durations,
-			createdDuration,
-		)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return Plan{}, fmt.Errorf(
-			"commit create plan transaction: %w",
-			err,
-		)
 	}
 
 	return created, nil

@@ -16,6 +16,7 @@ import (
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
+	accountstatemachine "github.com/thec1oud/billing/internal/account/statemachine"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/messaging"
@@ -38,6 +39,7 @@ import (
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	"github.com/thec1oud/billing/internal/shared/money"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_loader "github.com/thec1oud/billing/internal/shared/statemachine/loader"
@@ -73,8 +75,21 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	defer broker.Close()
 
 	// 2. Setup Services
+
+	smRegistry := sm_registry.New()
+	smRepository := sm_repo.NewPostgresRepository(cluster.DBPool)
+	smEngine := sm_engine.NewEngine(cluster.DBPool, smRepository, smRegistry, sm_engine.WithScripting(scripting.NewPool(0, 0)))
+
+	eventRepo := eventrepo.NewPostgresEventStore(cluster.DBPool)
+	eventSvc := eventsvc.NewService(eventRepo)
+
 	accountRepo := accountrepo.New(cluster.DBPool)
-	accountSvc := accountsvc.New(accountRepo)
+
+	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
+	_, err = sm_loader.Publish(ctx, cluster.DBPool, smRepository, smRegistry, accountstatemachine.BuildAccountDefinitionSpec())
+	require.NoError(t, err)
+
+	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
 
 	itemRepo := itemrepo.NewPostgresRepository(cluster.DBPool)
 	itemSvc := itemservice.NewService(cluster.DBPool, itemRepo)
@@ -86,7 +101,12 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	tariffSvc := tariffservice.NewService(cluster.DBPool, tariffRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
-	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo)
+
+	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
+	_, err = sm_loader.Publish(ctx, cluster.DBPool, smRepository, smRegistry, subscriptionstatemachine.BuildSubscriptionDefinitionSpec())
+	require.NoError(t, err)
+
+	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine, eventSvc)
 
 	paymentAttemptRepo := attemptrepo.NewPostgresRepository(cluster.DBPool)
 	paymentAttemptSvc := attemptsvc.NewService(paymentAttemptRepo)
@@ -94,13 +114,6 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	ppiRepo := ppirepo.NewPostgresRepository()
 	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
-
-	smRegistry := sm_registry.New()
-	smRepository := sm_repo.NewPostgresRepository(cluster.DBPool)
-	smEngine := sm_engine.NewEngine(cluster.DBPool, smRepository, smRegistry, sm_engine.WithScripting(scripting.NewPool(0, 0)))
-
-	eventRepo := eventrepo.NewPostgresEventStore(cluster.DBPool)
-	eventSvc := eventsvc.NewService(eventRepo)
 
 	invoiceRepository := invoicerepo.NewPostgresRepository(cluster.DBPool)
 
@@ -186,9 +199,10 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	resp = doJSON("POST", "/api/v1/tariffs", tariffhandler.CreateInput{
 		Code:        "standard_per_unit_1000",
 		Name:        "Standard Per Unit 1000 ETB",
-		Description: "Basic per unit pricing",
-		TariffType:  tariff.TariffTypePerUnit,
-		Amount:      money.Money{AmountMinor: 1000, Currency: "ETB"},
+		Description:  "Basic per unit pricing",
+		TariffType:   tariff.TariffTypePerUnit,
+		QuantityUnit: tariff.UnitAPICall,
+		Amount:       money.Money{AmountMinor: 1000, Currency: "ETB"},
 	}, &createdTariff)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	require.NotZero(t, createdTariff.ID)
@@ -199,6 +213,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	var createdPlan plan.Plan
 	resp = doJSON("POST", "/api/v1/plans", plan.Plan{
 		PlanCode:              "e2e_premium",
+		Version:               1,
 		LegacyPricePolicyCode: plan.LegacyPolicyKeepForever,
 		Durations: []plan.PlanDuration{
 			{
