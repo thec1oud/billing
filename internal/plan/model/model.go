@@ -76,17 +76,6 @@ func (p Plan) Validate() error {
 			"effective until must be after effective from",
 		)
 	}
-
-	for i, duration := range p.Durations {
-		if err := duration.Validate(); err != nil {
-			return fmt.Errorf(
-				"invalid duration at index %d: %w",
-				i,
-				err,
-			)
-		}
-	}
-
 	return nil
 }
 

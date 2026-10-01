@@ -230,7 +230,7 @@ func (m *mockRepository) UpdateDurationTariff(
 
 func TestServiceGetPlanVersion_ValidatesVersion(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed: 3 args
 
 	_, err := service.GetPlanVersion(
 		context.Background(),
@@ -257,7 +257,7 @@ func TestServiceGetPlanVersion(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	plan, err := service.GetPlanVersion(
 		context.Background(),
@@ -276,7 +276,7 @@ func TestServiceLatestVersion(t *testing.T) {
 		latestVersion: 3,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	version, err := service.LatestVersion(
 		context.Background(),
@@ -308,7 +308,7 @@ func TestServiceListVersions(t *testing.T) {
 		plans: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	plans, err := service.ListVersions(
 		context.Background(),
@@ -325,7 +325,7 @@ func TestServiceListVersions_ReturnsNotFound(t *testing.T) {
 		listErr: planrepo.ErrPlanNotFound,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	_, err := service.ListVersions(
 		context.Background(),
@@ -351,7 +351,7 @@ func TestServiceListActivePlans(t *testing.T) {
 		plans: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	plans, err := service.ListActivePlans(
 		context.Background(),
@@ -364,7 +364,7 @@ func TestServiceListActivePlans(t *testing.T) {
 
 func TestServiceCreatePlan_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	plan := Plan{
 		PlanCode:              "",
@@ -383,7 +383,7 @@ func TestServiceCreatePlan_Validation(t *testing.T) {
 
 func TestServiceCreatePlan_InvalidLegacyPricePolicy(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	plan := Plan{
 		PlanCode:              "PRO",
@@ -407,7 +407,7 @@ func TestServiceCreatePlan_InvalidLegacyPricePolicy(t *testing.T) {
 
 func TestServiceCreatePlan_InvalidDuration(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	plan := Plan{
 		PlanCode:              "PRO",
@@ -432,7 +432,7 @@ func TestServiceCreatePlan_InvalidDuration(t *testing.T) {
 
 func TestServiceCreatePlanDuration_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	duration := PlanDuration{
 		PlanID:   1,
@@ -462,7 +462,7 @@ func TestServiceGetDuration(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	duration, err := service.GetDuration(
 		context.Background(),
@@ -486,7 +486,7 @@ func TestServiceGetDurationByPlanAndDuration(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	duration, err := service.GetDurationByPlanAndDuration(
 		context.Background(),
@@ -519,7 +519,7 @@ func TestServiceListDurations(t *testing.T) {
 		durations: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	durations, err := service.ListDurations(
 		context.Background(),
@@ -533,7 +533,7 @@ func TestServiceListDurations(t *testing.T) {
 
 func TestServiceUpdateDurationTariff_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	_, err := service.UpdateDurationTariff(
 		context.Background(),
@@ -554,7 +554,7 @@ func TestServiceUpdateDurationTariff_Validation(t *testing.T) {
 
 func TestServiceUpdateDurationTariff_InvalidTariffID(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(nil, repo, nil) // <-- fixed
 
 	_, err := service.UpdateDurationTariff(
 		context.Background(),

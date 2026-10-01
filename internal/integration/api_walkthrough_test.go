@@ -76,11 +76,11 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	accountRepo := accountrepo.New(cluster.DBPool)
 	accountSvc := accountsvc.New(accountRepo)
 
-	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
-	planSvc := planservice.NewService(cluster.DBPool, planRepo)
-
 	itemRepo := itemrepo.NewPostgresRepository(cluster.DBPool)
 	itemSvc := itemservice.NewService(cluster.DBPool, itemRepo)
+
+	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
+	planSvc := planservice.NewService(cluster.DBPool, planRepo, itemRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
 	tariffSvc := tariffservice.NewService(cluster.DBPool, tariffRepo)
