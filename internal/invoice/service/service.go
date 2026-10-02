@@ -44,6 +44,10 @@ func NewService(
 	}
 }
 
+func (s *Service) GetInvoice(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+	return s.repo.Get(ctx, invoiceID)
+}
+
 func (s *Service) CreateDraftInvoice(
 	ctx context.Context,
 	actor eventmodel.Actor,
@@ -127,6 +131,10 @@ func (s *Service) CreateDraftInvoice(
 
 	inv.InvoiceID = invoiceID
 	return inv, nil
+}
+
+func (s *Service) Get(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+	return s.repo.Get(ctx, invoiceID)
 }
 
 func (s *Service) FinalizeInvoice(

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lmittmann/tint"
+
 	"github.com/thec1oud/billing/internal/config"
 )
 

@@ -14,9 +14,11 @@ import (
 
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
+	CancelSubscriptionNow(ctx context.Context, arg CancelSubscriptionNowParams) (int64, error)
 	CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error)
 	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error)
 	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
+	ClearDefaultPaymentMethod(ctx context.Context, accountID int64) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (CreateAccountRow, error)
 	CreateInstance(ctx context.Context, arg CreateInstanceParams) (CreateInstanceRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (int64, error)
@@ -27,7 +29,7 @@ type Querier interface {
 	CreatePlanDuration(ctx context.Context, arg CreatePlanDurationParams) (PlanDuration, error)
 	CreatePurchasableItem(ctx context.Context, arg CreatePurchasableItemParams) (PurchasableItem, error)
 	CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (CreateSubscriptionRow, error)
-	CreateTariff(ctx context.Context, arg CreateTariffParams) (Tariff, error)
+	CreateTariff(ctx context.Context, arg CreateTariffParams) (CreateTariffRow, error)
 	DeactivateDefinitionsForMachineType(ctx context.Context, machineType string) error
 	DeletePaymentAttempt(ctx context.Context, attemptID int64) (pgconn.CommandTag, error)
 	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error)
@@ -52,9 +54,10 @@ type Querier interface {
 	GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetPlanDurationByPlanAndDurationParams) (PlanDuration, error)
 	GetPurchasableItemByCode(ctx context.Context, itemCode string) (PurchasableItem, error)
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
+	GetPurchasableItemByPlanID(ctx context.Context, planID pgtype.Int8) (PurchasableItem, error)
 	GetSubscription(ctx context.Context, subscriptionID int64) (GetSubscriptionRow, error)
-	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (Tariff, error)
-	GetTariffByID(ctx context.Context, tariffID int64) (Tariff, error)
+	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (GetTariffByCodeAndVersionRow, error)
+	GetTariffByID(ctx context.Context, tariffID int64) (GetTariffByIDRow, error)
 	InsertActionBinding(ctx context.Context, arg InsertActionBindingParams) (uuid.UUID, error)
 	InsertDefinition(ctx context.Context, arg InsertDefinitionParams) (InsertDefinitionRow, error)
 	InsertGuardBinding(ctx context.Context, arg InsertGuardBindingParams) error
@@ -63,23 +66,27 @@ type Querier interface {
 	InsertState(ctx context.Context, arg InsertStateParams) error
 	InsertTransition(ctx context.Context, arg InsertTransitionParams) (uuid.UUID, error)
 	InsertTransitionHistoryPending(ctx context.Context, arg InsertTransitionHistoryPendingParams) (InsertTransitionHistoryPendingRow, error)
+	ListAccountSubscriptions(ctx context.Context, accountID int64) ([]ListAccountSubscriptionsRow, error)
 	ListActionBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmActionBinding, error)
+	ListActivePlans(ctx context.Context) ([]Plan, error)
 	ListGuardBindingsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmGuardBinding, error)
 	ListInvoiceLineItems(ctx context.Context, invoiceID int64) ([]ListInvoiceLineItemsRow, error)
 	ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID int64) ([]PaymentAttempt, error)
 	ListPaymentMethodReferences(ctx context.Context, accountID int64) ([]string, error)
 	ListPlanDurations(ctx context.Context, planID int64) ([]PlanDuration, error)
 	ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error)
+	ListPlans(ctx context.Context) ([]Plan, error)
+	ListPurchasableItems(ctx context.Context) ([]PurchasableItem, error)
 	ListStatesByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmState, error)
-	ListTariffVersions(ctx context.Context, tariffCode string) ([]Tariff, error)
+	ListTariffVersions(ctx context.Context, tariffCode string) ([]ListTariffVersionsRow, error)
 	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
+	LockAccountForUpdate(ctx context.Context, accountID int64) (string, error)
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
-	MarkPPIWebhookPublished(ctx context.Context, webhookID string) error
-	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) error
 	MarkOutboxPublished(ctx context.Context, outboxID int64) error
 	MarkOutboxRetry(ctx context.Context, arg MarkOutboxRetryParams) error
+	MarkPPIWebhookPublished(ctx context.Context, webhookID string) error
 	MarkScheduleFailed(ctx context.Context, arg MarkScheduleFailedParams) error
 	MarkScheduleFired(ctx context.Context, scheduleID uuid.UUID) error
 	MarkScheduleRetry(ctx context.Context, arg MarkScheduleRetryParams) error
@@ -87,7 +94,11 @@ type Querier interface {
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
 	ReapStuckOutbox(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
 	ReapStuckSchedules(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
+	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
+	ScheduleSubscriptionCancellation(ctx context.Context, subscriptionID int64) (int64, error)
+	TransitionSubscription(ctx context.Context, arg TransitionSubscriptionParams) (int64, error)
 	UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error
+	UpdateAccountStatusFrom(ctx context.Context, arg UpdateAccountStatusFromParams) (int64, error)
 	UpdateInstanceState(ctx context.Context, arg UpdateInstanceStateParams) (int64, error)
 	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.

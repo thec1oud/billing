@@ -6,23 +6,38 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
-	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	accountrepo "github.com/thec1oud/billing/internal/account/repository"
+	accountsvc "github.com/thec1oud/billing/internal/account/service"
+	accountstatemachine "github.com/thec1oud/billing/internal/account/statemachine"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
-	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
+	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
+	planmodel "github.com/thec1oud/billing/internal/plan/model"
+	planrepo "github.com/thec1oud/billing/internal/plan/repository"
+	planservice "github.com/thec1oud/billing/internal/plan/service"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
+	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
+	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
+	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
+	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
 	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
@@ -30,6 +45,12 @@ import (
 	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scheduler"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
+	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
+	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
+	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
+	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
+	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
+	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 )
 
 func main() {
@@ -41,14 +62,10 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-
-	// 1. Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-
-	// 2. Initialize global logger FIRST so all downstream logs use the configured pipeline
 	logClosers, err := logger.InitGlobalLogger(cfg)
 	if err != nil {
 		return fmt.Errorf("logger: %w", err)
@@ -59,45 +76,33 @@ func run() error {
 		}
 	}()
 
-	// 3. Initialize infrastructural dependencies
 	deps, err := infra.InitDependencies(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("infrastructure: %w", err)
 	}
-
 	defer func() {
 		if deps.Rabbit != nil {
 			_ = deps.Rabbit.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Redis != nil {
 			_ = deps.Redis.Close()
 		}
-	}()
-
-	defer func() {
 		if deps.Pool != nil {
 			deps.Pool.Close()
 		}
-	}()
-	defer func() {
 		if deps.DB != nil {
 			_ = deps.DB.Close(ctx)
 		}
 	}()
-
-	// 4. Run database migrations
 	if err := database.RunMigrations(deps.DB); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	// 6. Block process until SIGINT/SIGTERM for background contexts
+	//  Block process until SIGINT/SIGTERM for background contexts
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 7. Wire the state machine engine's background workers.
+	//  Wire the state machine engine's background workers.
 	smRegistry := registry.New()
 	smRepository := smRepo.NewPostgresRepository(deps.Pool)
 	smEngine := engine.NewEngine(deps.Pool, smRepository, smRegistry, engine.WithScripting(scripting.NewPool(0, 0)))
@@ -129,19 +134,59 @@ func run() error {
 	}
 	defer rabbitBroker.Close()
 
-	// 9. Initialize Payment Attempt Repository & Service
+	//  Initialize Payment Attempt Repository & Service
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
-	// 10. Initialize PPI Webhook Repository & Service
+	//  Initialize PPI Webhook Repository & Service
 	ppiRepo := repository.NewPostgresRepository()
 	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
-	// 11. Configure & Start HTTP Server
+	// Initialize other domain services
+	accountRepo := accountrepo.New(deps.Pool)
+
+	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
+	eventSvc := eventsvc.NewService(eventRepo)
+
+	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
+	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, accountstatemachine.BuildAccountDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		return fmt.Errorf("failed to bootstrap account state machine: %w", err)
+	}
+
+	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
+
+	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
+	itemSvc := itemservice.NewService(deps.Pool, itemRepo)
+
+	planRepo := planrepo.NewPostgresRepository(deps.Pool)
+	planSvc := planservice.NewService(deps.Pool, planRepo, itemRepo)
+
+	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
+	tariffSvc := tariffservice.NewService(deps.Pool, tariffRepo)
+
+	subscriptionRepo := subscriptionrepo.New(deps.Pool)
+	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
+	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, subscriptionstatemachine.BuildSubscriptionDefinitionSpec())
+	if err != nil && !strings.Contains(err.Error(), "23505") {
+		return fmt.Errorf("failed to bootstrap subscription state machine: %w", err)
+	}
+	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine, eventSvc)
+
+	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, ppiService, invoiceRepository, smEngine)
+
+	// Configure & Start HTTP Server
 	srv := api.NewServer(cfg, api.Deps{
-		PPIService: ppiService,
-		Broker:     rabbitBroker,
+		Pool:                   deps.Pool,
+		AccountService:         accountSvc,
+		PlanService:            planSvc,
+		TariffService:          tariffSvc,
+		PurchasableItemService: itemSvc,
+		SubscriptionService:    subscriptionSvc,
+		InvoiceService:         invoiceSvc,
+		PPIService:             ppiService,
+		Broker:                 rabbitBroker,
 	})
 	srv.Start()
 
@@ -158,26 +203,79 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("HTTP Server Shutdown error", logger.Err(err))
 	}
-	slog.Info(
-		"All background services wired. Starting application layer...",
-		"port",
-		cfg.AppPort,
-	)
-
-	// 5. Block process until SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
-
-	// START YOUR SERVER / CONSUMER HERE
-
-	<-ctx.Done()
-
-	slog.Info("Shutting down billing service...")
-
 	log.Info("Billing service stopped successfully.")
+	return nil
+}
+
+func SeedCatalog(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	planSvc *planservice.Service,
+	tariffSvc *tariffservice.Service,
+	itemSvc *itemservice.Service,
+) error {
+	log := logger.ForComponent("seeder")
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	amt, _ := money.New(1000, "ETB") // 10.00 ETB per unit
+
+	t, err := tariffSvc.CreateTariff(
+		ctx,
+		"STANDARD_USAGE_V1",
+		"Standard Usage Pricing",
+		"Standard per-unit pricing",
+		tariffmodel.TariffTypeFlatFee,
+		tariffmodel.TierStrategy(""),
+		tariffmodel.QuantityUnit(""),
+		amt,
+		nil,
+		nil,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			log.Info("Catalog already seeded")
+			return nil
+		}
+		return fmt.Errorf("create tariff: %w", err)
+	}
+
+	p, err := planSvc.CreatePlan(ctx, planmodel.Plan{
+		PlanCode:              "USAGE_PLAN_A",
+		LegacyPricePolicyCode: planmodel.LegacyPolicyKeepForever,
+	})
+	if err != nil {
+		return fmt.Errorf("create plan: %w", err)
+	}
+
+	_, err = planSvc.CreatePlanDuration(ctx, planmodel.PlanDuration{
+		PlanID:   p.ID,
+		TariffID: t.ID,
+		Duration: 30 * 24 * time.Hour,
+	})
+	if err != nil {
+		return fmt.Errorf("create plan duration: %w", err)
+	}
+
+	_, err = itemSvc.Create(ctx, itemmodel.PurchasableItem{
+		ItemCode:     "API_REQUEST",
+		ItemTypeCode: itemmodel.ItemTypePlan,
+		Name:         "API Requests",
+		PlanID:       &p.ID,
+		IsActive:     true,
+	})
+	if err != nil {
+		return fmt.Errorf("create item: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit seed tx: %w", err)
+	}
+
+	log.Info("Successfully seeded DB with reference catalog (tariffs, plans, items).")
 	return nil
 }

@@ -16,3 +16,18 @@ INSERT INTO payment_methods (account_id, payment_provider_code, provider_referen
 VALUES ($1, 'chapa', $2, 'mobile_money', TRUE, 'ACTIVE');
 -- name: ListPaymentMethodReferences :many
 SELECT provider_reference FROM payment_methods WHERE account_id = $1 AND payment_status_code = 'ACTIVE' ORDER BY is_default DESC, payment_method_id;
+-- name: UpdateAccountStatusFrom :execrows
+UPDATE accounts
+SET account_status_code = $3
+WHERE account_id = $1 AND account_status_code = $2;
+
+-- name: LockAccountForUpdate :one
+SELECT account_status_code
+FROM accounts 
+WHERE account_id = $1 
+FOR UPDATE;
+
+-- name: ClearDefaultPaymentMethod :exec
+UPDATE payment_methods
+SET is_default = FALSE
+WHERE account_id = $1 AND is_default;
