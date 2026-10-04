@@ -63,12 +63,11 @@ func (s *Service) ChargePaymentMethod(
 		return ppi.ChargeResult{}, fmt.Errorf("%w: %s", ErrUnsupportedProvider, providerCode)
 	}
 
-	// 1. Begin Database Transaction
+	// 1. Begin Database Transaction to record PENDING attempt
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return ppi.ChargeResult{}, fmt.Errorf("failed to begin transaction for charge: %w", err)
 	}
-	defer tx.Rollback(ctx)
 
 	// 2. Create initial PENDING PaymentAttempt in DB transaction BEFORE calling provider
 	rawReq, _ := json.Marshal(map[string]any{
@@ -83,28 +82,48 @@ func (s *Service) ChargePaymentMethod(
 		RawRequest:   rawReq,
 	})
 	if err != nil {
+		tx.Rollback(ctx)
 		return ppi.ChargeResult{}, fmt.Errorf("failed to create payment attempt record in tx: %w", err)
 	}
 
-	// 3. Send request to provider through adapter
-	result, err := adapter.ChargePaymentMethod(ctx, amount, providerCode, idempotencyKey)
-	if err != nil || result.Status == ppi.ChargeStatusFailed {
-		// Provider call failed or produced an invalid charge -> Rollback transaction (via defer tx.Rollback)
-		if err != nil {
-			return ppi.ChargeResult{}, fmt.Errorf("%w: %v", ErrProviderAdapterFailed, err)
+	// 3. Commit DB Transaction so it's visible to any synchronous webhooks
+	if err := tx.Commit(ctx); err != nil {
+		return ppi.ChargeResult{}, fmt.Errorf("failed to commit pending payment attempt transaction: %w", err)
+	}
+
+	// 4. Send request to provider through adapter
+	result, adapterErr := adapter.ChargePaymentMethod(ctx, amount, providerCode, idempotencyKey)
+
+	// 5. Begin a new transaction to update the attempt result (always needed,
+	updateTx, err := s.db.Begin(ctx)
+	if err != nil {
+		return ppi.ChargeResult{}, fmt.Errorf("failed to begin update transaction: %w", err)
+	}
+	defer updateTx.Rollback(ctx)
+
+	// 6. Handle provider failure: mark attempt as FAILED and surface the error
+	if adapterErr != nil || result.Status == ppi.ChargeStatusFailed {
+		_ = s.attemptSvc.UpdatePaymentAttemptResult(ctx, updateTx, attemptmodel.UpdatePaymentAttemptResultInput{
+			AttemptID:   attempt.AttemptID,
+			Status:      attemptmodel.StatusFailed,
+			RawResponse: result.RawResponse,
+		})
+		_ = updateTx.Commit(ctx)
+
+		if adapterErr != nil {
+			return ppi.ChargeResult{}, fmt.Errorf("%w: %v", ErrProviderAdapterFailed, adapterErr)
 		}
 		return result, nil
 	}
 
-	// 4.Update attempt record in tx and commit
-
+	// 6. Update attempt record in tx and commit
 	var provRef *string
 	if result.ProviderReference != "" {
 		ref := result.ProviderReference
 		provRef = &ref
 	}
 
-	err = s.attemptSvc.UpdatePaymentAttemptResult(ctx, tx, attemptmodel.UpdatePaymentAttemptResultInput{
+	err = s.attemptSvc.UpdatePaymentAttemptResult(ctx, updateTx, attemptmodel.UpdatePaymentAttemptResultInput{
 		AttemptID:    attempt.AttemptID,
 		Status:       attemptmodel.StatusSuccess,
 		ProviderTxID: provRef,
@@ -114,9 +133,9 @@ func (s *Service) ChargePaymentMethod(
 		return ppi.ChargeResult{}, fmt.Errorf("failed to update payment attempt result in tx: %w", err)
 	}
 
-	// 5. Commit DB Transaction
-	if err := tx.Commit(ctx); err != nil {
-		return ppi.ChargeResult{}, fmt.Errorf("failed to commit payment attempt transaction: %w", err)
+	// 7. Commit Update DB Transaction
+	if err := updateTx.Commit(ctx); err != nil {
+		return ppi.ChargeResult{}, fmt.Errorf("failed to commit payment attempt update transaction: %w", err)
 	}
 
 	return result, nil
