@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
@@ -35,6 +36,10 @@ type mockRepository struct {
 	createCalls         int
 	createDurationCalls int
 	updateDurationCalls int
+}
+
+func (m *mockRepository) Pool() *pgxpool.Pool {
+	return nil
 }
 
 func (m *mockRepository) Create(
@@ -230,7 +235,7 @@ func (m *mockRepository) UpdateDurationTariff(
 
 func TestServiceGetPlanVersion_ValidatesVersion(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo, nil) // <-- fixed: 3 args
+	service := NewService(repo, nil)
 
 	_, err := service.GetPlanVersion(
 		context.Background(),
@@ -257,7 +262,7 @@ func TestServiceGetPlanVersion(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	plan, err := service.GetPlanVersion(
 		context.Background(),
@@ -276,7 +281,7 @@ func TestServiceLatestVersion(t *testing.T) {
 		latestVersion: 3,
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	version, err := service.LatestVersion(
 		context.Background(),
@@ -308,7 +313,7 @@ func TestServiceListVersions(t *testing.T) {
 		plans: expected,
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	plans, err := service.ListVersions(
 		context.Background(),
@@ -325,7 +330,7 @@ func TestServiceListVersions_ReturnsNotFound(t *testing.T) {
 		listErr: planrepo.ErrPlanNotFound,
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	_, err := service.ListVersions(
 		context.Background(),
@@ -351,7 +356,7 @@ func TestServiceListActivePlans(t *testing.T) {
 		plans: expected,
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	plans, err := service.ListActivePlans(
 		context.Background(),
@@ -364,7 +369,7 @@ func TestServiceListActivePlans(t *testing.T) {
 
 func TestServiceCreatePlan_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	plan := Plan{
 		PlanCode:              "",
@@ -383,7 +388,7 @@ func TestServiceCreatePlan_Validation(t *testing.T) {
 
 func TestServiceCreatePlan_InvalidLegacyPricePolicy(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	plan := Plan{
 		PlanCode:              "PRO",
@@ -407,7 +412,7 @@ func TestServiceCreatePlan_InvalidLegacyPricePolicy(t *testing.T) {
 
 func TestServiceCreatePlan_InvalidDuration(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	plan := Plan{
 		PlanCode:              "PRO",
@@ -432,7 +437,7 @@ func TestServiceCreatePlan_InvalidDuration(t *testing.T) {
 
 func TestServiceCreatePlanDuration_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	duration := PlanDuration{
 		PlanID:   1,
@@ -462,7 +467,7 @@ func TestServiceGetDuration(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	duration, err := service.GetDuration(
 		context.Background(),
@@ -486,7 +491,7 @@ func TestServiceGetDurationByPlanAndDuration(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	duration, err := service.GetDurationByPlanAndDuration(
 		context.Background(),
@@ -519,7 +524,7 @@ func TestServiceListDurations(t *testing.T) {
 		durations: expected,
 	}
 
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	durations, err := service.ListDurations(
 		context.Background(),
@@ -533,7 +538,7 @@ func TestServiceListDurations(t *testing.T) {
 
 func TestServiceUpdateDurationTariff_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	_, err := service.UpdateDurationTariff(
 		context.Background(),
@@ -554,7 +559,7 @@ func TestServiceUpdateDurationTariff_Validation(t *testing.T) {
 
 func TestServiceUpdateDurationTariff_InvalidTariffID(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo, nil) // <-- fixed
+	service := NewService(repo, nil)
 
 	_, err := service.UpdateDurationTariff(
 		context.Background(),

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
@@ -30,18 +28,15 @@ const (
 )
 
 type Service struct {
-	db         *pgxpool.Pool
 	repository planrepo.Repository
 	itemRepo   itemrepo.Repository
 }
 
 func NewService(
-	db *pgxpool.Pool,
 	repository planrepo.Repository,
 	itemRepo itemrepo.Repository,
 ) *Service {
 	return &Service{
-		db:         db,
 		repository: repository,
 		itemRepo:   itemRepo,
 	}
@@ -55,11 +50,24 @@ func (s *Service) CreatePlan(
 		plan.EffectiveFrom = time.Now().UTC()
 	}
 
+	if plan.Version == 0 {
+		plan.Version = 1
+	}
+
 	if err := plan.Validate(); err != nil {
 		return Plan{}, fmt.Errorf("validate plan: %w", err)
 	}
 
-	tx, err := s.db.Begin(ctx)
+	for i, duration := range plan.Durations {
+		if duration.TariffID <= 0 {
+			return Plan{}, fmt.Errorf("invalid duration at index %d: %w", i, errors.New("tariff id must be greater than zero"))
+		}
+		if duration.Duration <= 0 {
+			return Plan{}, fmt.Errorf("invalid duration at index %d: %w", i, errors.New("duration must be greater than zero"))
+		}
+	}
+
+	tx, err := s.repository.Pool().Begin(ctx)
 	if err != nil {
 		return Plan{}, fmt.Errorf("begin create plan transaction: %w", err)
 	}
@@ -121,7 +129,7 @@ func (s *Service) CreatePlanDuration(
 
 	duration.IsActive = true
 
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.repository.Pool().Begin(ctx)
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
 			"begin create plan duration transaction: %w",
@@ -344,7 +352,7 @@ func (s *Service) UpdateDurationTariff(
 		)
 	}
 
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.repository.Pool().Begin(ctx)
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
 			"begin update plan duration transaction: %w",

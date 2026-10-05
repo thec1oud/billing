@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 )
@@ -21,16 +19,13 @@ const ItemTypeOneTimeService = itemmodel.ItemTypeOneTimeService
 const ItemTypeProduct = itemmodel.ItemTypeProduct
 
 type Service struct {
-	db         *pgxpool.Pool
 	repository itemrepo.Repository
 }
 
 func NewService(
-	db *pgxpool.Pool,
 	repository itemrepo.Repository,
 ) *Service {
 	return &Service{
-		db:         db,
 		repository: repository,
 	}
 }
@@ -60,7 +55,11 @@ func (s *Service) Create(
 		}
 	}
 
-	tx, err := s.db.Begin(ctx)
+	if s.repository == nil || s.repository.Pool() == nil {
+		return PurchasableItem{}, errors.New("repository pool unavailable")
+	}
+
+	tx, err := s.repository.Pool().Begin(ctx)
 	if err != nil {
 		return PurchasableItem{}, fmt.Errorf(
 			"begin transaction: %w",
@@ -68,7 +67,6 @@ func (s *Service) Create(
 		)
 	}
 	defer tx.Rollback(ctx)
-
 	created, err := s.repository.Create(ctx, tx, item)
 	if err != nil {
 		return PurchasableItem{}, err
