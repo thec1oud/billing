@@ -91,17 +91,26 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (C
 }
 
 const createPaymentMethod = `-- name: CreatePaymentMethod :exec
-INSERT INTO payment_methods (account_id, payment_provider_code, provider_reference, payment_type_code, is_default, payment_status_code)
-VALUES ($1, 'chapa', $2, 'mobile_money', TRUE, 'ACTIVE')
+INSERT INTO payment_methods (
+    account_id,
+    payment_provider_code,
+    provider_reference,
+    payment_type_code,
+    is_default,
+    payment_status_code
+)
+VALUES ($1, $2, $3, $4, TRUE, 'ACTIVE')
 `
 
 type CreatePaymentMethodParams struct {
-	AccountID         int64  `json:"account_id"`
-	ProviderReference string `json:"provider_reference"`
+	AccountID           int64  `json:"account_id"`
+	PaymentProviderCode string `json:"payment_provider_code"`
+	ProviderReference   string `json:"provider_reference"`
+	PaymentTypeCode     string `json:"payment_type_code"`
 }
 
 func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) error {
-	_, err := q.db.Exec(ctx, createPaymentMethod, arg.AccountID, arg.ProviderReference)
+	_, err := q.db.Exec(ctx, createPaymentMethod, arg.AccountID, arg.PaymentProviderCode, arg.ProviderReference, arg.PaymentTypeCode)
 	return err
 }
 

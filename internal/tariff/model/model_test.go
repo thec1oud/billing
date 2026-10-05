@@ -189,6 +189,45 @@ func TestTieredGraduatedCalculateCharge(t *testing.T) {
 	require.Equal(t, "USD", string(result.Currency))
 }
 
+func TestTieredVolumeCalculateCharge(t *testing.T) {
+	amount, err := money.New(0, "USD")
+	require.NoError(t, err)
+
+	firstPrice, err := money.New(100, "USD")
+	require.NoError(t, err)
+
+	secondPrice, err := money.New(50, "USD")
+	require.NoError(t, err)
+
+	limit := int64(10)
+
+	tariff := Tariff{
+		TariffCode:     "USAGE",
+		Version:        1,
+		Name:           "Usage",
+		TariffTypeCode: TariffTypeTieredUsage,
+		TierStrategy:   TierStrategyVolume,
+		Amount:         amount,
+		Tiers: []Tier{
+			{
+				UpToQuantity: &limit,
+				UnitPrice:    firstPrice,
+				FlatFee:      amount,
+			},
+			{
+				UpToQuantity: nil,
+				UnitPrice:    secondPrice,
+				FlatFee:      amount,
+			},
+		},
+	}
+
+	result, err := tariff.CalculateCharge(Quantity{Value: 15, Unit: UnitCount})
+	require.NoError(t, err)
+	require.Equal(t, int64(1250), result.AmountMinor)
+	require.Equal(t, "USD", string(result.Currency))
+}
+
 func TestTieredCurrencyMismatch(t *testing.T) {
 	amount, err := money.New(0, "USD")
 	require.NoError(t, err)

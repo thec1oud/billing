@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -21,6 +22,10 @@ type mockRepository struct {
 
 	listVersions []Tariff
 	listErr      error
+}
+
+func (m *mockRepository) Pool() *pgxpool.Pool {
+	return nil
 }
 
 func (m *mockRepository) Create(
@@ -88,7 +93,7 @@ func (m *mockRepository) ListVersions(
 
 func TestServiceGetTariffVersion_ValidatesVersion(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.GetTariffVersion(
 		context.Background(),
@@ -106,7 +111,7 @@ func TestServiceGetTariffVersion_ValidatesVersion(t *testing.T) {
 
 func TestServiceGetTariffVersion(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	tariff, err := service.GetTariffVersion(
 		context.Background(),
@@ -124,7 +129,7 @@ func TestServiceLatestVersion(t *testing.T) {
 		latestVersions: []int{3},
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	version, err := service.LatestVersion(
 		context.Background(),
@@ -156,7 +161,7 @@ func TestServiceListVersions(t *testing.T) {
 		listVersions: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	tariffs, err := service.ListVersions(
 		context.Background(),
@@ -173,7 +178,7 @@ func TestServiceListVersions_ReturnsNotFound(t *testing.T) {
 		listErr: tariffrepo.ErrTariffNotFound,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.ListVersions(
 		context.Background(),
@@ -185,7 +190,7 @@ func TestServiceListVersions_ReturnsNotFound(t *testing.T) {
 
 func TestServiceCreateTariff_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	amount, err := money.New(1000, "USD")
 	require.NoError(t, err)
@@ -211,7 +216,7 @@ func TestServiceCreateTariff_Validation(t *testing.T) {
 
 func TestServiceCreateTariff_ValidationName(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	amount, err := money.New(1000, "USD")
 	require.NoError(t, err)
@@ -237,7 +242,7 @@ func TestServiceCreateTariff_ValidationName(t *testing.T) {
 
 func TestServiceCreateTariff_UnsupportedType(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	amount, err := money.New(1000, "USD")
 	require.NoError(t, err)
@@ -281,7 +286,7 @@ func TestServiceCalculateUsageCharge(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, &usageChargeRepository{
+	service := NewService(&usageChargeRepository{
 		tariff: repo.listVersions[0],
 	})
 
@@ -304,6 +309,10 @@ func TestServiceCalculateUsageCharge(t *testing.T) {
 
 type usageChargeRepository struct {
 	tariff Tariff
+}
+
+func (r *usageChargeRepository) Pool() *pgxpool.Pool {
+	return nil
 }
 
 func (r *usageChargeRepository) Create(
@@ -361,7 +370,7 @@ func TestServiceCalculateUsageCharge_InvalidQuantity(t *testing.T) {
 		},
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err = service.CalculateUsageCharge(
 		context.Background(),

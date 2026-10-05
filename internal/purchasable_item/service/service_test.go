@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
@@ -25,6 +26,10 @@ type mockRepository struct {
 	listErr      error
 
 	items []PurchasableItem
+}
+
+func (m *mockRepository) Pool() *pgxpool.Pool {
+	return nil
 }
 
 func (m *mockRepository) Create(
@@ -90,7 +95,7 @@ func (m *mockRepository) ListAll(
 
 func TestServiceCreate_Validation(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.Create(
 		context.Background(),
@@ -108,7 +113,7 @@ func TestServiceCreate_Validation(t *testing.T) {
 
 func TestServiceCreate_ValidationName(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.Create(
 		context.Background(),
@@ -126,7 +131,7 @@ func TestServiceCreate_ValidationName(t *testing.T) {
 
 func TestServiceCreate_UnsupportedType(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.Create(
 		context.Background(),
@@ -144,7 +149,7 @@ func TestServiceCreate_UnsupportedType(t *testing.T) {
 
 func TestServiceCreate_PlanWithPlanID(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	planID := int64(10)
 
@@ -166,7 +171,7 @@ func TestServiceCreate_PlanWithPlanID(t *testing.T) {
 
 func TestServiceCreate_OneTimeServiceCannotReferencePlan(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	planID := int64(10)
 
@@ -191,7 +196,7 @@ func TestServiceCreate_OneTimeServiceCannotReferencePlan(t *testing.T) {
 
 func TestServiceCreate_ProductCannotReferencePlan(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	planID := int64(10)
 
@@ -216,7 +221,7 @@ func TestServiceCreate_ProductCannotReferencePlan(t *testing.T) {
 
 func TestServiceGetByID_ValidatesID(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.GetByID(
 		context.Background(),
@@ -243,7 +248,7 @@ func TestServiceGetByID(t *testing.T) {
 		itemByID: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	item, err := service.GetByID(
 		context.Background(),
@@ -259,7 +264,7 @@ func TestServiceGetByID_ReturnsNotFound(t *testing.T) {
 		getByIDErr: itemrepo.ErrPurchasableItemNotFound,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.GetByID(
 		context.Background(),
@@ -275,7 +280,7 @@ func TestServiceGetByID_ReturnsNotFound(t *testing.T) {
 
 func TestServiceGetByCode_ValidatesCode(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.GetByCode(
 		context.Background(),
@@ -298,7 +303,7 @@ func TestServiceGetByCode(t *testing.T) {
 		itemByCode: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	item, err := service.GetByCode(
 		context.Background(),
@@ -314,7 +319,7 @@ func TestServiceGetByCode_ReturnsNotFound(t *testing.T) {
 		getByCodeErr: itemrepo.ErrPurchasableItemNotFound,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.GetByCode(
 		context.Background(),
@@ -330,7 +335,7 @@ func TestServiceGetByCode_ReturnsNotFound(t *testing.T) {
 
 func TestServiceGetByPlanID_ValidatesID(t *testing.T) {
 	repo := &mockRepository{}
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.GetByPlanID(
 		context.Background(),
@@ -361,7 +366,7 @@ func TestServiceGetByPlanID(t *testing.T) {
 		itemByPlan: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	item, err := service.GetByPlanID(
 		context.Background(),
@@ -377,7 +382,7 @@ func TestServiceGetByPlanID_ReturnsNotFound(t *testing.T) {
 		getByPlanErr: itemrepo.ErrPurchasableItemNotFound,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	_, err := service.GetByPlanID(
 		context.Background(),
@@ -417,7 +422,7 @@ func TestServiceListAll(t *testing.T) {
 		items: expected,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	items, err := service.ListAll(
 		context.Background(),
@@ -435,7 +440,7 @@ func TestServiceListAll_RepositoryError(t *testing.T) {
 		listErr: repoErr,
 	}
 
-	service := NewService(nil, repo)
+	service := NewService(repo)
 
 	items, err := service.ListAll(
 		context.Background(),
@@ -448,7 +453,7 @@ func TestServiceListAll_RepositoryError(t *testing.T) {
 func TestServiceCreate_RepositoryError(t *testing.T) {
 	// Create owns its transaction in the service.
 	// Repository error propagation is covered by integration tests
-	// because this unit-test style intentionally uses NewService(nil, repo).
+	// because this unit-test style intentionally uses NewService(repo).
 	repoErr := errors.New("database error")
 
 	repo := &mockRepository{

@@ -125,12 +125,12 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
 
 	itemRepo := itemrepo.NewPostgresRepository(cluster.DBPool)
-	itemSvc := itemservice.NewService(cluster.DBPool, itemRepo)
+	itemSvc := itemservice.NewService(itemRepo)
 
 	planRepo := planrepo.NewPostgresRepository(cluster.DBPool)
-	planSvc := planservice.NewService(cluster.DBPool, planRepo, itemRepo)
+	planSvc := planservice.NewService(planRepo, itemRepo)
 	tariffRepo := tariffrepo.NewPostgresRepository(cluster.DBPool)
-	tariffSvc := tariffservice.NewService(cluster.DBPool, tariffRepo)
+	tariffSvc := tariffservice.NewService(tariffRepo)
 
 	subscriptionRepo := subscriptionrepo.New(cluster.DBPool)
 

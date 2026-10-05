@@ -23,6 +23,8 @@ type DBTX interface {
 }
 
 type Repository interface {
+	Pool() *pgxpool.Pool
+
 	Create(
 		ctx context.Context,
 		db DBTX,
@@ -57,6 +59,10 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{
 		pool: pool,
 	}
+}
+
+func (r *PostgresRepository) Pool() *pgxpool.Pool {
+	return r.pool
 }
 
 func (r *PostgresRepository) getQuerier(db DBTX) *sqlcgen.Queries {

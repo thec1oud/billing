@@ -158,13 +158,13 @@ func run() error {
 	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
 
 	itemRepo := itemrepo.NewPostgresRepository(deps.Pool)
-	itemSvc := itemservice.NewService(deps.Pool, itemRepo)
+	itemSvc := itemservice.NewService(itemRepo)
 
 	planRepo := planrepo.NewPostgresRepository(deps.Pool)
-	planSvc := planservice.NewService(deps.Pool, planRepo, itemRepo)
+	planSvc := planservice.NewService(planRepo, itemRepo)
 
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
-	tariffSvc := tariffservice.NewService(deps.Pool, tariffRepo)
+	tariffSvc := tariffservice.NewService(tariffRepo)
 
 	subscriptionRepo := subscriptionrepo.New(deps.Pool)
 	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)

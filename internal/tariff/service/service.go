@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/thec1oud/billing/internal/shared/money"
 	tariffmodel "github.com/thec1oud/billing/internal/tariff/model"
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
@@ -39,16 +37,13 @@ const (
 )
 
 type Service struct {
-	db         *pgxpool.Pool
 	repository tariffrepo.Repository
 }
 
 func NewService(
-	db *pgxpool.Pool,
 	repository tariffrepo.Repository,
 ) *Service {
 	return &Service{
-		db:         db,
 		repository: repository,
 	}
 }
@@ -100,7 +95,7 @@ func (s *Service) CreateTariff(
 		)
 	}
 
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.repository.Pool().Begin(ctx)
 	if err != nil {
 		return Tariff{}, fmt.Errorf(
 			"begin transaction: %w",

@@ -144,7 +144,7 @@ func (t Tariff) Validate() error {
 
 	switch t.TariffTypeCode {
 	case TariffTypePerUnit:
-		if !t.QuantityUnit.Valid() {
+		if t.QuantityUnit != "" && !t.QuantityUnit.Valid() {
 			return fmt.Errorf(
 				"invalid quantity unit %q for per-unit tariff",
 				t.QuantityUnit,
@@ -243,7 +243,7 @@ func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 		return t.Amount, nil
 
 	case TariffTypePerUnit:
-		if qty.Unit != t.QuantityUnit {
+		if t.QuantityUnit != "" && qty.Unit != t.QuantityUnit {
 			return money.Money{}, fmt.Errorf(
 				"quantity unit %s does not match tariff unit %s",
 				qty.Unit,
@@ -254,14 +254,15 @@ func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 		return t.Amount.MultiplyByScalar(qty.Value)
 
 	case TariffTypeTieredUsage:
-		if t.TierStrategy != TierStrategyGraduated {
+		switch t.TierStrategy {
+		case TierStrategyGraduated, TierStrategyVolume:
+			return t.calculateTieredUsageCharge(qty)
+		default:
 			return money.Money{}, fmt.Errorf(
 				"charge calculation for tier strategy %s is not implemented",
 				t.TierStrategy,
 			)
 		}
-
-		return t.calculateGraduatedCharge(qty)
 
 	default:
 		return money.Money{}, fmt.Errorf(
@@ -271,7 +272,7 @@ func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 	}
 }
 
-func (t Tariff) calculateGraduatedCharge(
+func (t Tariff) calculateTieredUsageCharge(
 	qty Quantity,
 ) (money.Money, error) {
 	if len(t.Tiers) == 0 {
