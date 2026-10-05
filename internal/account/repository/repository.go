@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/account/model"
+	"github.com/thec1oud/billing/internal/ppi/adapters"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
@@ -124,9 +126,16 @@ func (r *Repository) AddPaymentMethod(
 		return fmt.Errorf("clear default payment method: %w", err)
 	}
 
+	providerCode, paymentTypeCode, err := resolvePaymentMethodDetails(reference)
+	if err != nil {
+		return fmt.Errorf("resolve payment method details: %w", err)
+	}
+
 	params := sqlcgen.CreatePaymentMethodParams{
-		AccountID:         accountID,
-		ProviderReference: reference,
+		AccountID:           accountID,
+		PaymentProviderCode: providerCode,
+		ProviderReference:   reference,
+		PaymentTypeCode:     paymentTypeCode,
 	}
 
 	if err := sqlcgen.New(db).CreatePaymentMethod(ctx, params); err != nil {
@@ -151,6 +160,28 @@ func createParams(in model.CreateInput) sqlcgen.CreateAccountParams {
 		BillingAddress:   defaultJSON(in.BillingAddress),
 		ComplianceFlags:  defaultJSON(in.ComplianceFlags),
 		Metadata:         defaultJSON(in.Metadata),
+	}
+}
+
+func resolvePaymentMethodDetails(reference string) (string, string, error) {
+	method, ok := adapters.MockPaymentMethods[reference]
+	if !ok {
+		return "", "", errors.New("payment method not found")
+	}
+
+	providerCode := strings.TrimSpace(method.ProviderID)
+	providerCode = strings.TrimPrefix(providerCode, "prov_")
+	if providerCode == "" {
+		providerCode = "fake"
+	}
+
+	switch strings.ToUpper(strings.TrimSpace(string(method.MethodType))) {
+	case "CARD":
+		return providerCode, "card", nil
+	case "MOBILE_MONEY":
+		return providerCode, "mobile_money", nil
+	default:
+		return "", "", fmt.Errorf("unsupported payment method type %q", method.MethodType)
 	}
 }
 
