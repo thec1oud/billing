@@ -101,7 +101,14 @@ func (s *Service) CreateDraftInvoice(
 		"account_id": accountID,
 		"currency":   currency,
 	})
-	_, err = s.smEngine.CreateInstance(ctx, sm_model.MachineType(statemachine.InvoiceMachineType), "invoice", fmt.Sprintf("%d", invoiceID), initialContext)
+	_, err = s.smEngine.CreateInstance(
+		ctx,
+		sm_model.MachineType(statemachine.InvoiceMachineType),
+		"invoice",
+		fmt.Sprintf("%d", invoiceID),
+		initialContext,
+		engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the invoice row and event
+	)
 	if err != nil {
 		return model.Invoice{}, fmt.Errorf("failed to create state machine instance: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
@@ -35,6 +36,7 @@ func WithEventActor(actor eventmodel.Actor) FireOption {
 
 type instanceOptions struct {
 	triggeredBy string
+	tx          sqlcgen.DBTX // optional: share caller's transaction
 }
 
 // InstanceOption configures one CreateInstance() call.
@@ -43,6 +45,14 @@ type InstanceOption func(*instanceOptions)
 // WithCreatedBy records who/what created this instance in the audit trail.
 func WithCreatedBy(who string) InstanceOption {
 	return func(o *instanceOptions) { o.triggeredBy = who }
+}
+
+// WithTx makes CreateInstance run inside an existing transaction supplied by
+// the caller instead of opening its own. The caller is responsible for
+// committing or rolling back that transaction — CreateInstance will not call
+// Commit or Rollback on it.
+func WithTx(tx sqlcgen.DBTX) InstanceOption {
+	return func(o *instanceOptions) { o.tx = tx }
 }
 
 // CreateInstance creates a new instance against the currently active definition
@@ -70,11 +80,22 @@ func (e *Engine) CreateInstance(
 		return model.Instance{}, err
 	}
 
-	tx, err := e.pool.Begin(ctx)
-	if err != nil {
-		return model.Instance{}, fmt.Errorf("begin transaction: %w", err)
+	// Use the caller-supplied transaction when provided; otherwise open one.
+	// In the injected-tx case the caller owns commit/rollback — we must not
+	// touch it here so that all work stays in the caller's atomic unit.
+	var tx sqlcgen.DBTX
+	var ownedTx pgx.Tx // non-nil only when we opened the transaction ourselves
+	if o.tx != nil {
+		tx = o.tx
+	} else {
+		var err error
+		ownedTx, err = e.pool.Begin(ctx)
+		if err != nil {
+			return model.Instance{}, fmt.Errorf("begin transaction: %w", err)
+		}
+		defer ownedTx.Rollback(ctx) //nolint:errcheck
+		tx = ownedTx
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
 
 	//nolint:lll // Kept together for readability.
 	instance, err := e.repo.CreateInstance(ctx, tx, def.Meta.DefinitionID, machineType, subjectType, subjectID, def.Meta.InitialState, initialContext)
@@ -127,8 +148,12 @@ func (e *Engine) CreateInstance(
 		return model.Instance{}, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return model.Instance{}, fmt.Errorf("commit create instance: %w", err)
+	// Only commit when we own the transaction. If the caller injected their tx,
+	// they are responsible for committing it after all their work is done.
+	if ownedTx != nil {
+		if err := ownedTx.Commit(ctx); err != nil {
+			return model.Instance{}, fmt.Errorf("commit create instance: %w", err)
+		}
 	}
 
 	instance.Context = ec.Context
