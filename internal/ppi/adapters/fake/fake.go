@@ -98,6 +98,31 @@ func (a *FakeAdapter) ChargePaymentMethod(
 	}, nil
 }
 
+func (a *FakeAdapter) VerifyPayment(
+	ctx context.Context,
+	providerCode string,
+	internalTxID string,
+	providerTxID *string,
+) (ppi.ChargeResult, error) {
+	// For the fake adapter, we just assume any verification for a known internalTxID succeeds.
+	resBody, _ := json.Marshal(map[string]string{
+		"status": "SUCCESS",
+		"tx_ref": internalTxID,
+	})
+
+	var pRef string
+	if providerTxID != nil {
+		pRef = *providerTxID
+	}
+
+	return ppi.ChargeResult{
+		Status:            ppi.ChargeStatusSuccess,
+		IdempotencyKey:    internalTxID,
+		ProviderReference: pRef,
+		RawResponse:       resBody,
+	}, nil
+}
+
 func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload, error) {
 	if r == nil || r.Body == nil {
 		return ppi.ProviderWebhookPayload{}, errors.New("empty request body")

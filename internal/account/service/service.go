@@ -85,7 +85,14 @@ func (s *Service) Create(
 	initialContext, _ := json.Marshal(map[string]any{
 		"account_id": result.AccountID,
 	})
-	_, err = s.smEngine.CreateInstance(ctx, sm_model.MachineType(statemachine.AccountMachineType), "account", fmt.Sprintf("%d", result.AccountID), initialContext)
+	_, err = s.smEngine.CreateInstance(
+		ctx,
+		sm_model.MachineType(statemachine.AccountMachineType),
+		"account",
+		fmt.Sprintf("%d", result.AccountID),
+		initialContext,
+		engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the account row and event
+	)
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to create state machine instance: %w", err)
 	}

@@ -14,7 +14,6 @@ import (
 	"github.com/thec1oud/billing/internal/receipt/model"
 )
 
-var log = logger.ForComponent("receipt_delivery")
 
 type DeliveryService interface {
 	Deliver(ctx context.Context, payload model.ReceiptPayload) error
@@ -23,12 +22,14 @@ type DeliveryService interface {
 type webhookDeliveryService struct {
 	cfg        *config.Config
 	httpClient *http.Client
+	log        *slog.Logger
 }
 
 func NewDeliveryService(cfg *config.Config) DeliveryService {
 	return &webhookDeliveryService{
-		cfg: cfg,
+		cfg:        cfg,
 		httpClient: &http.Client{},
+		log:        logger.ForComponent("receipt_delivery"),
 	}
 }
 
@@ -55,7 +56,7 @@ func (s *webhookDeliveryService) Deliver(ctx context.Context, payload model.Rece
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := s.httpClient.Do(req)
-		
+
 		if err == nil {
 			resp.Body.Close() // Safe to close here inside loop
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -76,11 +77,16 @@ func (s *webhookDeliveryService) Deliver(ctx context.Context, payload model.Rece
 		}
 
 		delay := baseDelay * time.Duration(1<<attempt) // 1s, 2s, 4s...
-		
+
 		if err != nil {
-			log.Warn("Webhook request failed, retrying", slog.Int("attempt", attempt+1), slog.Duration("delay", delay), logger.Err(err))
+			s.log.Warn("Webhook request failed, retrying", slog.Int("attempt", attempt+1), slog.Duration("delay", delay), logger.Err(err))
 		} else {
-			log.Warn("Webhook returned failure status, retrying", slog.Int("attempt", attempt+1), slog.Duration("delay", delay), slog.Int("status", resp.StatusCode))
+			s.log.Warn(
+				"Webhook returned failure status, retrying",
+				slog.Int("attempt", attempt+1),
+				slog.Duration("delay", delay),
+				slog.Int("status", resp.StatusCode),
+			)
 		}
 
 		select {

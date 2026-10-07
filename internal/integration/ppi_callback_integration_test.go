@@ -24,7 +24,6 @@ import (
 	"github.com/thec1oud/billing/internal/shared/testutil"
 )
 
-var log = logger.ForComponent("integration_test")
 
 func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	if testing.Short() {
@@ -33,6 +32,8 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+
+	log := logger.ForComponent("integration_test")
 
 	log.Info("🚀 [1/5] Spinning up Postgres 16 & RabbitMQ Testcontainers...")
 

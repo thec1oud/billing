@@ -3,6 +3,7 @@ package subscriber
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -13,12 +14,11 @@ import (
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 )
 
-var log = logger.ForComponent("invoice_subscriber")
-
 type InvoiceSubscriber struct {
 	db         *pgxpool.Pool
 	invoiceSvc *invoicesvc.Service
 	attemptSvc *attemptsvc.Service
+	log        *slog.Logger
 }
 
 func NewInvoiceSubscriber(
@@ -30,6 +30,7 @@ func NewInvoiceSubscriber(
 		db:         db,
 		invoiceSvc: invoiceSvc,
 		attemptSvc: attemptSvc,
+		log:        logger.ForComponent("invoice_subscriber"),
 	}
 }
 
@@ -43,7 +44,7 @@ func (s *InvoiceSubscriber) HandlePaymentWebhook(ctx context.Context, payload pp
 	// 1. Find the PaymentAttempt to get the associated InvoiceID
 	attempt, err := s.attemptSvc.GetAttemptByInternalTxID(ctx, s.db, payload.InternalTxID)
 	if err != nil {
-		log.Error("Failed to fetch payment attempt for webhook", logger.Err(err))
+		s.log.Error("Failed to fetch payment attempt for webhook", logger.Err(err))
 		return fmt.Errorf("fetch payment attempt: %w", err)
 	}
 
@@ -62,10 +63,10 @@ func (s *InvoiceSubscriber) HandlePaymentWebhook(ctx context.Context, payload pp
 		payload.OccurredAt,
 	)
 	if err != nil {
-		log.Error("Failed to trigger PayInvoice transition", logger.Err(err))
+		s.log.Error("Failed to trigger PayInvoice transition", logger.Err(err))
 		return fmt.Errorf("trigger invoice payment: %w", err)
 	}
 
-	log.Info("Successfully triggered invoice payment via webhook", "invoice_id", attempt.InvoiceID)
+	s.log.Info("Successfully triggered invoice payment via webhook", slog.Int64("invoice_id", attempt.InvoiceID))
 	return nil
 }

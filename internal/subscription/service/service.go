@@ -124,7 +124,14 @@ func (s *Service) Create(
 	}
 	if s.smEngine != nil {
 		initialContext, _ := json.Marshal(map[string]any{"subscription_id": created.SubscriptionID, "status": created.Status})
-		if _, err := s.smEngine.CreateInstance(ctx, sm_model.MachineType("subscription_lifecycle"), "subscription", fmt.Sprintf("%d", created.SubscriptionID), initialContext); err != nil {
+		if _, err := s.smEngine.CreateInstance(
+			ctx,
+			sm_model.MachineType("subscription_lifecycle"),
+			"subscription",
+			fmt.Sprintf("%d", created.SubscriptionID),
+			initialContext,
+			sm_engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the subscription row and event
+		); err != nil {
 			return model.Subscription{}, fmt.Errorf("create subscription state machine instance: %w", err)
 		}
 	}
