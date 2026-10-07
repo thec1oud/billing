@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
@@ -9,14 +10,13 @@ import (
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 )
 
-var log = logger.ForComponent("purchasable_item_handler")
-
 type PurchasableItemService interface {
 	ListAll(ctx context.Context) ([]itemmodel.PurchasableItem, error)
 }
 
 type PurchasableItemHandler struct {
 	svc PurchasableItemService
+	log *slog.Logger
 }
 
 func NewPurchasableItemHandler(
@@ -24,6 +24,7 @@ func NewPurchasableItemHandler(
 ) *PurchasableItemHandler {
 	return &PurchasableItemHandler{
 		svc: svc,
+		log: logger.ForComponent("purchasable_item_handler"),
 	}
 }
 
@@ -37,7 +38,7 @@ func (h *PurchasableItemHandler) HandleList(
 ) {
 	items, err := h.svc.ListAll(r.Context())
 	if err != nil {
-		log.Error(
+		h.log.Error(
 			"Failed to list purchasable items",
 			logger.Err(err),
 		)

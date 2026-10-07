@@ -15,7 +15,6 @@ import (
 	"github.com/thec1oud/billing/internal/infra/storage"
 )
 
-var log = logger.ForComponent("infra_container")
 
 type Dependencies struct {
 	DB     *pgx.Conn     // single connection, used for migrations
@@ -25,6 +24,7 @@ type Dependencies struct {
 }
 
 func InitDependencies(ctx context.Context, cfg *config.Config) (*Dependencies, error) {
+	log := logger.ForComponent("infra_container")
 	log.Info("Attempting to connect to PostgreSQL...", slog.String("host", cfg.DBHost), slog.String("port", cfg.DBPort))
 	dbConn, err := storage.NewPostgresConnection(ctx, cfg)
 	if err != nil {

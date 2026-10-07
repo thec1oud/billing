@@ -11,7 +11,6 @@ import (
 	"github.com/thec1oud/billing/internal/infra/logger"
 )
 
-var log = logger.ForComponent("infra_messaging")
 
 const (
 	DefaultExchangeName = "billing.events"
@@ -53,6 +52,7 @@ type RabbitBroker struct {
 	wg     sync.WaitGroup     // WaitGroup tracking all consumer background goroutines
 	ctx    context.Context    // Parent lifecycle context
 	cancel context.CancelFunc // Cancellation trigger for graceful shutdown
+	log    *slog.Logger
 }
 
 func NewRabbitBroker(conn *amqp091.Connection, opts ...Option) (*RabbitBroker, error) {
@@ -69,6 +69,7 @@ func NewRabbitBroker(conn *amqp091.Connection, opts ...Option) (*RabbitBroker, e
 		dlqName:      DefaultDLQName,
 		ctx:          ctx,
 		cancel:       cancel,
+		log:          logger.ForComponent("infra_messaging"),
 	}
 
 	for _, opt := range opts {
@@ -138,7 +139,7 @@ func (b *RabbitBroker) InitTopology(ctx context.Context) error {
 		return fmt.Errorf("failed to bind dlq %s to dlx %s: %w", b.dlqName, b.dlxName, err)
 	}
 
-	log.Info("RabbitMQ messaging topology initialized successfully",
+	b.log.Info("RabbitMQ messaging topology initialized successfully",
 		slog.String("exchange", b.exchangeName),
 		slog.String("dlx", b.dlxName),
 		slog.String("dlq", b.dlqName),
@@ -265,20 +266,20 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		for {
 			select {
 			case <-parentCtx.Done():
-				log.Info("Stopping consumer group (parent context done)", slog.String("queue", queueName))
+				b.log.Info("Stopping consumer group (parent context done)", slog.String("queue", queueName))
 				return
 			case <-b.ctx.Done():
-				log.Info("Stopping consumer group (broker closed)", slog.String("queue", queueName))
+				b.log.Info("Stopping consumer group (broker closed)", slog.String("queue", queueName))
 				return
 			case d, ok := <-deliveries:
 				if !ok {
-					log.Warn("Consumer delivery channel closed", slog.String("queue", queueName))
+					b.log.Warn("Consumer delivery channel closed", slog.String("queue", queueName))
 					return
 				}
 
 				// Execute module handler in isolated context
 				if err := handler(parentCtx, d.Body); err != nil {
-					log.Error("Consumer handler failed; sending message to DLQ", slog.String("queue", queueName), logger.Err(err))
+					b.log.Error("Consumer handler failed; sending message to DLQ", slog.String("queue", queueName), logger.Err(err))
 					// Reject message without requeue -> routes to x-dead-letter-exchange (billing.dlq)
 					_ = d.Nack(false, false)
 				} else {
@@ -288,7 +289,7 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		}
 	}()
 
-	log.Info("Registered consumer group successfully", slog.String("queue", queueName), slog.Any("routingKeys", routingKeys))
+	b.log.Info("Registered consumer group successfully", slog.String("queue", queueName), slog.Any("routingKeys", routingKeys))
 	return nil
 }
 

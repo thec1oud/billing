@@ -16,7 +16,6 @@ import (
 	"github.com/thec1oud/billing/internal/receipt/service"
 )
 
-var log = logger.ForComponent("receipt_worker")
 
 // InvoiceFetcher defines the interface for fetching invoices, decoupling the receipt module from the invoice repository.
 type InvoiceFetcher interface {
@@ -29,6 +28,7 @@ type Consumer struct {
 	generator      service.GeneratorService
 	delivery       service.DeliveryService
 	storage        storage.ObjectStorage
+	log            *slog.Logger
 }
 
 func NewConsumer(
@@ -44,6 +44,7 @@ func NewConsumer(
 		generator:      generator,
 		delivery:       delivery,
 		storage:        storage,
+		log:            logger.ForComponent("receipt_worker"),
 	}
 }
 
@@ -76,7 +77,7 @@ func (c *Consumer) handleInvoicePaid(ctx context.Context, msg []byte) error {
 	}
 	invoiceID := int64(invoiceIDFloat)
 
-	log.Info("Receipt worker received invoice.paid event", slog.Int64("invoice_id", invoiceID))
+	c.log.Info("Receipt worker received invoice.paid event", slog.Int64("invoice_id", invoiceID))
 
 	// 2. Fetch the invoice details
 	invoice, err := c.invoiceFetcher.Get(ctx, invoiceID)
@@ -110,10 +111,10 @@ func (c *Consumer) handleInvoicePaid(ctx context.Context, msg []byte) error {
 
 	err = c.delivery.Deliver(ctx, receiptPayload)
 	if err != nil {
-		log.Error("Failed to deliver receipt webhook", slog.String("receipt_id", receiptID), logger.Err(err))
+		c.log.Error("Failed to deliver receipt webhook", slog.String("receipt_id", receiptID), logger.Err(err))
 		return err // Returning an error nacks the message, sending it to DLQ for retry/inspection
 	}
 
-	log.Info("Successfully generated and delivered receipt", slog.String("receipt_id", receiptID), slog.Int64("invoice_id", invoiceID))
+	c.log.Info("Successfully generated and delivered receipt", slog.String("receipt_id", receiptID), slog.Int64("invoice_id", invoiceID))
 	return nil
 }

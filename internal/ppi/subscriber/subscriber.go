@@ -11,7 +11,6 @@ import (
 	"github.com/thec1oud/billing/internal/ppi"
 )
 
-var log = logger.ForComponent("ppi_subscriber")
 
 type WebhookSubscriberFunc func(ctx context.Context, payload ppi.ProviderWebhookPayload) error
 
@@ -22,6 +21,7 @@ func RegisterModuleSubscriber(
 	routingKeys []string,
 	handler WebhookSubscriberFunc,
 ) error {
+	log := logger.ForComponent("ppi_subscriber")
 	if broker == nil {
 		return fmt.Errorf("broker is nil")
 	}

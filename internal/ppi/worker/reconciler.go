@@ -15,7 +15,6 @@ import (
 	ppisvc "github.com/thec1oud/billing/internal/ppi/service"
 )
 
-var log = logger.ForComponent("ppi_reconciler")
 
 // Config tunes the Reconciler's polling cadence and thresholds.
 type Config struct {
@@ -54,6 +53,7 @@ type Reconciler struct {
 	attemptSvc  *attemptsrv.Service
 	ppiSvc      *ppisvc.Service
 	cfg         Config
+	log         *slog.Logger
 
 	stopCh chan struct{}
 	doneCh chan struct{}
@@ -65,6 +65,7 @@ func NewReconciler(attemptRepo attemptrepo.Repository, attemptSvc *attemptsrv.Se
 		attemptSvc:  attemptSvc,
 		ppiSvc:      ppiSvc,
 		cfg:         cfg.withDefaults(),
+		log:         logger.ForComponent("ppi_reconciler"),
 		stopCh:      make(chan struct{}),
 		doneCh:      make(chan struct{}),
 	}
@@ -96,7 +97,7 @@ func (r *Reconciler) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := r.Tick(ctx); err != nil {
-				log.Error("reconciler sweep failed", logger.Err(err))
+				r.log.Error("reconciler sweep failed", logger.Err(err))
 			}
 		}
 	}
@@ -115,7 +116,7 @@ func (r *Reconciler) Tick(ctx context.Context) error {
 		return nil // Nothing to do
 	}
 
-	log.Info("Found stale pending payment attempts", slog.Int("count", len(attempts)))
+	r.log.Info("Found stale pending payment attempts", slog.Int("count", len(attempts)))
 
 	for _, attempt := range attempts {
 		r.reconcileAttempt(ctx, attempt)
@@ -125,18 +126,18 @@ func (r *Reconciler) Tick(ctx context.Context) error {
 }
 
 func (r *Reconciler) reconcileAttempt(ctx context.Context, attempt attemptmodel.PaymentAttempt) {
-	log.Info("Reconciling stale attempt", slog.Int64("attempt_id", attempt.AttemptID))
+	r.log.Info("Reconciling stale attempt", slog.Int64("attempt_id", attempt.AttemptID))
 
 	adapter, exists := r.ppiSvc.GetAdapter(attempt.ProviderCode)
 	if !exists {
-		log.Error("Provider adapter not found during reconciliation", slog.String("provider_code", attempt.ProviderCode))
+		r.log.Error("Provider adapter not found during reconciliation", slog.String("provider_code", attempt.ProviderCode))
 		return
 	}
 
 	res, err := adapter.VerifyPayment(ctx, attempt.ProviderCode, attempt.InternalTxID, attempt.ProviderTxID)
 
 	if err != nil {
-		log.Warn(
+		r.log.Warn(
 			"VerifyPayment encountered a system/network error; leaving attempt PENDING for next sweep",
 			slog.Int64("attempt_id", attempt.AttemptID),
 			logger.Err(err),
@@ -152,7 +153,7 @@ func (r *Reconciler) reconcileAttempt(ctx context.Context, attempt attemptmodel.
 		status = attemptmodel.StatusSuccess
 	case ppi.ChargeStatusPending:
 		// Still pending on provider side, wait for next sweep
-		log.Info("Attempt is still pending on provider side", slog.Int64("attempt_id", attempt.AttemptID))
+		r.log.Info("Attempt is still pending on provider side", slog.Int64("attempt_id", attempt.AttemptID))
 		return
 	}
 
@@ -169,8 +170,12 @@ func (r *Reconciler) reconcileAttempt(ctx context.Context, attempt attemptmodel.
 	})
 
 	if err != nil {
-		log.Error("Failed to update stale payment attempt", slog.Int64("attempt_id", attempt.AttemptID), logger.Err(err))
+		r.log.Error("Failed to update stale payment attempt", slog.Int64("attempt_id", attempt.AttemptID), logger.Err(err))
 	} else {
-		log.Info("Successfully reconciled stale attempt", slog.Int64("attempt_id", attempt.AttemptID), slog.String("new_status", string(status)))
+		r.log.Info(
+			"Successfully reconciled stale attempt",
+			slog.Int64("attempt_id", attempt.AttemptID),
+			slog.String("new_status", string(status)),
+		)
 	}
 }
