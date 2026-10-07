@@ -18,6 +18,7 @@ import (
 type fireOptions struct {
 	triggeredBy string
 	actor       *eventmodel.Actor
+	tx          sqlcgen.DBTX // optional: share caller's transaction
 }
 
 // FireOption configures one Fire() call.
@@ -32,6 +33,13 @@ func WithTriggeredBy(who string) FireOption {
 // EmitEventType is set. Defaults to an ActorTypeSystem actor if not supplied.
 func WithEventActor(actor eventmodel.Actor) FireOption {
 	return func(o *fireOptions) { o.actor = &actor }
+}
+
+// WithFireTx makes Fire run inside an existing transaction supplied by the
+// caller instead of opening its own. The caller is responsible for committing
+// or rolling back that transaction
+func WithFireTx(tx sqlcgen.DBTX) FireOption {
+	return func(o *fireOptions) { o.tx = tx }
 }
 
 type instanceOptions struct {
@@ -70,12 +78,14 @@ func (e *Engine) CreateInstance(
 		opt(&o)
 	}
 
-	active, err := e.repo.GetActiveDefinition(ctx, nil, machineType)
-	if err != nil {
-		return model.Instance{}, err
+	// Resolve the active definition using the caller's tx when available to
+	// avoid borrowing a second pool connection (which can deadlock under load).
+	// On a cache hit loadDefinition never touches the DB regardless of db arg.
+	var readDB sqlcgen.DBTX
+	if o.tx != nil {
+		readDB = o.tx
 	}
-
-	def, err := e.loadDefinition(ctx, active.DefinitionID)
+	active, err := e.repo.GetActiveDefinition(ctx, readDB, machineType)
 	if err != nil {
 		return model.Instance{}, err
 	}
@@ -95,6 +105,11 @@ func (e *Engine) CreateInstance(
 		}
 		defer ownedTx.Rollback(ctx) //nolint:errcheck
 		tx = ownedTx
+	}
+
+	def, err := e.loadDefinition(ctx, tx, active.DefinitionID)
+	if err != nil {
+		return model.Instance{}, err
 	}
 
 	//nolint:lll // Kept together for readability.
@@ -178,11 +193,22 @@ func (e *Engine) Fire(
 		opt(&o)
 	}
 
-	tx, err := e.pool.Begin(ctx)
-	if err != nil {
-		return model.FireResult{}, fmt.Errorf("begin transaction: %w", err)
+	// Use the caller-supplied transaction when provided; otherwise open one.
+	// In the injected-tx case the caller owns commit/rollback — Fire will not
+	// call Commit or Rollback on it, keeping all writes in one atomic unit.
+	var tx sqlcgen.DBTX
+	var ownedTx pgx.Tx
+	if o.tx != nil {
+		tx = o.tx
+	} else {
+		var err error
+		ownedTx, err = e.pool.Begin(ctx)
+		if err != nil {
+			return model.FireResult{}, fmt.Errorf("begin transaction: %w", err)
+		}
+		defer ownedTx.Rollback(ctx) //nolint:errcheck
+		tx = ownedTx
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
 
 	instance, err := e.repo.GetInstanceForUpdate(ctx, tx, instanceID)
 	if err != nil {
@@ -192,7 +218,7 @@ func (e *Engine) Fire(
 		return model.FireResult{}, model.ErrInstanceTerminal
 	}
 
-	def, err := e.loadDefinition(ctx, instance.DefinitionID)
+	def, err := e.loadDefinition(ctx, tx, instance.DefinitionID)
 	if err != nil {
 		return model.FireResult{}, err
 	}
@@ -289,8 +315,11 @@ func (e *Engine) Fire(
 		return model.FireResult{}, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return model.FireResult{}, fmt.Errorf("commit fire: %w", err)
+	// Only commit when we own the transaction.
+	if ownedTx != nil {
+		if err := ownedTx.Commit(ctx); err != nil {
+			return model.FireResult{}, fmt.Errorf("commit fire: %w", err)
+		}
 	}
 
 	return model.FireResult{
