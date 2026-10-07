@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -43,6 +44,7 @@ type Repository interface {
 		rawResponse json.RawMessage,
 	) error
 	ListByInvoiceID(ctx context.Context, db DBTX, invoiceID int64) ([]model.PaymentAttempt, error)
+	GetStalePendingAttempts(ctx context.Context, db DBTX, before time.Time, limit int32) ([]model.PaymentAttempt, error)
 	DeleteByAttemptID(ctx context.Context, db DBTX, attemptID int64) error
 }
 
@@ -195,6 +197,26 @@ func (r *PostgresRepository) ListByInvoiceID(ctx context.Context, db DBTX, invoi
 	rows, err := q.ListPaymentAttemptsByInvoiceID(ctx, invoiceID)
 	if err != nil {
 		return nil, fmt.Errorf("list payment attempts by invoice id: %w", err)
+	}
+
+	attempts := make([]model.PaymentAttempt, 0, len(rows))
+	for _, row := range rows {
+		attempts = append(attempts, r.mapRowToModel(sqlcgen.PaymentAttempt(row)))
+	}
+
+	return attempts, nil
+}
+
+//nolint:lll // Kept together for readability.
+func (r *PostgresRepository) GetStalePendingAttempts(ctx context.Context, db DBTX, before time.Time, limit int32) ([]model.PaymentAttempt, error) {
+	q := r.getQuerier(db)
+
+	rows, err := q.GetStalePendingAttempts(ctx, sqlcgen.GetStalePendingAttemptsParams{
+		UpdatedAt: before,
+		Limit:     limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get stale pending attempts: %w", err)
 	}
 
 	attempts := make([]model.PaymentAttempt, 0, len(rows))

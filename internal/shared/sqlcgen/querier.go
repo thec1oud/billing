@@ -55,6 +55,7 @@ type Querier interface {
 	GetPurchasableItemByCode(ctx context.Context, itemCode string) (PurchasableItem, error)
 	GetPurchasableItemByID(ctx context.Context, itemID int64) (PurchasableItem, error)
 	GetPurchasableItemByPlanID(ctx context.Context, planID pgtype.Int8) (PurchasableItem, error)
+	GetStalePendingAttempts(ctx context.Context, arg GetStalePendingAttemptsParams) ([]PaymentAttempt, error)
 	GetSubscription(ctx context.Context, subscriptionID int64) (GetSubscriptionRow, error)
 	GetTariffByCodeAndVersion(ctx context.Context, arg GetTariffByCodeAndVersionParams) (GetTariffByCodeAndVersionRow, error)
 	GetTariffByID(ctx context.Context, tariffID int64) (GetTariffByIDRow, error)

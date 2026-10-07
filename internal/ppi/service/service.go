@@ -68,6 +68,7 @@ func (s *Service) ChargePaymentMethod(
 	if err != nil {
 		return ppi.ChargeResult{}, fmt.Errorf("failed to begin transaction for charge: %w", err)
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	// 2. Create initial PENDING PaymentAttempt in DB transaction BEFORE calling provider
 	rawReq, _ := json.Marshal(map[string]any{
@@ -82,7 +83,6 @@ func (s *Service) ChargePaymentMethod(
 		RawRequest:   rawReq,
 	})
 	if err != nil {
-		tx.Rollback(ctx)
 		return ppi.ChargeResult{}, fmt.Errorf("failed to create payment attempt record in tx: %w", err)
 	}
 
@@ -103,15 +103,38 @@ func (s *Service) ChargePaymentMethod(
 
 	// 6. Handle provider failure: mark attempt as FAILED and surface the error
 	if adapterErr != nil || result.Status == ppi.ChargeStatusFailed {
-		_ = s.attemptSvc.UpdatePaymentAttemptResult(ctx, updateTx, attemptmodel.UpdatePaymentAttemptResultInput{
+		updateErr := s.attemptSvc.UpdatePaymentAttemptResult(ctx, updateTx, attemptmodel.UpdatePaymentAttemptResultInput{
 			AttemptID:   attempt.AttemptID,
 			Status:      attemptmodel.StatusFailed,
 			RawResponse: result.RawResponse,
 		})
-		_ = updateTx.Commit(ctx)
+
+		var commitErr error
+		if updateErr == nil {
+			commitErr = updateTx.Commit(ctx)
+		}
 
 		if adapterErr != nil {
+			if updateErr != nil {
+				return ppi.ChargeResult{}, fmt.Errorf(
+					"%w: %v (also failed to update attempt: %v)",
+					ErrProviderAdapterFailed, adapterErr, updateErr,
+				)
+			}
+			if commitErr != nil {
+				return ppi.ChargeResult{}, fmt.Errorf(
+					"%w: %v (also failed to commit attempt update: %v)",
+					ErrProviderAdapterFailed, adapterErr, commitErr,
+				)
+			}
 			return ppi.ChargeResult{}, fmt.Errorf("%w: %v", ErrProviderAdapterFailed, adapterErr)
+		}
+
+		if updateErr != nil {
+			return result, fmt.Errorf("failed to update payment attempt result to failed: %w", updateErr)
+		}
+		if commitErr != nil {
+			return result, fmt.Errorf("failed to commit failed payment attempt update: %w", commitErr)
 		}
 		return result, nil
 	}
@@ -130,12 +153,12 @@ func (s *Service) ChargePaymentMethod(
 		RawResponse:  result.RawResponse,
 	})
 	if err != nil {
-		return ppi.ChargeResult{}, fmt.Errorf("failed to update payment attempt result in tx: %w", err)
+		return result, fmt.Errorf("provider charge succeeded but failed to update attempt record in tx (needs reconciliation): %w", err)
 	}
 
 	// 7. Commit Update DB Transaction
 	if err := updateTx.Commit(ctx); err != nil {
-		return ppi.ChargeResult{}, fmt.Errorf("failed to commit payment attempt update transaction: %w", err)
+		return result, fmt.Errorf("provider charge succeeded but failed to commit attempt update transaction (needs reconciliation): %w", err)
 	}
 
 	return result, nil

@@ -110,7 +110,12 @@ type CreatePaymentMethodParams struct {
 }
 
 func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) error {
-	_, err := q.db.Exec(ctx, createPaymentMethod, arg.AccountID, arg.PaymentProviderCode, arg.ProviderReference, arg.PaymentTypeCode)
+	_, err := q.db.Exec(ctx, createPaymentMethod,
+		arg.AccountID,
+		arg.PaymentProviderCode,
+		arg.ProviderReference,
+		arg.PaymentTypeCode,
+	)
 	return err
 }
 
@@ -181,8 +186,8 @@ func (q *Queries) ListPaymentMethodReferences(ctx context.Context, accountID int
 
 const lockAccountForUpdate = `-- name: LockAccountForUpdate :one
 SELECT account_status_code
-FROM accounts 
-WHERE account_id = $1 
+FROM accounts
+WHERE account_id = $1
 FOR UPDATE
 `
 

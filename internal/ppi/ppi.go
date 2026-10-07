@@ -38,6 +38,12 @@ type ChargeProvider interface {
 		amount money.Money,
 		providerCode, idempotencyKey string,
 	) (ChargeResult, error)
+	VerifyPayment(
+		ctx context.Context,
+		providerCode string,
+		internalTxID string,
+		providerTxID *string,
+	) (ChargeResult, error)
 }
 
 type WebhookParser interface {
