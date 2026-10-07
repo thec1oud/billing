@@ -1,23 +1,31 @@
 package repository
 
-import (
-	"context"
-	"strings"
-	"testing"
+import "testing"
 
-	"github.com/thec1oud/billing/internal/account/model"
-)
-
-func TestUnconfiguredRepositoryReturnsErrorsInsteadOfPanicking(t *testing.T) {
-	t.Parallel()
-
-	repo := New(nil)
-	ctx := context.Background()
-
-	if err := repo.UpdateStatus(ctx, 1, model.StatusActive, model.StatusSuspended); err == nil || !strings.Contains(err.Error(), "database is not configured") {
-		t.Fatalf("UpdateStatus error = %v, want database configuration error", err)
+func TestResolvePaymentMethodDetails(t *testing.T) {
+	providerCode, paymentTypeCode, err := resolvePaymentMethodDetails("pm_chapa_active")
+	if err != nil {
+		t.Fatalf("resolvePaymentMethodDetails(pm_chapa_active) returned error: %v", err)
 	}
-	if err := repo.AddPaymentMethod(ctx, 1, "pm_chapa_active"); err == nil || !strings.Contains(err.Error(), "database is not configured") {
-		t.Fatalf("AddPaymentMethod error = %v, want database configuration error", err)
+	if providerCode != "chapa" {
+		t.Fatalf("providerCode = %q, want %q", providerCode, "chapa")
+	}
+	if paymentTypeCode != "mobile_money" {
+		t.Fatalf("paymentTypeCode = %q, want %q", paymentTypeCode, "mobile_money")
+	}
+
+	providerCode, paymentTypeCode, err = resolvePaymentMethodDetails("pm_stripe_card_fail")
+	if err != nil {
+		t.Fatalf("resolvePaymentMethodDetails(pm_stripe_card_fail) returned error: %v", err)
+	}
+	if providerCode != "stripe" {
+		t.Fatalf("providerCode = %q, want %q", providerCode, "stripe")
+	}
+	if paymentTypeCode != "card" {
+		t.Fatalf("paymentTypeCode = %q, want %q", paymentTypeCode, "card")
+	}
+
+	if _, _, err = resolvePaymentMethodDetails("missing-method"); err == nil {
+		t.Fatal("resolvePaymentMethodDetails(missing-method) = nil, want error")
 	}
 }

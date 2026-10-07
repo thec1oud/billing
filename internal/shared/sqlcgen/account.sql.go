@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearDefaultPaymentMethod = `-- name: ClearDefaultPaymentMethod :exec
+UPDATE payment_methods
+SET is_default = FALSE
+WHERE account_id = $1 AND is_default
+`
+
+func (q *Queries) ClearDefaultPaymentMethod(ctx context.Context, accountID int64) error {
+	_, err := q.db.Exec(ctx, clearDefaultPaymentMethod, accountID)
+	return err
+}
+
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (
     external_id, account_status_code, currency, timezone, locale, net_terms,
@@ -80,17 +91,31 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (C
 }
 
 const createPaymentMethod = `-- name: CreatePaymentMethod :exec
-INSERT INTO payment_methods (account_id, payment_provider_code, provider_reference, payment_type_code, is_default, payment_status_code)
-VALUES ($1, 'chapa', $2, 'mobile_money', TRUE, 'ACTIVE')
+INSERT INTO payment_methods (
+    account_id,
+    payment_provider_code,
+    provider_reference,
+    payment_type_code,
+    is_default,
+    payment_status_code
+)
+VALUES ($1, $2, $3, $4, TRUE, 'ACTIVE')
 `
 
 type CreatePaymentMethodParams struct {
-	AccountID         int64  `json:"account_id"`
-	ProviderReference string `json:"provider_reference"`
+	AccountID           int64  `json:"account_id"`
+	PaymentProviderCode string `json:"payment_provider_code"`
+	ProviderReference   string `json:"provider_reference"`
+	PaymentTypeCode     string `json:"payment_type_code"`
 }
 
 func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) error {
-	_, err := q.db.Exec(ctx, createPaymentMethod, arg.AccountID, arg.ProviderReference)
+	_, err := q.db.Exec(ctx, createPaymentMethod,
+		arg.AccountID,
+		arg.PaymentProviderCode,
+		arg.ProviderReference,
+		arg.PaymentTypeCode,
+	)
 	return err
 }
 
@@ -159,6 +184,20 @@ func (q *Queries) ListPaymentMethodReferences(ctx context.Context, accountID int
 	return items, nil
 }
 
+const lockAccountForUpdate = `-- name: LockAccountForUpdate :one
+SELECT account_status_code
+FROM accounts
+WHERE account_id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockAccountForUpdate(ctx context.Context, accountID int64) (string, error) {
+	row := q.db.QueryRow(ctx, lockAccountForUpdate, accountID)
+	var account_status_code string
+	err := row.Scan(&account_status_code)
+	return account_status_code, err
+}
+
 const updateAccountStatus = `-- name: UpdateAccountStatus :exec
 UPDATE accounts SET account_status_code = $2 WHERE account_id = $1
 `
@@ -171,4 +210,24 @@ type UpdateAccountStatusParams struct {
 func (q *Queries) UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error {
 	_, err := q.db.Exec(ctx, updateAccountStatus, arg.AccountID, arg.AccountStatusCode)
 	return err
+}
+
+const updateAccountStatusFrom = `-- name: UpdateAccountStatusFrom :execrows
+UPDATE accounts
+SET account_status_code = $3
+WHERE account_id = $1 AND account_status_code = $2
+`
+
+type UpdateAccountStatusFromParams struct {
+	AccountID           int64  `json:"account_id"`
+	AccountStatusCode   string `json:"account_status_code"`
+	AccountStatusCode_2 string `json:"account_status_code_2"`
+}
+
+func (q *Queries) UpdateAccountStatusFrom(ctx context.Context, arg UpdateAccountStatusFromParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateAccountStatusFrom, arg.AccountID, arg.AccountStatusCode, arg.AccountStatusCode_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

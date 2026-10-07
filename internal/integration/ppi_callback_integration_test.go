@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/thec1oud/billing/internal/infra/logger"
+	"github.com/thec1oud/billing/internal/infra/messaging"
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi"
@@ -17,14 +20,10 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
 	"github.com/thec1oud/billing/internal/ppi/subscriber"
-	"github.com/thec1oud/billing/internal/infra/messaging"
-	"github.com/thec1oud/billing/internal/infra/logger"
-	"log/slog"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 )
 
-var log = logger.ForComponent("integration_test")
 
 func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	if testing.Short() {
@@ -33,6 +32,8 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+
+	log := logger.ForComponent("integration_test")
 
 	log.Info("🚀 [1/5] Spinning up Postgres 16 & RabbitMQ Testcontainers...")
 
@@ -170,7 +171,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 
 	log.Info("📩 [4/5] Sending HTTP POST Webhook callback to /api/v1/webhooks/fake...")
 
-	webhookHandler.ServeHTTP(rec, req)
+	webhookHandler.HandleWebhook(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected HTTP 200 OK from webhook handler, got %d. Body: %s", rec.Code, rec.Body.String())

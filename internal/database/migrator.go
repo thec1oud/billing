@@ -11,15 +11,16 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/thec1oud/billing/internal/infra/logger"
 )
 
-var log = logger.ForComponent("database_migrator")
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
 func RunMigrations(conn *pgx.Conn) error {
+	log := logger.ForComponent("database_migrator")
 	sqlDB := stdlib.OpenDB(*conn.Config())
 	defer func() {
 		if err := sqlDB.Close(); err != nil {

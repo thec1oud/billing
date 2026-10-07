@@ -36,6 +36,16 @@ type Config struct {
 	RabbitMQUser string
 	RabbitMQPass string
 
+	// S3 / Object Storage
+	S3Endpoint  string
+	S3Region    string
+	S3Bucket    string
+	S3AccessKey string
+	S3SecretKey string
+
+	// Webhooks
+	ReceiptWebhookURL string
+
 	// Logging
 	LogTargets []LogTarget
 }
@@ -132,6 +142,16 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// S3 / Object Storage
+	s3Endpoint := os.Getenv("S3_ENDPOINT")
+	s3Region := os.Getenv("S3_REGION")
+	s3Bucket := os.Getenv("S3_BUCKET")
+	s3AccessKey := os.Getenv("S3_ACCESS_KEY")
+	s3SecretKey := os.Getenv("S3_SECRET_KEY")
+
+	// Webhooks
+	receiptWebhookURL := os.Getenv("RECEIPT_WEBHOOK_URL")
+
 	return &Config{
 		AppEnv:  appEnv,
 		AppPort: appPort,
@@ -150,5 +170,13 @@ func Load() (*Config, error) {
 		RabbitMQPort: rabbitMQPort,
 		RabbitMQUser: rabbitMQUser,
 		RabbitMQPass: rabbitMQPass,
+
+		S3Endpoint:  s3Endpoint,
+		S3Region:    s3Region,
+		S3Bucket:    s3Bucket,
+		S3AccessKey: s3AccessKey,
+		S3SecretKey: s3SecretKey,
+
+		ReceiptWebhookURL: receiptWebhookURL,
 	}, nil
 }
