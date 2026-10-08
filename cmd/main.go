@@ -144,8 +144,14 @@ func run() error {
 
 	//  Initialize PPI Webhook Repository & Service
 	ppiRepo := repository.NewPostgresRepository()
-	ppiAdapter := &ppiOutboxAdapter{smRepo: smRepository}
-	ppiService := service.NewService(deps.Pool, ppiRepo, paymentAttemptSvc, ppiAdapter)
+	ppiService := service.NewService(
+		deps.Pool,
+		ppiRepo,
+		paymentAttemptSvc,
+		func(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error {
+			return smRepository.InsertOutboxRow(ctx, tx, uuid.New(), nil, nil, actionName, params)
+		},
+	)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
 	publishWebhookAction := worker.NewPublishWebhookAction(rabbitBroker)
@@ -288,12 +294,4 @@ func SeedCatalog(
 
 	log.Info("Successfully seeded DB with reference catalog (tariffs, plans, items).")
 	return nil
-}
-
-type ppiOutboxAdapter struct {
-	smRepo *smRepo.PostgresRepository
-}
-
-func (a *ppiOutboxAdapter) EnqueueOutbox(ctx context.Context, db ppi.DBTX, actionName string, params json.RawMessage) error {
-	return a.smRepo.InsertOutboxRow(ctx, db, uuid.New(), nil, nil, actionName, params)
 }

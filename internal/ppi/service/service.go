@@ -22,15 +22,13 @@ var (
 	ErrProviderAdapterFailed = errors.New("provider adapter failed")
 )
 
-type OutboxEnqueuer interface {
-	EnqueueOutbox(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error
-}
+type OutboxEnqueuerFunc func(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error
 
 type Service struct {
 	db             ppi.DBTX
 	repo           *repository.PostgresRepository
 	attemptSvc     *attemptsrv.Service
-	outboxEnqueuer OutboxEnqueuer
+	outboxEnqueuer OutboxEnqueuerFunc
 	adapters       map[string]ppi.Provider
 }
 
@@ -38,7 +36,7 @@ func NewService(
 	db ppi.DBTX,
 	repo *repository.PostgresRepository,
 	attemptSvc *attemptsrv.Service,
-	outboxEnqueuer OutboxEnqueuer,
+	outboxEnqueuer OutboxEnqueuerFunc,
 ) *Service {
 	return &Service{
 		db:             db,
@@ -218,7 +216,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhoo
 			return false, fmt.Errorf("failed to marshal outbox payload: %w", err)
 		}
 
-		if err := s.outboxEnqueuer.EnqueueOutbox(ctx, tx, "PublishWebhook", params); err != nil {
+		if err := s.outboxEnqueuer(ctx, tx, "PublishWebhook", params); err != nil {
 			return false, fmt.Errorf("failed to enqueue outbox row: %w", err)
 		}
 	}
