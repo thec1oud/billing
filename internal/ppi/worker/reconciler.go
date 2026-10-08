@@ -17,7 +17,6 @@ import (
 	ppisvc "github.com/thec1oud/billing/internal/ppi/service"
 )
 
-
 // Config tunes the Reconciler's polling cadence and thresholds.
 type Config struct {
 	// Interval between reconciliation sweeps.

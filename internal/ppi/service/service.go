@@ -22,23 +22,30 @@ var (
 	ErrProviderAdapterFailed = errors.New("provider adapter failed")
 )
 
+type OutboxEnqueuer interface {
+	EnqueueOutbox(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error
+}
+
 type Service struct {
-	db         ppi.DBTX
-	repo       *repository.PostgresRepository
-	attemptSvc *attemptsrv.Service
-	adapters   map[string]ppi.Provider
+	db             ppi.DBTX
+	repo           *repository.PostgresRepository
+	attemptSvc     *attemptsrv.Service
+	outboxEnqueuer OutboxEnqueuer
+	adapters       map[string]ppi.Provider
 }
 
 func NewService(
 	db ppi.DBTX,
 	repo *repository.PostgresRepository,
 	attemptSvc *attemptsrv.Service,
+	outboxEnqueuer OutboxEnqueuer,
 ) *Service {
 	return &Service{
-		db:         db,
-		repo:       repo,
-		attemptSvc: attemptSvc,
-		adapters:   make(map[string]ppi.Provider),
+		db:             db,
+		repo:           repo,
+		attemptSvc:     attemptSvc,
+		outboxEnqueuer: outboxEnqueuer,
+		adapters:       make(map[string]ppi.Provider),
 	}
 }
 
@@ -171,22 +178,54 @@ func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhoo
 		return false, nil
 	}
 
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
 	// 1. Atomic Save Webhook Audit Record in DB
-	err := s.repo.SaveWebhook(ctx, s.db, payload)
+	err = s.repo.SaveWebhook(ctx, tx, payload)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Duplicate found (ON CONFLICT DO NOTHING returned no rows)
-			isPublished, checkErr := s.repo.GetWebhookPublishedStatus(ctx, s.db, payload.ProviderCode, payload.ProviderTxID)
+			isPublished, checkErr := s.repo.GetWebhookPublishedStatus(ctx, tx, payload.ProviderCode, payload.ProviderTxID)
 			if checkErr != nil {
 				return false, fmt.Errorf("idempotency check query failed for duplicate webhook: %w", checkErr)
 			}
-			if isPublished {
-				return true, nil
-			}
-			return false, nil
+			return isPublished, nil
 		}
 		return false, fmt.Errorf("save webhook record failed: %w", err)
+	}
+
+	// 2. Enqueue Outbox row for RabbitMQ publisher
+	if s.outboxEnqueuer != nil {
+		routingKey := DetermineRoutingKey(payload)
+		msgBytes, err := json.Marshal(payload)
+		if err != nil {
+			return false, fmt.Errorf("failed to marshal webhook payload: %w", err)
+		}
+		outboxPayload := struct {
+			RoutingKey string          `json:"routing_key"`
+			Payload    json.RawMessage `json:"payload"`
+		}{
+			RoutingKey: routingKey,
+			Payload:    json.RawMessage(msgBytes),
+		}
+		params, err := json.Marshal(outboxPayload)
+		if err != nil {
+			return false, fmt.Errorf("failed to marshal outbox payload: %w", err)
+		}
+
+		if err := s.outboxEnqueuer.EnqueueOutbox(ctx, tx, "PublishWebhook", params); err != nil {
+			return false, fmt.Errorf("failed to enqueue outbox row: %w", err)
+		}
+	}
+
+	// 3. Commit
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("failed to commit webhook transaction: %w", err)
 	}
 
 	return false, nil
@@ -197,6 +236,17 @@ func (s *Service) MarkWebhookPublished(ctx context.Context, webhookID string) er
 		return nil
 	}
 	return s.repo.MarkPublished(ctx, s.db, webhookID)
+}
+
+func DetermineRoutingKey(p ppi.ProviderWebhookPayload) string {
+	switch p.Status {
+	case ppi.WebhookPaymentSucceeded:
+		return "ppi.webhook.payment.succeeded"
+	case ppi.WebhookPaymentFailed:
+		return "ppi.webhook.payment.failed"
+	default:
+		return "ppi.webhook.payment.pending"
+	}
 }
 
 var _ ppi.PPI = (*Service)(nil)

@@ -146,12 +146,12 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	paymentAttemptSvc := attemptsvc.NewService(paymentAttemptRepo)
 
 	ppiRepo := ppirepo.NewPostgresRepository()
-	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
+	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
 	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, ppiService, invoiceRepository, smEngine)
 	invoiceSubscriber := invoicesub.NewInvoiceSubscriber(cluster.DBPool, invoiceSvc, paymentAttemptSvc)
-	webhookHandler := handler.NewWebhookHandler(ppiService, broker)
+	webhookHandler := handler.NewWebhookHandler(ppiService)
 
 	// 4. Register Webhook Subscriber to RabbitMQ
 	err = ppisub.RegisterModuleSubscriber(

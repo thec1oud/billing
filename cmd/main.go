@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
@@ -29,9 +31,11 @@ import (
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	planservice "github.com/thec1oud/billing/internal/plan/service"
+	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
+	"github.com/thec1oud/billing/internal/ppi/worker"
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
@@ -140,8 +144,14 @@ func run() error {
 
 	//  Initialize PPI Webhook Repository & Service
 	ppiRepo := repository.NewPostgresRepository()
-	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
+	ppiAdapter := &ppiOutboxAdapter{smRepo: smRepository}
+	ppiService := service.NewService(deps.Pool, ppiRepo, paymentAttemptSvc, ppiAdapter)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+
+	publishWebhookAction := worker.NewPublishWebhookAction(rabbitBroker)
+	if err := smRegistry.RegisterAction(publishWebhookAction); err != nil {
+		return fmt.Errorf("register publish webhook action: %w", err)
+	}
 
 	// Initialize other domain services
 	accountRepo := accountrepo.New(deps.Pool)
@@ -278,4 +288,12 @@ func SeedCatalog(
 
 	log.Info("Successfully seeded DB with reference catalog (tariffs, plans, items).")
 	return nil
+}
+
+type ppiOutboxAdapter struct {
+	smRepo *smRepo.PostgresRepository
+}
+
+func (a *ppiOutboxAdapter) EnqueueOutbox(ctx context.Context, db ppi.DBTX, actionName string, params json.RawMessage) error {
+	return a.smRepo.InsertOutboxRow(ctx, db, uuid.New(), nil, nil, actionName, params)
 }

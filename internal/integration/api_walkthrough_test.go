@@ -112,7 +112,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	paymentAttemptSvc := attemptsvc.NewService(paymentAttemptRepo)
 
 	ppiRepo := ppirepo.NewPostgresRepository()
-	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
+	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
 	invoiceRepository := invoicerepo.NewPostgresRepository(cluster.DBPool)

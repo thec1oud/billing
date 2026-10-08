@@ -64,7 +64,7 @@ func TestReconciler_Integration(t *testing.T) {
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
 	ppiRepo := repository.NewPostgresRepository()
-	ppiService := service.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
+	ppiService := service.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
 	// Reconciler with 15-minute stale threshold
@@ -186,7 +186,7 @@ func TestReconciler_Integration(t *testing.T) {
 		err = cluster.DBPool.QueryRow(ctx, "SELECT status, updated_at FROM payment_attempts WHERE internal_tx_id = $1", internalTxID).Scan(&status, &updatedAt)
 		require.NoError(t, err)
 		require.Equal(t, "PENDING", status)
-		
+
 		// The updated_at should remain stale (30 mins ago) since it was never processed
 		require.True(t, time.Now().Sub(updatedAt) > 25*time.Minute, "updated_at should be unmodified")
 
@@ -227,8 +227,8 @@ func TestReconciler_Integration(t *testing.T) {
 
 		wg.Wait()
 
-		// 4. Verify all were processed successfully. 
-		// Even though both workers fired at the same time, the Redis lock ensures 
+		// 4. Verify all were processed successfully.
+		// Even though both workers fired at the same time, the Redis lock ensures
 		// one sweeps the DB while the other skips, preventing duplicate processing.
 		var count int
 		err = cluster.DBPool.QueryRow(ctx, "SELECT COUNT(*) FROM payment_attempts WHERE internal_tx_id LIKE 'success_verify_concurrent_%' AND status = 'SUCCESS'").Scan(&count)

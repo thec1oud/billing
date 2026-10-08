@@ -92,12 +92,12 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
 	ppiRepo := repository.NewPostgresRepository()
-	ppiService := service.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
+	ppiService := service.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
 
 	fakeAdapter := fake.NewFakeAdapter()
 	ppiService.RegisterAdapter(fakeAdapter)
 
-	webhookHandler := handler.NewWebhookHandler(ppiService, broker)
+	webhookHandler := handler.NewWebhookHandler(ppiService)
 
 	// 4. Test Outbound Charge Flow (Transactional PaymentAttempt creation)
 	amt, _ := money.New(15000, "ETB")
