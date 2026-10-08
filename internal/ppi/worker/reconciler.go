@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/thec1oud/billing/internal/infra/logger"
 	attemptmodel "github.com/thec1oud/billing/internal/payment_attempt/model"
 	attemptrepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
@@ -52,6 +54,7 @@ type Reconciler struct {
 	attemptRepo attemptrepo.Repository
 	attemptSvc  *attemptsrv.Service
 	ppiSvc      *ppisvc.Service
+	redisClient *redis.Client
 	cfg         Config
 	log         *slog.Logger
 
@@ -59,11 +62,12 @@ type Reconciler struct {
 	doneCh chan struct{}
 }
 
-func NewReconciler(attemptRepo attemptrepo.Repository, attemptSvc *attemptsrv.Service, ppiSvc *ppisvc.Service, cfg Config) *Reconciler {
+func NewReconciler(attemptRepo attemptrepo.Repository, attemptSvc *attemptsrv.Service, ppiSvc *ppisvc.Service, redisClient *redis.Client, cfg Config) *Reconciler {
 	return &Reconciler{
 		attemptRepo: attemptRepo,
 		attemptSvc:  attemptSvc,
 		ppiSvc:      ppiSvc,
+		redisClient: redisClient,
 		cfg:         cfg.withDefaults(),
 		log:         logger.ForComponent("ppi_reconciler"),
 		stopCh:      make(chan struct{}),
@@ -105,6 +109,20 @@ func (r *Reconciler) run(ctx context.Context) {
 
 // Tick performs one sweep of stale pending attempts. Exported for testing.
 func (r *Reconciler) Tick(ctx context.Context) error {
+	lockKey := "billing:ppi:reconciler:lock"
+	// Attempt to acquire sweep lock, expires after 2 minutes
+	locked, err := r.redisClient.SetNX(ctx, lockKey, r.cfg.WorkerID, 2*time.Minute).Result()
+	if err != nil {
+		return fmt.Errorf("failed to acquire redis lock: %w", err)
+	}
+	if !locked {
+		r.log.Debug("Reconciler sweep skipped; lock held by another worker")
+		return nil
+	}
+	
+	// Ensure lock is released at the end of the sweep
+	defer r.redisClient.Del(context.Background(), lockKey)
+
 	before := time.Now().Add(-r.cfg.StaleThreshold)
 
 	attempts, err := r.attemptRepo.GetStalePendingAttempts(ctx, nil, before, int32(r.cfg.BatchSize))
