@@ -62,7 +62,13 @@ type Reconciler struct {
 	doneCh chan struct{}
 }
 
-func NewReconciler(attemptRepo attemptrepo.Repository, attemptSvc *attemptsrv.Service, ppiSvc *ppisvc.Service, redisClient *redis.Client, cfg Config) *Reconciler {
+func NewReconciler(
+	attemptRepo attemptrepo.Repository,
+	attemptSvc *attemptsrv.Service,
+	ppiSvc *ppisvc.Service,
+	redisClient *redis.Client,
+	cfg Config,
+) *Reconciler {
 	return &Reconciler{
 		attemptRepo: attemptRepo,
 		attemptSvc:  attemptSvc,
@@ -119,7 +125,7 @@ func (r *Reconciler) Tick(ctx context.Context) error {
 		r.log.Debug("Reconciler sweep skipped; lock held by another worker")
 		return nil
 	}
-	
+
 	// Ensure lock is released at the end of the sweep
 	defer r.redisClient.Del(context.Background(), lockKey)
 

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	attemptmodel "github.com/thec1oud/billing/internal/payment_attempt/model"
 	attemptsrv "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi"
@@ -169,20 +171,21 @@ func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhoo
 		return false, nil
 	}
 
-	// 1. Idempotency Check
-	isDup, isPublished, err := s.repo.CheckWebhookStatus(ctx, s.db, payload.ProviderCode, payload.ProviderTxID)
-	if err != nil {
-		return false, fmt.Errorf("idempotency check query failed: %w", err)
-	}
-	if isDup {
-		if isPublished {
-			return true, nil
-		}
-		return false, nil
-	}
+	// 1. Atomic Save Webhook Audit Record in DB
+	err := s.repo.SaveWebhook(ctx, s.db, payload)
 
-	// 2. Save Webhook Audit Record in DB
-	if err := s.repo.SaveWebhook(ctx, s.db, payload); err != nil {
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Duplicate found (ON CONFLICT DO NOTHING returned no rows)
+			isPublished, checkErr := s.repo.GetWebhookPublishedStatus(ctx, s.db, payload.ProviderCode, payload.ProviderTxID)
+			if checkErr != nil {
+				return false, fmt.Errorf("idempotency check query failed for duplicate webhook: %w", checkErr)
+			}
+			if isPublished {
+				return true, nil
+			}
+			return false, nil
+		}
 		return false, fmt.Errorf("save webhook record failed: %w", err)
 	}
 
