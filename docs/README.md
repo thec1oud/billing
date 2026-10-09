@@ -1,76 +1,42 @@
-# Gebeta Billing Documentation
+# Introduction
 
-This documentation repository provides a comprehensive technical reference for the **Gebeta Billing System**, including its PostgreSQL database schema, data integrity rules, finite state machine (FSM) engine, and the complete HTTP API layer (Core Go Billing Service and Platform Node.js Backend-For-Frontend).
+Welcome to the **Gebeta Billing System** documentation. 
 
-The documentation is structured for publication on **GitBook** and directly reflects the production codebase.
+Gebeta Billing is a robust, self-hosted, and event-driven billing and subscription lifecycle management platform. It is designed to act as the financial backbone for SaaS applications, API providers, and digital services that need to manage accounts, track subscriptions, and process payments reliably.
 
----
+## What is Gebeta Billing?
 
-## System Architecture
+At its core, Gebeta Billing is a distributed ledger and subscription engine built in Go. It sits between your application and your Payment Providers (like Stripe, Chapa, etc.), handling the complexities of:
 
-The billing infrastructure is designed as a distributed, event-driven ledger and subscription lifecycle platform composed of the following services:
+*   **Tariffs & Plans**: Defining what you sell, how much it costs, and the billing cycle.
+*   **Subscription Lifecycles**: Managing when a user is active, past due, or cancelled.
+*   **Invoicing**: Automatically generating invoices for flat-rate and usage-based plans.
+*   **Payment Reconciliation**: securely tracking attempts, successes, and failures for every transaction.
 
-```mermaid
-graph TD
-    Client[Web Client / External Consumer] -->|HTTP / REST| BFF[Platform BFF Node.js / Express :3000]
-    BFF -->|HTTP / JSON Envelope| Core[Billing Service Go :8080]
-    
-    subgraph Data & Storage Layer
-        Core -->|pgxpool SQLC| DB[(PostgreSQL 16)]
-        Core -->|go-redis| Redis[(Redis 7 Cache / Locks)]
-        Core -->|AMQP 0-9-1| RabbitMQ[(RabbitMQ 3 Event Broker)]
-    end
+## Key Concepts
 
-    subgraph Core Internal Engines
-        Core --- FSM[Dynamic FSM Engine]
-        Core --- ES[Event Store Ledger]
-        Core --- PPI[Payment Provider Interface PPI]
-    end
-```
+To effectively use the billing system, it's helpful to understand the domain language it uses:
 
-### Core Components
+*   **Account**: The central entity representing a customer or tenant in the billing system. All subscriptions and invoices belong to an account.
+*   **Tariff**: The pricing blueprint. A tariff defines the recurring charge, billing frequency (e.g., monthly, annually), and any usage-based metered limits.
+*   **Subscription**: An agreement connecting an Account to a Tariff. Subscriptions are highly dynamic—they can be active, suspended, or cancelled depending on payment status.
+*   **Invoice**: A record of a financial charge generated for a specific billing period. It contains line items based on the subscription's tariff.
+*   **PPI (Payment Provider Interface)**: The abstraction layer that allows the billing system to securely talk to external payment gateways, generate checkout links, and process incoming webhook events.
 
-1. **Billing Service (`internal/`, `cmd/main.go`)**:
-   - Written in Go 1.22+.
-   - Uses `pgx/v5` and `sqlc` for type-safe database queries.
-   - Enforces monetary arithmetic via the integer minor-unit `money.Money` package.
-   - Embeds a generic, durable relational Finite State Machine engine (`internal/shared/statemachine`) managing invoice and subscription lifecycles.
-   - Houses an append-only event store ledger (`event_log`) with optimistic concurrency.
-   - Exposes authoritative domain HTTP endpoints mounted via Go 1.22 `http.ServeMux` at `/api/v1/...` on port `8080`.
+## Design Philosophy
 
-2. **Platform BFF (`platform/bff/`)**:
-   - Written in Node.js (ES modules) with Express 4.
-   - Acts as the secure gateway and presentation shaper for browser clients.
-   - Applies security headers (Helmet), CORS, JSON payload size restrictions (100kb), rate limiting (100 req/min), and input validation via strict field extractors.
-   - Relays validated requests to the Billing Service, unrolls responses into standard envelopes `{ success, data }`, and normalizes upstream faults into structured HTTP errors.
+The system was built with three core principles:
 
-3. **Storage & Infrastructure**:
-   - **PostgreSQL 16**: Primary relational database containing 36 tables (reference lookups, billing catalogs, accounts, subscriptions, invoices, event log, payment attempts, webhook receipts, and state machine persistence).
-   - **Redis 7**: Distributed caching and session locking support.
-   - **RabbitMQ 3**: Message broker handling asynchronous domain events (e.g. `ppi.webhook.payment.succeeded`, `ppi.webhook.payment.failed`).
+1.  **Data Integrity First**: Monetary calculations are handled using strict, minor-unit arithmetic to avoid floating-point errors.
+2.  **State Machine Driven**: Invoices and subscriptions transition through strict, predictable phases via an embedded Finite State Machine (FSM). 
+3.  **Event-Driven Ledger**: Financial state changes are recorded as append-only events, providing a complete, immutable audit trail for every transaction.
+
+## Who is this for?
+
+This system is built for operators and developers who need a highly scalable, self-hostable billing solution. Rather than building subscription logic and webhook handlers from scratch inside your core product, you deploy Gebeta Billing alongside it and interact with its clean, RESTful HTTP API.
 
 ---
 
-## Documentation Roadmap
-
-- **Database Reference**:
-  - [Architecture & Conventions](database/README.md)
-  - [Entity-Relationship Diagram](database/erd.md)
-  - [Complete Schema & Tables](database/tables.md)
-  - [Enums & Lookup Tables](database/enums-and-lookups.md)
-  - [Indexes & Constraints](database/indexes-and-constraints.md)
-  - [Functions, Triggers & Concurrency](database/triggers-and-functions.md)
-  - [State Machine Engine Schema](database/state-machine-engine.md)
-  - [Inconsistencies & Edge Cases](database/inconsistencies-and-gotchas.md)
-
-- **API Documentation**:
-  - [API Overview & Conventions](api/README.md)
-  - [Account Management API](api/accounts.md)
-  - [Tariff & Plan API](api/tariffs-and-plans.md)
-  - [Subscription API](api/subscriptions.md)
-  - [Invoice Management API](api/invoices.md)
-  - [Payments & PPI API](api/payments-and-ppi.md)
-  - [Webhooks API](api/webhooks.md)
-  - [Platform BFF Gateway API](api/platform-bff.md)
-  - [OpenAPI Specification (YAML)](openapi.yaml)
-  - [OpenAPI Specification (JSON)](openapi.json)
+**Next Steps:**
+*   Ready to install? Head over to the **[Getting Started](getting-started.md)** guide.
+*   Want to see how it works under the hood? Check out the **[System Architecture](architecture.md)**.
