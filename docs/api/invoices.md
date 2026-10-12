@@ -6,14 +6,14 @@ The Invoices API handles financial statements, line item breakdowns, invoice gen
 
 ## 1. Invoice Lifecycle & States
 
-```mermaid
+{% mermaid %}
 stateDiagram-v2
     [*] --> DRAFT : CreateDraftInvoice
     DRAFT --> OPEN : FinalizeInvoice (assigns INV-YYYY-XXXXXX)
     OPEN --> PAID : PayInvoice (full balance settled)
     OPEN --> VOID : VoidInvoice
     OPEN --> UNCOLLECTIBLE : Dunning exhaustion
-```
+{% endmermaid %}
 
 1. **`DRAFT`**:
    - Invoice created with line items; balances are unfinalized. `invoice_number` is `NULL`.
