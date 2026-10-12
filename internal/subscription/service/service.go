@@ -11,6 +11,7 @@ import (
 	accountrepository "github.com/thec1oud/billing/internal/account/repository"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
+	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
 	subscription "github.com/thec1oud/billing/internal/subscription"
@@ -18,7 +19,6 @@ import (
 	"github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
-	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 )
 
 type Service struct {
@@ -73,32 +73,15 @@ func (s *Service) Create(
 		)
 	}
 
-	p, err := s.plans.GetByID(ctx, input.PlanID)
-	if err != nil {
-		return model.Subscription{}, fmt.Errorf(
-			"get plan: %w",
-			err,
+	if s.accounts == nil {
+		return model.Subscription{}, errors.New(
+			"account repository is not configured",
 		)
 	}
 
-	if p.Version != input.PlanVersion {
-		return model.Subscription{}, fmt.Errorf(
-			"plan %d version mismatch: requested=%d actual=%d",
-			input.PlanID,
-			input.PlanVersion,
-			p.Version,
-		)
-	}
-
-	a, err := s.accounts.Get(ctx, s.accounts.Pool(), input.AccountID)
-	if err != nil {
-		return model.Subscription{}, err
-	}
-
-	if a.Status != accountmodel.StatusActive {
-		return model.Subscription{}, fmt.Errorf(
-			"account %d is not active",
-			input.AccountID,
+	if s.repository == nil {
+		return model.Subscription{}, errors.New(
+			"subscription repository is not configured",
 		)
 	}
 
@@ -116,7 +99,36 @@ func (s *Service) Create(
 	if err != nil {
 		return model.Subscription{}, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	p, err := s.plans.GetByID(ctx, input.PlanID)
+	if err != nil {
+		return model.Subscription{}, fmt.Errorf(
+			"get plan: %w",
+			err,
+		)
+	}
+
+	if p.Version != input.PlanVersion {
+		return model.Subscription{}, fmt.Errorf(
+			"plan %d version mismatch: requested=%d actual=%d",
+			input.PlanID,
+			input.PlanVersion,
+			p.Version,
+		)
+	}
+
+	status, err := s.accounts.LockAccountForUpdate(ctx, tx, input.AccountID)
+	if err != nil {
+		return model.Subscription{}, err
+	}
+
+	if status != accountmodel.StatusActive {
+		return model.Subscription{}, fmt.Errorf(
+			"account %d is not active",
+			input.AccountID,
+		)
+	}
 
 	created, err := s.repository.Create(ctx, tx, input)
 	if err != nil {
