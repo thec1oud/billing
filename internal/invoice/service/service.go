@@ -104,7 +104,7 @@ func (s *Service) CreateDraftInvoice(
 	_, err = s.smEngine.CreateInstance(
 		ctx,
 		sm_model.MachineType(statemachine.InvoiceMachineType),
-		"invoice",
+		string(eventmodel.AggregateInvoice),
 		fmt.Sprintf("%d", invoiceID),
 		initialContext,
 		engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the invoice row and event
@@ -197,7 +197,7 @@ func (s *Service) FinalizeInvoice(
 	dueAt := now.AddDate(0, 0, dueDateDays)
 
 	// 3. Resolve the state machine instance
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateInvoice), fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
 	if err != nil {
 		return model.Invoice{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -238,7 +238,7 @@ func (s *Service) PayInvoice(
 	amountDue money.Money,
 	paidAt time.Time,
 ) error {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateInvoice), fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
 	if err != nil {
 		return fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -261,7 +261,7 @@ func (s *Service) VoidInvoice(
 	actor eventmodel.Actor,
 	invoiceID int64,
 ) error {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateInvoice), fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
 	if err != nil {
 		return fmt.Errorf("failed to find state machine instance: %w", err)
 	}

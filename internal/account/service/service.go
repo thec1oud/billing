@@ -88,7 +88,7 @@ func (s *Service) Create(
 	_, err = s.smEngine.CreateInstance(
 		ctx,
 		sm_model.MachineType(statemachine.AccountMachineType),
-		"account",
+		string(eventmodel.AggregateAccount),
 		fmt.Sprintf("%d", result.AccountID),
 		initialContext,
 		engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the account row and event
@@ -144,7 +144,7 @@ func (s *Service) Activate(
 	actor eventmodel.Actor,
 	id int64,
 ) (model.Account, error) {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -162,7 +162,7 @@ func (s *Service) Reactivate(
 	actor eventmodel.Actor,
 	id int64,
 ) (model.Account, error) {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -187,7 +187,7 @@ func (s *Service) Suspend(
 		)
 	}
 
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -219,7 +219,7 @@ func (s *Service) Close(
 		)
 	}
 
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}

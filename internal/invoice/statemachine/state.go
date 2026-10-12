@@ -20,7 +20,8 @@ const InvoiceMachineType = "invoice_lifecycle"
 //go:embed state_machine.json
 var invoiceStateMachineJSON []byte
 
-// BuildInvoiceDefinitionSpec returns the Version 1 blueprint parsed from embedded JSON
+// BuildInvoiceDefinitionSpec returns the current (Version 2) blueprint parsed from embedded JSON.
+// Version 2 renamed the emitted events from invoice.* to billing.invoice.*.
 func BuildInvoiceDefinitionSpec() loader.DefinitionSpec {
 	var spec loader.DefinitionSpec
 	if err := json.Unmarshal(invoiceStateMachineJSON, &spec); err != nil {

@@ -110,10 +110,21 @@ func run() error {
 	// Register invoice state machine actions & publish definition spec
 	invoiceRepository := invoiceRepo.NewPostgresRepository(deps.Pool)
 	statemachine.RegisterStateMachineActions(smRegistry, invoiceRepository)
-
-	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
-		return fmt.Errorf("failed to bootstrap invoice state machine: %w", err)
+	accountRepo := accountrepo.New(deps.Pool)
+	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
+	subscriptionRepo := subscriptionrepo.New(deps.Pool)
+	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
+	for _, definition := range []struct {
+		name string
+		spec loader.DefinitionSpec
+	}{
+		{name: "invoice", spec: statemachine.BuildInvoiceDefinitionSpec()},
+		{name: "account", spec: accountstatemachine.BuildAccountDefinitionSpec()},
+		{name: "subscription", spec: subscriptionstatemachine.BuildSubscriptionDefinitionSpec()},
+	} {
+		if _, err := loader.Publish(ctx, deps.Pool, smRepository, smRegistry, definition.spec); err != nil {
+			return fmt.Errorf("failed to bootstrap %s state machine: %w", definition.name, err)
+		}
 	}
 
 	smPublisher := outbox.NewPublisher(deps.Pool, smRepository, smRegistry, outbox.Config{})
@@ -144,16 +155,8 @@ func run() error {
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
 	// Initialize other domain services
-	accountRepo := accountrepo.New(deps.Pool)
-
 	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
 	eventSvc := eventsvc.NewService(eventRepo)
-
-	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
-	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, accountstatemachine.BuildAccountDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
-		return fmt.Errorf("failed to bootstrap account state machine: %w", err)
-	}
 
 	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
 
@@ -166,12 +169,6 @@ func run() error {
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
 	tariffSvc := tariffservice.NewService(tariffRepo)
 
-	subscriptionRepo := subscriptionrepo.New(deps.Pool)
-	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
-	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, subscriptionstatemachine.BuildSubscriptionDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
-		return fmt.Errorf("failed to bootstrap subscription state machine: %w", err)
-	}
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine, eventSvc)
 
 	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, ppiService, invoiceRepository, smEngine)

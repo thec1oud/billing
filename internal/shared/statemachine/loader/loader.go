@@ -2,6 +2,10 @@ package loader
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -26,6 +30,21 @@ func Publish(
 	if err := validate(spec, reg); err != nil {
 		return uuid.Nil, err
 	}
+	hash, err := definitionHash(spec)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("hash definition: %w", err)
+	}
+	if id, existingHash, err := repo.GetDefinitionByMachineTypeVersion(ctx, nil, spec.MachineType, spec.Version); err == nil {
+		if existingHash == "" {
+			return uuid.Nil, fmt.Errorf("definition %s version %d exists without a content hash; bump its version to publish verifiable content", spec.MachineType, spec.Version)
+		}
+		if existingHash != hash {
+			return uuid.Nil, fmt.Errorf("definition %s version %d has changed content; bump the version before publishing", spec.MachineType, spec.Version)
+		}
+		return id, nil
+	} else if !errors.Is(err, model.ErrDefinitionNotFound) {
+		return uuid.Nil, fmt.Errorf("check existing definition: %w", err)
+	}
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -39,7 +58,7 @@ func Publish(
 		}
 	}
 
-	def, err := repo.InsertDefinition(ctx, tx, spec.MachineType, spec.Version, spec.InitialState, spec.Activate)
+	def, err := repo.InsertDefinitionWithContentHash(ctx, tx, spec.MachineType, spec.Version, hash, spec.InitialState, spec.Activate)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("insert definition: %w", err)
 	}
@@ -102,4 +121,14 @@ func Publish(
 	}
 
 	return def.DefinitionID, nil
+}
+
+func definitionHash(spec DefinitionSpec) (string, error) {
+	spec.Activate = false
+	content, err := json.Marshal(spec)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:]), nil
 }
