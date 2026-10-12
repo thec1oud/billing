@@ -12,29 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const checkPPIWebhookStatus = `-- name: CheckPPIWebhookStatus :one
-SELECT
-    (EXISTS (SELECT 1 FROM ppi_webhooks w1 WHERE w1.provider_code = $1 AND w1.provider_tx_id = $2))::boolean AS is_duplicate,
-    (EXISTS (SELECT 1 FROM ppi_webhooks w2 WHERE w2.provider_code = $1 AND w2.provider_tx_id = $2 AND w2.published_at IS NOT NULL))::boolean AS is_published
-`
-
-type CheckPPIWebhookStatusParams struct {
-	ProviderCode string      `json:"provider_code"`
-	ProviderTxID pgtype.Text `json:"provider_tx_id"`
-}
-
-type CheckPPIWebhookStatusRow struct {
-	IsDuplicate bool `json:"is_duplicate"`
-	IsPublished bool `json:"is_published"`
-}
-
-func (q *Queries) CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error) {
-	row := q.db.QueryRow(ctx, checkPPIWebhookStatus, arg.ProviderCode, arg.ProviderTxID)
-	var i CheckPPIWebhookStatusRow
-	err := row.Scan(&i.IsDuplicate, &i.IsPublished)
-	return i, err
-}
-
 const getPPIWebhookByID = `-- name: GetPPIWebhookByID :one
 SELECT webhook_id, provider_code, event_type, internal_tx_id, provider_tx_id, status, payload, published_at, processed_at
 FROM ppi_webhooks
@@ -58,6 +35,24 @@ func (q *Queries) GetPPIWebhookByID(ctx context.Context, webhookID string) (PpiW
 	return i, err
 }
 
+const getPPIWebhookPublishedStatus = `-- name: GetPPIWebhookPublishedStatus :one
+SELECT (published_at IS NOT NULL)::boolean AS is_published
+FROM ppi_webhooks
+WHERE provider_code = $1 AND provider_tx_id = $2
+`
+
+type GetPPIWebhookPublishedStatusParams struct {
+	ProviderCode string      `json:"provider_code"`
+	ProviderTxID pgtype.Text `json:"provider_tx_id"`
+}
+
+func (q *Queries) GetPPIWebhookPublishedStatus(ctx context.Context, arg GetPPIWebhookPublishedStatusParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getPPIWebhookPublishedStatus, arg.ProviderCode, arg.ProviderTxID)
+	var is_published bool
+	err := row.Scan(&is_published)
+	return is_published, err
+}
+
 const markPPIWebhookPublished = `-- name: MarkPPIWebhookPublished :exec
 UPDATE ppi_webhooks
 SET published_at = NOW()
@@ -69,13 +64,14 @@ func (q *Queries) MarkPPIWebhookPublished(ctx context.Context, webhookID string)
 	return err
 }
 
-const savePPIWebhook = `-- name: SavePPIWebhook :exec
+const savePPIWebhook = `-- name: SavePPIWebhook :one
 INSERT INTO ppi_webhooks (
     webhook_id, provider_code, event_type, internal_tx_id, provider_tx_id, status, payload, processed_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8
 )
-ON CONFLICT (webhook_id) DO NOTHING
+ON CONFLICT (provider_code, provider_tx_id) WHERE provider_tx_id IS NOT NULL DO NOTHING
+RETURNING webhook_id
 `
 
 type SavePPIWebhookParams struct {
@@ -89,8 +85,8 @@ type SavePPIWebhookParams struct {
 	ProcessedAt  time.Time   `json:"processed_at"`
 }
 
-func (q *Queries) SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error {
-	_, err := q.db.Exec(ctx, savePPIWebhook,
+func (q *Queries) SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) (string, error) {
+	row := q.db.QueryRow(ctx, savePPIWebhook,
 		arg.WebhookID,
 		arg.ProviderCode,
 		arg.EventType,
@@ -100,5 +96,7 @@ func (q *Queries) SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) 
 		arg.Payload,
 		arg.ProcessedAt,
 	)
-	return err
+	var webhook_id string
+	err := row.Scan(&webhook_id)
+	return webhook_id, err
 }

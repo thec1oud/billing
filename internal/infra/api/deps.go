@@ -1,16 +1,28 @@
 package api
 
 import (
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	accountservice "github.com/thec1oud/billing/internal/account/service"
 	"github.com/thec1oud/billing/internal/infra/messaging"
-	ppiHandlers "github.com/thec1oud/billing/internal/ppi/handler"
+	invoiceservice "github.com/thec1oud/billing/internal/invoice/service"
+	planservice "github.com/thec1oud/billing/internal/plan/service"
+	ppiservice "github.com/thec1oud/billing/internal/ppi/service"
+	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
+	subscriptionservice "github.com/thec1oud/billing/internal/subscription/service"
+	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 )
 
 // Deps holds all domain-level service dependencies required by the HTTP handlers
 // registered in this package. Add a field here when wiring a new module's handler.
 type Deps struct {
-	PPIService ppiHandlers.WebhookService
-	Broker     messaging.Broker
-
-	// Future module services go here, e.g.:
-	// InvoiceService invoiceHandlers.SomeServiceInterface
+	Pool                   *pgxpool.Pool
+	PPIService             *ppiservice.Service
+	Broker                 messaging.Broker
+	AccountService         *accountservice.Service
+	PlanService            *planservice.Service
+	TariffService          *tariffservice.Service
+	PurchasableItemService *itemservice.Service
+	SubscriptionService    *subscriptionservice.Service
+	InvoiceService         *invoiceservice.Service
 }

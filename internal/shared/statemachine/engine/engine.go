@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 	"github.com/thec1oud/billing/internal/shared/statemachine/model"
 	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
 	"github.com/thec1oud/billing/internal/shared/statemachine/repository"
@@ -68,11 +69,11 @@ func NewEngine(pool *pgxpool.Pool, repo *repository.PostgresRepository, reg *reg
 // loadDefinition returns the compiled Definition for definitionID, using the
 // in-memory cache when possible. Definitions are immutable once published, so a
 // cache hit never needs invalidation — only population. On a cache miss, the
-// bundle is read via the pool (not a caller's tx), and every guard/action name in
-// it is cross-validated against this process's registry so a stale or
-// differently-configured registry fails fast here rather than as a nil-map panic
-// during hook execution.
-func (e *Engine) loadDefinition(ctx context.Context, definitionID uuid.UUID) (*model.Definition, error) {
+// bundle is read via db (which may be a caller-supplied transaction or nil to
+// use the pool directly), and every guard/action name is cross-validated against
+// the process's registry so a stale or differently-configured registry fails
+// fast here rather than as a nil-map panic during hook execution.
+func (e *Engine) loadDefinition(ctx context.Context, db sqlcgen.DBTX, definitionID uuid.UUID) (*model.Definition, error) {
 	e.cacheMu.RLock()
 	def, ok := e.cache[definitionID]
 	e.cacheMu.RUnlock()
@@ -80,7 +81,7 @@ func (e *Engine) loadDefinition(ctx context.Context, definitionID uuid.UUID) (*m
 		return def, nil
 	}
 
-	bundle, err := e.repo.GetDefinitionBundle(ctx, nil, definitionID)
+	bundle, err := e.repo.GetDefinitionBundle(ctx, db, definitionID)
 	if err != nil {
 		return nil, fmt.Errorf("load definition %s: %w", definitionID, err)
 	}

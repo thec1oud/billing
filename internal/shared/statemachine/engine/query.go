@@ -23,7 +23,7 @@ func (e *Engine) CanFire(ctx context.Context, instanceID uuid.UUID, eventName mo
 		return false, nil
 	}
 
-	def, err := e.loadDefinition(ctx, instance.DefinitionID)
+	def, err := e.loadDefinition(ctx, nil, instance.DefinitionID)
 	if err != nil {
 		return false, err
 	}
@@ -59,7 +59,7 @@ func (e *Engine) AvailableEvents(ctx context.Context, instanceID uuid.UUID) ([]m
 		return nil, err
 	}
 
-	def, err := e.loadDefinition(ctx, instance.DefinitionID)
+	def, err := e.loadDefinition(ctx, nil, instance.DefinitionID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,4 +71,3 @@ func (e *Engine) AvailableEvents(ctx context.Context, instanceID uuid.UUID) ([]m
 func (e *Engine) GetInstanceBySubject(ctx context.Context, subjectType, subjectID string, machineType model.MachineType) (model.Instance, error) {
 	return e.repo.GetInstanceBySubject(ctx, nil, subjectType, subjectID, machineType)
 }
-

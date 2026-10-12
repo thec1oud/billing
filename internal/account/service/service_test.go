@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/thec1oud/billing/internal/account/model"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
@@ -25,7 +26,8 @@ func TestCreateRejectsInvalidBillingConfigurationBeforeRepositoryAccess(t *testi
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := svc.Create(context.Background(), tc.input)
+			actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "test"}
+			_, err := svc.Create(context.Background(), actor, tc.input)
 			if tc.want != nil {
 				if err != tc.want {
 					t.Fatalf("Create error = %v, want %v", err, tc.want)

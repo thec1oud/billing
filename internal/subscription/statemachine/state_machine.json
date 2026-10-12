@@ -1,0 +1,73 @@
+{
+  "MachineType": "subscription_lifecycle",
+  "Version": 1,
+  "InitialState": "ACTIVE",
+  "Activate": true,
+  "States": [
+    { "Name": "ACTIVE" },
+    { "Name": "PAUSED" },
+    { "Name": "CANCELED", "IsFinal": true }
+  ],
+  "Transitions": [
+    {
+      "FromState": "ACTIVE",
+      "EventName": "pause",
+      "ToState": "PAUSED",
+      "EmitEventType": "billing.subscription.paused",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "subscription.action.pause",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "PAUSED",
+      "EventName": "resume",
+      "ToState": "ACTIVE",
+      "EmitEventType": "billing.subscription.resumed",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "subscription.action.resume",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "ACTIVE",
+      "EventName": "cancel",
+      "ToState": "CANCELED",
+      "EmitEventType": "billing.subscription.canceled",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "subscription.action.cancel",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    },
+    {
+      "FromState": "PAUSED",
+      "EventName": "cancel",
+      "ToState": "CANCELED",
+      "EmitEventType": "billing.subscription.canceled",
+      "Actions": [
+        {
+          "Seq": 1,
+          "ActionName": "subscription.action.cancel",
+          "ParamsKind": "STATIC",
+          "Mode": "SYNC",
+          "OnError": "ABORT"
+        }
+      ]
+    }
+  ]
+}

@@ -8,32 +8,74 @@ package sqlcgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelSubscriptionNow = `-- name: CancelSubscriptionNow :execrows
+UPDATE subscriptions
+SET subscription_status_code = 'CANCELED',
+    version = version + 1,
+    canceled_at = $2,
+    ended_at = $2,
+    cancel_at_period_end = FALSE
+WHERE subscription_id = $1
+  AND subscription_status_code IN ('ACTIVE', 'PAUSED')
+`
+
+type CancelSubscriptionNowParams struct {
+	SubscriptionID int64              `json:"subscription_id"`
+	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+}
+
+func (q *Queries) CancelSubscriptionNow(ctx context.Context, arg CancelSubscriptionNowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelSubscriptionNow, arg.SubscriptionID, arg.CanceledAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createSubscription = `-- name: CreateSubscription :one
-INSERT INTO subscriptions (account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor)
-VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6)
-RETURNING subscription_id, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor
+INSERT INTO subscriptions (
+    account_id,
+    plan_id,
+    plan_version,
+    subscription_status_code,
+    quantity,
+    current_period_start_at,
+    current_period_end_at,
+    billing_cycle_anchor
+) VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6, $7)
+RETURNING subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at
 `
 
 type CreateSubscriptionParams struct {
 	AccountID            int64     `json:"account_id"`
 	PlanID               int64     `json:"plan_id"`
 	PlanVersion          int32     `json:"plan_version"`
+	Quantity             int32     `json:"quantity"`
 	CurrentPeriodStartAt time.Time `json:"current_period_start_at"`
 	CurrentPeriodEndAt   time.Time `json:"current_period_end_at"`
 	BillingCycleAnchor   time.Time `json:"billing_cycle_anchor"`
 }
 
 type CreateSubscriptionRow struct {
-	SubscriptionID         int64     `json:"subscription_id"`
-	AccountID              int64     `json:"account_id"`
-	PlanID                 int64     `json:"plan_id"`
-	PlanVersion            int32     `json:"plan_version"`
-	SubscriptionStatusCode string    `json:"subscription_status_code"`
-	CurrentPeriodStartAt   time.Time `json:"current_period_start_at"`
-	CurrentPeriodEndAt     time.Time `json:"current_period_end_at"`
-	BillingCycleAnchor     time.Time `json:"billing_cycle_anchor"`
+	SubscriptionID         int64              `json:"subscription_id"`
+	Version                int64              `json:"version"`
+	AccountID              int64              `json:"account_id"`
+	PlanID                 int64              `json:"plan_id"`
+	PlanVersion            int32              `json:"plan_version"`
+	SubscriptionStatusCode string             `json:"subscription_status_code"`
+	Quantity               int32              `json:"quantity"`
+	CurrentPeriodStartAt   time.Time          `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time          `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time          `json:"billing_cycle_anchor"`
+	CancelAtPeriodEnd      bool               `json:"cancel_at_period_end"`
+	CanceledAt             pgtype.Timestamptz `json:"canceled_at"`
+	EndedAt                pgtype.Timestamptz `json:"ended_at"`
+	PausedAt               pgtype.Timestamptz `json:"paused_at"`
+	ResumesAt              pgtype.Timestamptz `json:"resumes_at"`
 }
 
 func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (CreateSubscriptionRow, error) {
@@ -41,6 +83,7 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 		arg.AccountID,
 		arg.PlanID,
 		arg.PlanVersion,
+		arg.Quantity,
 		arg.CurrentPeriodStartAt,
 		arg.CurrentPeriodEndAt,
 		arg.BillingCycleAnchor,
@@ -48,30 +91,46 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 	var i CreateSubscriptionRow
 	err := row.Scan(
 		&i.SubscriptionID,
+		&i.Version,
 		&i.AccountID,
 		&i.PlanID,
 		&i.PlanVersion,
 		&i.SubscriptionStatusCode,
+		&i.Quantity,
 		&i.CurrentPeriodStartAt,
 		&i.CurrentPeriodEndAt,
 		&i.BillingCycleAnchor,
+		&i.CancelAtPeriodEnd,
+		&i.CanceledAt,
+		&i.EndedAt,
+		&i.PausedAt,
+		&i.ResumesAt,
 	)
 	return i, err
 }
 
 const getSubscription = `-- name: GetSubscription :one
-SELECT subscription_id, account_id, plan_id, plan_version, subscription_status_code, current_period_start_at, current_period_end_at, billing_cycle_anchor FROM subscriptions WHERE subscription_id = $1
+SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at
+FROM subscriptions
+WHERE subscription_id = $1
 `
 
 type GetSubscriptionRow struct {
-	SubscriptionID         int64     `json:"subscription_id"`
-	AccountID              int64     `json:"account_id"`
-	PlanID                 int64     `json:"plan_id"`
-	PlanVersion            int32     `json:"plan_version"`
-	SubscriptionStatusCode string    `json:"subscription_status_code"`
-	CurrentPeriodStartAt   time.Time `json:"current_period_start_at"`
-	CurrentPeriodEndAt     time.Time `json:"current_period_end_at"`
-	BillingCycleAnchor     time.Time `json:"billing_cycle_anchor"`
+	SubscriptionID         int64              `json:"subscription_id"`
+	Version                int64              `json:"version"`
+	AccountID              int64              `json:"account_id"`
+	PlanID                 int64              `json:"plan_id"`
+	PlanVersion            int32              `json:"plan_version"`
+	SubscriptionStatusCode string             `json:"subscription_status_code"`
+	Quantity               int32              `json:"quantity"`
+	CurrentPeriodStartAt   time.Time          `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time          `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time          `json:"billing_cycle_anchor"`
+	CancelAtPeriodEnd      bool               `json:"cancel_at_period_end"`
+	CanceledAt             pgtype.Timestamptz `json:"canceled_at"`
+	EndedAt                pgtype.Timestamptz `json:"ended_at"`
+	PausedAt               pgtype.Timestamptz `json:"paused_at"`
+	ResumesAt              pgtype.Timestamptz `json:"resumes_at"`
 }
 
 func (q *Queries) GetSubscription(ctx context.Context, subscriptionID int64) (GetSubscriptionRow, error) {
@@ -79,13 +138,129 @@ func (q *Queries) GetSubscription(ctx context.Context, subscriptionID int64) (Ge
 	var i GetSubscriptionRow
 	err := row.Scan(
 		&i.SubscriptionID,
+		&i.Version,
 		&i.AccountID,
 		&i.PlanID,
 		&i.PlanVersion,
 		&i.SubscriptionStatusCode,
+		&i.Quantity,
 		&i.CurrentPeriodStartAt,
 		&i.CurrentPeriodEndAt,
 		&i.BillingCycleAnchor,
+		&i.CancelAtPeriodEnd,
+		&i.CanceledAt,
+		&i.EndedAt,
+		&i.PausedAt,
+		&i.ResumesAt,
 	)
 	return i, err
+}
+
+const listAccountSubscriptions = `-- name: ListAccountSubscriptions :many
+SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at
+FROM subscriptions
+WHERE account_id = $1
+ORDER BY subscription_id
+`
+
+type ListAccountSubscriptionsRow struct {
+	SubscriptionID         int64              `json:"subscription_id"`
+	Version                int64              `json:"version"`
+	AccountID              int64              `json:"account_id"`
+	PlanID                 int64              `json:"plan_id"`
+	PlanVersion            int32              `json:"plan_version"`
+	SubscriptionStatusCode string             `json:"subscription_status_code"`
+	Quantity               int32              `json:"quantity"`
+	CurrentPeriodStartAt   time.Time          `json:"current_period_start_at"`
+	CurrentPeriodEndAt     time.Time          `json:"current_period_end_at"`
+	BillingCycleAnchor     time.Time          `json:"billing_cycle_anchor"`
+	CancelAtPeriodEnd      bool               `json:"cancel_at_period_end"`
+	CanceledAt             pgtype.Timestamptz `json:"canceled_at"`
+	EndedAt                pgtype.Timestamptz `json:"ended_at"`
+	PausedAt               pgtype.Timestamptz `json:"paused_at"`
+	ResumesAt              pgtype.Timestamptz `json:"resumes_at"`
+}
+
+func (q *Queries) ListAccountSubscriptions(ctx context.Context, accountID int64) ([]ListAccountSubscriptionsRow, error) {
+	rows, err := q.db.Query(ctx, listAccountSubscriptions, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountSubscriptionsRow
+	for rows.Next() {
+		var i ListAccountSubscriptionsRow
+		if err := rows.Scan(
+			&i.SubscriptionID,
+			&i.Version,
+			&i.AccountID,
+			&i.PlanID,
+			&i.PlanVersion,
+			&i.SubscriptionStatusCode,
+			&i.Quantity,
+			&i.CurrentPeriodStartAt,
+			&i.CurrentPeriodEndAt,
+			&i.BillingCycleAnchor,
+			&i.CancelAtPeriodEnd,
+			&i.CanceledAt,
+			&i.EndedAt,
+			&i.PausedAt,
+			&i.ResumesAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const scheduleSubscriptionCancellation = `-- name: ScheduleSubscriptionCancellation :execrows
+UPDATE subscriptions
+SET cancel_at_period_end = TRUE,
+    version = version + 1
+WHERE subscription_id = $1
+  AND subscription_status_code IN ('ACTIVE', 'PAUSED')
+`
+
+func (q *Queries) ScheduleSubscriptionCancellation(ctx context.Context, subscriptionID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, scheduleSubscriptionCancellation, subscriptionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const transitionSubscription = `-- name: TransitionSubscription :execrows
+UPDATE subscriptions
+SET subscription_status_code = $3,
+    version = version + 1,
+    canceled_at = CASE WHEN $3 = 'CANCELED' THEN $4 ELSE canceled_at END,
+    ended_at = CASE WHEN $3 = 'CANCELED' THEN $4 ELSE ended_at END,
+    paused_at = CASE WHEN $3 = 'PAUSED' THEN $4 ELSE paused_at END,
+    resumes_at = CASE WHEN $3 = 'ACTIVE' THEN $4 ELSE resumes_at END
+WHERE subscription_id = $1
+  AND subscription_status_code = $2
+`
+
+type TransitionSubscriptionParams struct {
+	SubscriptionID           int64              `json:"subscription_id"`
+	SubscriptionStatusCode   string             `json:"subscription_status_code"`
+	SubscriptionStatusCode_2 string             `json:"subscription_status_code_2"`
+	CanceledAt               pgtype.Timestamptz `json:"canceled_at"`
+}
+
+func (q *Queries) TransitionSubscription(ctx context.Context, arg TransitionSubscriptionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, transitionSubscription,
+		arg.SubscriptionID,
+		arg.SubscriptionStatusCode,
+		arg.SubscriptionStatusCode_2,
+		arg.CanceledAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

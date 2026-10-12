@@ -237,6 +237,7 @@ ALTER TABLE event_log
 
 CREATE TABLE subscriptions (
     subscription_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    version BIGINT NOT NULL DEFAULT 1,
     account_id BIGINT NOT NULL REFERENCES accounts(account_id),
     plan_id BIGINT NOT NULL REFERENCES plans(plan_id),
     plan_version INT NOT NULL DEFAULT 1,

@@ -268,12 +268,13 @@ type SmActionOutbox struct {
 }
 
 type SmDefinition struct {
-	DefinitionID uuid.UUID `json:"definition_id"`
-	MachineType  string    `json:"machine_type"`
-	Version      int32     `json:"version"`
-	InitialState string    `json:"initial_state"`
-	IsActive     bool      `json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
+	DefinitionID uuid.UUID   `json:"definition_id"`
+	MachineType  string      `json:"machine_type"`
+	Version      int32       `json:"version"`
+	InitialState string      `json:"initial_state"`
+	IsActive     bool        `json:"is_active"`
+	CreatedAt    time.Time   `json:"created_at"`
+	ContentHash  pgtype.Text `json:"content_hash"`
 }
 
 type SmGuardBinding struct {
@@ -346,6 +347,7 @@ type SmTransitionHistory struct {
 
 type Subscription struct {
 	SubscriptionID         int64              `json:"subscription_id"`
+	Version                int64              `json:"version"`
 	AccountID              int64              `json:"account_id"`
 	PlanID                 int64              `json:"plan_id"`
 	PlanVersion            int32              `json:"plan_version"`
@@ -384,6 +386,8 @@ type Tariff struct {
 	IsActive       bool        `json:"is_active"`
 	Metadata       []byte      `json:"metadata"`
 	CreatedAt      time.Time   `json:"created_at"`
+	TierStrategy   pgtype.Text `json:"tier_strategy"`
+	QuantityUnit   pgtype.Text `json:"quantity_unit"`
 }
 
 type TariffType struct {

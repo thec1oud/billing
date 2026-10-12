@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	invoicemodel "github.com/thec1oud/billing/internal/invoice/model"
 	invoicerepo "github.com/thec1oud/billing/internal/invoice/repository"
 	invoiceservice "github.com/thec1oud/billing/internal/invoice/service"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"

@@ -41,6 +41,14 @@ func NewService(repo PaymentRepository) *Service {
 	return &Service{repo: repo}
 }
 
+func (s *Service) GetAttemptByInternalTxID(
+	ctx context.Context,
+	db repository.DBTX,
+	internalTxID string,
+) (model.PaymentAttempt, error) {
+	return s.repo.GetByInternalTxID(ctx, db, internalTxID)
+}
+
 func (s *Service) CreatePaymentAttempt(
 	ctx context.Context,
 	db repository.DBTX,

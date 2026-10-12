@@ -3,6 +3,8 @@ package money
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"math/big"
 	"strings"
 )
@@ -121,3 +123,56 @@ func (m Money) MustAdd(other Money) Money {
 func MustZero(currency Currency) Money {
 	return MustNew(0, currency)
 }
+
+var currencyMinorUnits = map[Currency]int{
+	"BIF": 0, "CLP": 0, "DJF": 0, "GNF": 0, "ISK": 0,
+	"JPY": 0, "KMF": 0, "KRW": 0, "PYG": 0, "RWF": 0,
+	"UGX": 0, "UYI": 0, "VND": 0, "VUV": 0, "XAF": 0,
+	"XOF": 0, "XPF": 0,
+
+	"BHD": 3, "IQD": 3, "JOD": 3, "KWD": 3, "LYD": 3,
+	"OMR": 3, "TND": 3,
+
+	"CLF": 4, "UYW": 4,
+}
+
+// MinorUnits returns the number of minor units for a given currency.
+func MinorUnits(currency Currency) (int, error) {
+	if units, ok := currencyMinorUnits[currency]; ok {
+		return units, nil
+	}
+
+	// Assuming all unmapped ISO currencies default to 2
+	return 2, nil
+}
+
+// Format returns a formatted string representation of the money amount (e.g., "10.00 USD").
+// It computes the exact value based on the ISO 4217 minor unit scale for the given currency.
+func (m Money) Format() string {
+	units, err := MinorUnits(m.Currency)
+	if err != nil {
+		return fmt.Sprintf("%d %s", m.AmountMinor, m.Currency)
+	}
+
+	if units == 0 {
+		return fmt.Sprintf("%d %s", m.AmountMinor, m.Currency)
+	}
+
+	divisor := int64(math.Pow10(units))
+	whole := m.AmountMinor / divisor
+	fraction := m.AmountMinor % divisor
+
+	// Ensure fraction is positive if AmountMinor is negative
+	if fraction < 0 {
+		fraction = -fraction
+	}
+
+	return fmt.Sprintf(
+		"%d.%0*d %s",
+		whole,
+		units,
+		fraction,
+		m.Currency,
+	)
+}
+
