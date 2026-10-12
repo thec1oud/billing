@@ -127,7 +127,7 @@ func (s *Service) Create(
 		if _, err := s.smEngine.CreateInstance(
 			ctx,
 			sm_model.MachineType("subscription_lifecycle"),
-			"subscription",
+			string(eventmodel.AggregateSubscription),
 			fmt.Sprintf("%d", created.SubscriptionID),
 			initialContext,
 			sm_engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the subscription row and event
@@ -201,7 +201,7 @@ func (s *Service) fireTransition(
 
 	instance, err := s.smEngine.GetInstanceBySubject(
 		ctx,
-		"subscription",
+		string(eventmodel.AggregateSubscription),
 		fmt.Sprintf("%d", subscriptionID),
 		subscriptionstatemachine.SubscriptionMachineType,
 	)

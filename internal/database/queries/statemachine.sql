@@ -2,12 +2,18 @@
 INSERT INTO sm_definitions (
     machine_type,
     version,
+    content_hash,
     initial_state,
     is_active
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 RETURNING definition_id, created_at;
+
+-- name: GetDefinitionByMachineTypeVersion :one
+SELECT definition_id, content_hash
+FROM sm_definitions
+WHERE machine_type = $1 AND version = $2;
 
 -- name: DeactivateDefinitionsForMachineType :exec
 UPDATE sm_definitions

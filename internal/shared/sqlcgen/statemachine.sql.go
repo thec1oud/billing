@@ -212,9 +212,18 @@ FROM sm_definitions
 WHERE machine_type = $1 AND is_active
 `
 
-func (q *Queries) GetActiveDefinition(ctx context.Context, machineType string) (SmDefinition, error) {
+type GetActiveDefinitionRow struct {
+	DefinitionID uuid.UUID `json:"definition_id"`
+	MachineType  string    `json:"machine_type"`
+	Version      int32     `json:"version"`
+	InitialState string    `json:"initial_state"`
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (q *Queries) GetActiveDefinition(ctx context.Context, machineType string) (GetActiveDefinitionRow, error) {
 	row := q.db.QueryRow(ctx, getActiveDefinition, machineType)
-	var i SmDefinition
+	var i GetActiveDefinitionRow
 	err := row.Scan(
 		&i.DefinitionID,
 		&i.MachineType,
@@ -232,9 +241,18 @@ FROM sm_definitions
 WHERE definition_id = $1
 `
 
-func (q *Queries) GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (SmDefinition, error) {
+type GetDefinitionByIDRow struct {
+	DefinitionID uuid.UUID `json:"definition_id"`
+	MachineType  string    `json:"machine_type"`
+	Version      int32     `json:"version"`
+	InitialState string    `json:"initial_state"`
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (q *Queries) GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (GetDefinitionByIDRow, error) {
 	row := q.db.QueryRow(ctx, getDefinitionByID, definitionID)
-	var i SmDefinition
+	var i GetDefinitionByIDRow
 	err := row.Scan(
 		&i.DefinitionID,
 		&i.MachineType,
@@ -243,6 +261,29 @@ func (q *Queries) GetDefinitionByID(ctx context.Context, definitionID uuid.UUID)
 		&i.IsActive,
 		&i.CreatedAt,
 	)
+	return i, err
+}
+
+const getDefinitionByMachineTypeVersion = `-- name: GetDefinitionByMachineTypeVersion :one
+SELECT definition_id, content_hash
+FROM sm_definitions
+WHERE machine_type = $1 AND version = $2
+`
+
+type GetDefinitionByMachineTypeVersionParams struct {
+	MachineType string `json:"machine_type"`
+	Version     int32  `json:"version"`
+}
+
+type GetDefinitionByMachineTypeVersionRow struct {
+	DefinitionID uuid.UUID   `json:"definition_id"`
+	ContentHash  pgtype.Text `json:"content_hash"`
+}
+
+func (q *Queries) GetDefinitionByMachineTypeVersion(ctx context.Context, arg GetDefinitionByMachineTypeVersionParams) (GetDefinitionByMachineTypeVersionRow, error) {
+	row := q.db.QueryRow(ctx, getDefinitionByMachineTypeVersion, arg.MachineType, arg.Version)
+	var i GetDefinitionByMachineTypeVersionRow
+	err := row.Scan(&i.DefinitionID, &i.ContentHash)
 	return i, err
 }
 
@@ -387,19 +428,21 @@ const insertDefinition = `-- name: InsertDefinition :one
 INSERT INTO sm_definitions (
     machine_type,
     version,
+    content_hash,
     initial_state,
     is_active
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 RETURNING definition_id, created_at
 `
 
 type InsertDefinitionParams struct {
-	MachineType  string `json:"machine_type"`
-	Version      int32  `json:"version"`
-	InitialState string `json:"initial_state"`
-	IsActive     bool   `json:"is_active"`
+	MachineType  string      `json:"machine_type"`
+	Version      int32       `json:"version"`
+	ContentHash  pgtype.Text `json:"content_hash"`
+	InitialState string      `json:"initial_state"`
+	IsActive     bool        `json:"is_active"`
 }
 
 type InsertDefinitionRow struct {
@@ -411,6 +454,7 @@ func (q *Queries) InsertDefinition(ctx context.Context, arg InsertDefinitionPara
 	row := q.db.QueryRow(ctx, insertDefinition,
 		arg.MachineType,
 		arg.Version,
+		arg.ContentHash,
 		arg.InitialState,
 		arg.IsActive,
 	)

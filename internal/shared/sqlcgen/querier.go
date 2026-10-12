@@ -35,8 +35,9 @@ type Querier interface {
 	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error)
 	FinalizeTransitionHistory(ctx context.Context, arg FinalizeTransitionHistoryParams) error
 	GetAccount(ctx context.Context, accountID int64) (GetAccountRow, error)
-	GetActiveDefinition(ctx context.Context, machineType string) (SmDefinition, error)
-	GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (SmDefinition, error)
+	GetActiveDefinition(ctx context.Context, machineType string) (GetActiveDefinitionRow, error)
+	GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (GetDefinitionByIDRow, error)
+	GetDefinitionByMachineTypeVersion(ctx context.Context, arg GetDefinitionByMachineTypeVersionParams) (GetDefinitionByMachineTypeVersionRow, error)
 	GetInstanceByID(ctx context.Context, instanceID uuid.UUID) (SmInstance, error)
 	GetInstanceBySubject(ctx context.Context, arg GetInstanceBySubjectParams) (SmInstance, error)
 	GetInstanceForUpdate(ctx context.Context, instanceID uuid.UUID) (SmInstance, error)
