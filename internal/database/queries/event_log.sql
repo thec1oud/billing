@@ -1,5 +1,4 @@
 -- name: AppendEvent :one
--- name: AppendEvent :one
 INSERT INTO event_log (
     event_type,
     event_version,

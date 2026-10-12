@@ -1,0 +1,5 @@
+plugins:
+  - jekyll-mermaid
+
+mermaid:
+  src: https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js
