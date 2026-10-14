@@ -1,7 +1,7 @@
-// Package registry holds the process's Go-code implementations of guards and
-// actions, registered by name at startup. State machine definitions stored in
-// Postgres only ever reference these by name plus a params JSON blob — arbitrary
-// code never comes from the database, only names and parameters do.
+// Package registry holds the process's Go implementations of guards and
+// actions, registered by name at startup. Definitions may also store constrained
+// Yaegi source for SCRIPT guards and action parameters. Those scripts compute
+// decisions or parameter maps; side effects remain in registered actions.
 package registry
 
 import (
