@@ -30,7 +30,7 @@ SET status = 'PROCESSING',
 FROM candidates c
 WHERE o.outbox_id = c.outbox_id
 RETURNING o.outbox_id, o.instance_id, o.history_id, o.binding_id, o.action_name, o.params,
-          o.status, o.attempts, o.claimed_at, o.claimed_by, o.last_error, o.created_at
+          o.execution_context, o.status, o.attempts, o.claimed_at, o.claimed_by, o.last_error, o.created_at
 `
 
 type ClaimOutboxRowsParams struct {
@@ -38,15 +38,31 @@ type ClaimOutboxRowsParams struct {
 	ClaimedBy pgtype.Text `json:"claimed_by"`
 }
 
-func (q *Queries) ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error) {
+type ClaimOutboxRowsRow struct {
+	OutboxID         int64              `json:"outbox_id"`
+	InstanceID       uuid.UUID          `json:"instance_id"`
+	HistoryID        pgtype.Int8        `json:"history_id"`
+	BindingID        *uuid.UUID         `json:"binding_id"`
+	ActionName       string             `json:"action_name"`
+	Params           []byte             `json:"params"`
+	ExecutionContext []byte             `json:"execution_context"`
+	Status           string             `json:"status"`
+	Attempts         int32              `json:"attempts"`
+	ClaimedAt        pgtype.Timestamptz `json:"claimed_at"`
+	ClaimedBy        pgtype.Text        `json:"claimed_by"`
+	LastError        pgtype.Text        `json:"last_error"`
+	CreatedAt        time.Time          `json:"created_at"`
+}
+
+func (q *Queries) ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]ClaimOutboxRowsRow, error) {
 	rows, err := q.db.Query(ctx, claimOutboxRows, arg.Limit, arg.ClaimedBy)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SmActionOutbox
+	var items []ClaimOutboxRowsRow
 	for rows.Next() {
-		var i SmActionOutbox
+		var i ClaimOutboxRowsRow
 		if err := rows.Scan(
 			&i.OutboxID,
 			&i.InstanceID,
@@ -54,6 +70,7 @@ func (q *Queries) ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams
 			&i.BindingID,
 			&i.ActionName,
 			&i.Params,
+			&i.ExecutionContext,
 			&i.Status,
 			&i.Attempts,
 			&i.ClaimedAt,
@@ -459,18 +476,20 @@ INSERT INTO sm_action_outbox (
     history_id,
     binding_id,
     action_name,
-    params
+    params,
+    execution_context
 ) VALUES (
-    $1, $2, $3, $4, $5
+    $1, $2, $3, $4, $5, $6
 )
 `
 
 type InsertOutboxRowParams struct {
-	InstanceID uuid.UUID   `json:"instance_id"`
-	HistoryID  pgtype.Int8 `json:"history_id"`
-	BindingID  *uuid.UUID  `json:"binding_id"`
-	ActionName string      `json:"action_name"`
-	Params     []byte      `json:"params"`
+	InstanceID       uuid.UUID   `json:"instance_id"`
+	HistoryID        pgtype.Int8 `json:"history_id"`
+	BindingID        *uuid.UUID  `json:"binding_id"`
+	ActionName       string      `json:"action_name"`
+	Params           []byte      `json:"params"`
+	ExecutionContext []byte      `json:"execution_context"`
 }
 
 func (q *Queries) InsertOutboxRow(ctx context.Context, arg InsertOutboxRowParams) error {
@@ -480,6 +499,7 @@ func (q *Queries) InsertOutboxRow(ctx context.Context, arg InsertOutboxRowParams
 		arg.BindingID,
 		arg.ActionName,
 		arg.Params,
+		arg.ExecutionContext,
 	)
 	return err
 }

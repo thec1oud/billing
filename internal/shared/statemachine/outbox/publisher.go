@@ -7,6 +7,7 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -149,13 +150,40 @@ func (p *Publisher) execute(ctx context.Context, row repository.OutboxRow) {
 		return
 	}
 
-	ec := &model.ExecutionContext{
-		InstanceID: row.InstanceID,
-		Now:        time.Now(),
+	instance, err := p.repo.GetInstanceByID(ctx, nil, row.InstanceID)
+	if err != nil {
+		p.terminal(ctx, row, fmt.Errorf("load state machine instance: %w", err))
+		return
+	}
+	ec := model.ExecutionContext{
+		InstanceID:  instance.InstanceID,
+		SubjectType: instance.SubjectType,
+		SubjectID:   instance.SubjectID,
+		Context:     instance.Context,
+		Now:         time.Now(),
+	}
+	if len(row.ExecutionContext) > 0 {
+		if err := json.Unmarshal(row.ExecutionContext, &ec); err != nil {
+			p.terminal(ctx, row, fmt.Errorf("decode outbox execution context: %w", err))
+			return
+		}
+		ec.InstanceID = instance.InstanceID
+		if ec.SubjectType == "" {
+			ec.SubjectType = instance.SubjectType
+		}
+		if ec.SubjectID == "" {
+			ec.SubjectID = instance.SubjectID
+		}
+		if len(ec.Context) == 0 {
+			ec.Context = instance.Context
+		}
+		if ec.Now.IsZero() {
+			ec.Now = time.Now()
+		}
 	}
 	// db is the pool, not a transaction: ASYNC actions execute outside any
 	// Fire() transaction by design (see engine.runActionHooks docs).
-	if err := action.Execute(ctx, p.pool, ec, row.Params); err != nil {
+	if err := action.Execute(ctx, p.pool, &ec, row.Params); err != nil {
 		p.terminal(ctx, row, err)
 		return
 	}

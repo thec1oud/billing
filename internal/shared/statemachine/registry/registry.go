@@ -31,15 +31,20 @@ type Guard interface {
 }
 
 // Action performs a side effect at a hook point (state entry/exit, or a specific
-// transition). It may mutate ec.Context; the engine persists the mutated context
-// back to the instance after a successful Fire(). Actions typically close over
-// their own domain repository dependencies at registration time.
+// transition). A SYNC action may mutate ec.Context; the engine persists that
+// mutation with the transition. ASYNC actions receive the execution-context
+// snapshot captured when the outbox row was enqueued; their context mutations
+// are not persisted to the instance. Actions typically close over their own
+// domain repository dependencies at registration time.
 //
 // db is the database handle to use for any of the action's own queries: for a
 // SYNC action it is the live Fire() transaction (so the action's writes commit or
 // roll back atomically with the state transition); for an ASYNC action, executed
 // later by outbox.Publisher outside any Fire() transaction, it is the connection
 // pool. It is never nil — an action that needs no database access can ignore it.
+// ASYNC actions are delivered at least once: a worker can complete a side effect
+// and crash before marking the outbox row published. Implementations must be
+// idempotent for the same execution context and params.
 type Action interface {
 	Name() string
 	Execute(ctx context.Context, db sqlcgen.DBTX, ec *model.ExecutionContext, params json.RawMessage) error

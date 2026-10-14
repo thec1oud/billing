@@ -415,7 +415,7 @@ func (e *Engine) runActionHooks(
 		case model.ActionModeAsync:
 			bindingID := ab.BindingID
 			hID := historyID
-			if err := e.repo.InsertOutboxRow(ctx, tx, instanceID, &hID, &bindingID, ab.ActionName, params); err != nil {
+			if err := e.repo.InsertOutboxRow(ctx, tx, instanceID, &hID, &bindingID, ab.ActionName, params, *ec); err != nil {
 				if ab.OnError == model.OnErrorContinue {
 					continue
 				}
