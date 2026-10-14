@@ -147,7 +147,7 @@ func run() error {
 	if err := rabbitBroker.InitTopology(ctx); err != nil {
 		return fmt.Errorf("broker topology init: %w", err)
 	}
-	defer rabbitBroker.Close()
+	defer func() { _ = rabbitBroker.Close() }()
 
 	//  Initialize Payment Attempt Repository & Service
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
@@ -233,7 +233,7 @@ func SeedCatalog(
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	amt, _ := money.New(1000, "ETB") // 10.00 ETB per unit
 

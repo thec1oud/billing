@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
 	"github.com/thec1oud/billing/internal/shared/statemachine/model"
+	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
 	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
 	"github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
@@ -43,13 +45,7 @@ func (incrementAction) Execute(_ context.Context, _ sqlcgen.DBTX, ec *model.Exec
 		}
 	}
 	count, _ := data["count"].(float64)
-	data["count"] = count + 1
-	b, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	ec.Context = b
-	return nil
+	return ec.MergeContext(map[string]any{"count": count + 1})
 }
 
 type failingAction struct{ err error }
@@ -57,6 +53,32 @@ type failingAction struct{ err error }
 func (a failingAction) Name() string { return "failing" }
 func (a failingAction) Execute(context.Context, sqlcgen.DBTX, *model.ExecutionContext, json.RawMessage) error {
 	return a.err
+}
+
+type contextAction struct {
+	mu       sync.Mutex
+	contexts []model.ExecutionContext
+}
+
+func (*contextAction) Name() string { return "context_action" }
+func (a *contextAction) Execute(_ context.Context, _ sqlcgen.DBTX, ec *model.ExecutionContext, _ json.RawMessage) error {
+	id, err := ec.SubjectIDInt64()
+	if err != nil {
+		return err
+	}
+	if err := ec.MergeContext(map[string]any{"action_id": id}); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.contexts = append(a.contexts, *ec)
+	a.mu.Unlock()
+	return nil
+}
+
+func (a *contextAction) snapshots() []model.ExecutionContext {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]model.ExecutionContext(nil), a.contexts...)
 }
 
 func newTestEngine(t *testing.T) (*engine.Engine, *pgxpool.Pool, *repository.PostgresRepository, *registry.Registry) {
@@ -122,7 +144,7 @@ func TestCreateInstanceAndFire_SyncActionsAndContextPersist(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 
-	instance, err := eng.CreateInstance(ctx, machineType, "widget", "w-1", nil)
+	instance, err := eng.CreateInstance(ctx, machineType, "widget", "w-1", json.RawMessage(`{"status":"PENDING","account_id":42}`))
 	if err != nil {
 		t.Fatalf("create instance: %v", err)
 	}
@@ -130,6 +152,8 @@ func TestCreateInstanceAndFire_SyncActionsAndContextPersist(t *testing.T) {
 		t.Fatalf("expected DRAFT, got %s", instance.CurrentState)
 	}
 	assertCount(t, instance.Context, 1) // DRAFT's ON_ENTER ran once
+	assertContextValue(t, instance.Context, "status", "PENDING")
+	assertContextValue(t, instance.Context, "account_id", float64(42))
 
 	result, err := eng.Fire(ctx, instance.InstanceID, "submit", nil)
 	if err != nil {
@@ -148,6 +172,89 @@ func TestCreateInstanceAndFire_SyncActionsAndContextPersist(t *testing.T) {
 	}
 	// ON_TRANSITION increment + DONE's ON_ENTER increment = 2 more, on top of the 1 from DRAFT's ON_ENTER.
 	assertCount(t, final.Context, 3)
+	assertContextValue(t, final.Context, "status", "PENDING")
+	assertContextValue(t, final.Context, "account_id", float64(42))
+}
+
+func TestSameActionReceivesCompleteContextInSyncAndAsyncModes(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.NewPostgresContainer(t)
+	repo := repository.NewPostgresRepository(pool)
+	reg := registry.New()
+	action := &contextAction{}
+	if err := reg.RegisterAction(action); err != nil {
+		t.Fatalf("register action: %v", err)
+	}
+	eng := engine.NewEngine(pool, repo, reg)
+	initialContext := json.RawMessage(`{"status":"PENDING","account_id":42}`)
+
+	for _, mode := range []model.ActionMode{model.ActionModeSync, model.ActionModeAsync} {
+		machineType := model.MachineType("context_action_" + string(mode))
+		spec := loader.DefinitionSpec{
+			MachineType: machineType, Version: 1, InitialState: "A", Activate: true,
+			States: []loader.StateSpec{{Name: "A"}, {Name: "B", IsFinal: true}},
+			Transitions: []loader.TransitionSpec{{
+				FromState: "A", EventName: "go", ToState: "B",
+				Actions: []loader.ActionBindingSpec{{
+					Seq: 1, ActionName: action.Name(), ParamsKind: model.ParamsKindStatic,
+					Mode: mode, OnError: model.OnErrorAbort,
+				}},
+			}},
+		}
+		if _, err := loader.Publish(ctx, pool, repo, reg, spec); err != nil {
+			t.Fatalf("publish %s definition: %v", mode, err)
+		}
+		instance, err := eng.CreateInstance(ctx, machineType, "widget", "42", initialContext)
+		if err != nil {
+			t.Fatalf("create %s instance: %v", mode, err)
+		}
+		payload := json.RawMessage(`{"reason":"requested"}`)
+		if _, err := eng.Fire(ctx, instance.InstanceID, "go", payload); err != nil {
+			t.Fatalf("fire %s transition: %v", mode, err)
+		}
+		if mode == model.ActionModeAsync {
+			publisher := outbox.NewPublisher(pool, repo, reg, outbox.Config{BatchSize: 10})
+			if err := publisher.Tick(ctx); err != nil {
+				t.Fatalf("execute %s action: %v", mode, err)
+			}
+		}
+	}
+
+	snapshots := action.snapshots()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected action to run in both modes, got %d calls", len(snapshots))
+	}
+	for i, ec := range snapshots {
+		id, err := ec.SubjectIDInt64()
+		if err != nil || id != 42 {
+			t.Fatalf("action call %d subject ID = %d, %v", i, id, err)
+		}
+		assertContextValue(t, ec.Context, "status", "PENDING")
+		assertContextValue(t, ec.Context, "account_id", float64(42))
+		assertContextValue(t, ec.Context, "action_id", float64(42))
+		if !jsonEqual(ec.EventPayload, json.RawMessage(`{"reason":"requested"}`)) {
+			t.Fatalf("action call %d lost event payload: %s", i, ec.EventPayload)
+		}
+	}
+}
+
+func jsonEqual(left, right json.RawMessage) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return string(left) == string(right)
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
+
+func assertContextValue(t *testing.T, ctxJSON json.RawMessage, key string, want any) {
+	t.Helper()
+	var data map[string]any
+	if err := json.Unmarshal(ctxJSON, &data); err != nil {
+		t.Fatalf("unmarshal context: %v", err)
+	}
+	if data[key] != want {
+		t.Fatalf("expected context[%q]=%v, got %v (context=%s)", key, want, data[key], ctxJSON)
+	}
 }
 
 func assertCount(t *testing.T, ctxJSON json.RawMessage, want float64) {

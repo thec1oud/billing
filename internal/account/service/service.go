@@ -75,7 +75,7 @@ func (s *Service) Create(
 	if err != nil {
 		return model.Account{}, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	result, err := s.repository.Create(ctx, tx, in)
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *Service) Create(
 			AggregateID:   strconv.FormatInt(result.AccountID, 10),
 			EventType:     eventmodel.AccountCreated,
 			EventVersion:  1,
-			Actor: actor,
+			Actor:         actor,
 			Payload: account.AccountCreated{
 				AccountID:        result.AccountID,
 				ExternalID:       result.ExternalID,
@@ -144,7 +144,9 @@ func (s *Service) Activate(
 	actor eventmodel.Actor,
 	id int64,
 ) (model.Account, error) {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType),
+	)
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -162,7 +164,9 @@ func (s *Service) Reactivate(
 	actor eventmodel.Actor,
 	id int64,
 ) (model.Account, error) {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType),
+	)
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -187,7 +191,9 @@ func (s *Service) Suspend(
 		)
 	}
 
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType),
+	)
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -219,7 +225,9 @@ func (s *Service) Close(
 		)
 	}
 
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, string(eventmodel.AggregateAccount), fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx, "account", fmt.Sprintf("%d", id), sm_model.MachineType(statemachine.AccountMachineType),
+	)
 	if err != nil {
 		return model.Account{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -253,7 +261,7 @@ func (s *Service) AddPaymentMethod(
 	if err != nil {
 		return model.Account{}, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if err := s.repository.AddPaymentMethod(
 		ctx,
@@ -277,7 +285,7 @@ func (s *Service) AddPaymentMethod(
 			AggregateID:   strconv.FormatInt(id, 10),
 			EventType:     eventmodel.PaymentMethodAdded,
 			EventVersion:  1,
-			Actor: actor,
+			Actor:         actor,
 			Payload: account.PaymentMethodAdded{
 				AccountID:       id,
 				PaymentMethodID: paymentMethodID,

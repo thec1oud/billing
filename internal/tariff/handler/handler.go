@@ -67,7 +67,7 @@ func (h *TariffHandler) HandleCreateTariff(
 		return
 	}
 
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	created, err := h.svc.CreateTariff(
 		r.Context(),

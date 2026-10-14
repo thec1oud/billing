@@ -73,25 +73,23 @@ func InitGlobalLogger(cfg *config.Config) ([]io.Closer, error) {
 		opts.AddSource = true // Helps trace log origin during dev
 	}
 
-	var handler slog.Handler
+	var logger *slog.Logger
 	if strings.EqualFold(cfg.AppEnv, "production") {
-		handler = slog.NewJSONHandler(combinedWriter, opts)
+		logger = slog.New(slog.NewJSONHandler(combinedWriter, opts))
 	} else {
-		handler = tint.NewHandler(combinedWriter, &tint.Options{
+		logger = slog.New(tint.NewTextHandler(combinedWriter, &tint.Options{
 			Level:      opts.Level,
 			TimeFormat: time.RFC3339,
 			AddSource:  opts.AddSource,
-		})
+		}))
 	}
-
-	logger := slog.New(handler)
 
 	// 1. Set global slog default
 	slog.SetDefault(logger)
 
 	// 2. Redirect standard log package output (used by third-party packages / driver internals) to slog
 	log.SetFlags(0)
-	log.SetOutput(slog.NewLogLogger(handler, slog.LevelInfo).Writer())
+	log.SetOutput(slog.NewLogLogger(logger.Handler(), slog.LevelInfo).Writer())
 
 	slog.Info("logger pipeline initialized successfully",
 		"env", cfg.AppEnv,

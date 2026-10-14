@@ -6,6 +6,8 @@ package model
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -231,6 +233,41 @@ type ExecutionContext struct {
 	Context      json.RawMessage
 	Now          time.Time
 	TriggeredBy  string
+}
+
+// MergeContext adds or replaces keys while preserving the rest of the JSON context.
+func (ec *ExecutionContext) MergeContext(values map[string]any) error {
+	var context map[string]json.RawMessage
+	if len(ec.Context) > 0 {
+		if err := json.Unmarshal(ec.Context, &context); err != nil {
+			return fmt.Errorf("decode execution context: %w", err)
+		}
+	}
+	if context == nil {
+		context = make(map[string]json.RawMessage)
+	}
+	for key, value := range values {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("encode context key %q: %w", key, err)
+		}
+		context[key] = encoded
+	}
+	merged, err := json.Marshal(context)
+	if err != nil {
+		return fmt.Errorf("encode execution context: %w", err)
+	}
+	ec.Context = merged
+	return nil
+}
+
+// SubjectIDInt64 parses a decimal database identifier from SubjectID.
+func (ec ExecutionContext) SubjectIDInt64() (int64, error) {
+	id, err := strconv.ParseInt(ec.SubjectID, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse subject ID %q: %w", ec.SubjectID, err)
+	}
+	return id, nil
 }
 
 // FireResult describes the outcome of a successful Fire() or CreateInstance() call.

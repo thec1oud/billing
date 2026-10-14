@@ -15,7 +15,6 @@ import (
 	"github.com/thec1oud/billing/internal/infra/storage"
 )
 
-
 type Dependencies struct {
 	DB     *pgx.Conn     // single connection, used for migrations
 	Pool   *pgxpool.Pool // pooled connections, used by repositories that compose transactions

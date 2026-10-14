@@ -39,7 +39,6 @@ import (
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
-	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	"github.com/thec1oud/billing/internal/shared/money"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_loader "github.com/thec1oud/billing/internal/shared/statemachine/loader"
@@ -50,6 +49,7 @@ import (
 	subscriptionmodel "github.com/thec1oud/billing/internal/subscription/model"
 	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
+	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	tariffhandler "github.com/thec1oud/billing/internal/tariff/handler"
 	tariff "github.com/thec1oud/billing/internal/tariff/model"
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
@@ -72,7 +72,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	broker, err := messaging.NewRabbitBroker(cluster.RabbitConn)
 	require.NoError(t, err)
 	require.NoError(t, broker.InitTopology(ctx))
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// 2. Setup Services
 
@@ -197,8 +197,8 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	// Phase 2: Create Tariff
 	var createdTariff tariff.Tariff
 	resp = doJSON("POST", "/api/v1/tariffs", tariffhandler.CreateInput{
-		Code:        "standard_per_unit_1000",
-		Name:        "Standard Per Unit 1000 ETB",
+		Code:         "standard_per_unit_1000",
+		Name:         "Standard Per Unit 1000 ETB",
 		Description:  "Basic per unit pricing",
 		TariffType:   tariff.TariffTypePerUnit,
 		QuantityUnit: tariff.UnitAPICall,

@@ -16,23 +16,25 @@ import (
 // OutboxRow is a claimed or unclaimed row from sm_action_outbox: a queued ASYNC
 // action side effect awaiting execution by outbox.Publisher.
 type OutboxRow struct {
-	OutboxID   int64
-	InstanceID uuid.UUID
-	HistoryID  *int64
-	BindingID  *uuid.UUID
-	ActionName string
-	Params     json.RawMessage
-	Status     model.OutboxStatus
-	Attempts   int
-	ClaimedAt  *time.Time
-	ClaimedBy  string
-	LastError  string
-	CreatedAt  time.Time
+	OutboxID         int64
+	InstanceID       uuid.UUID
+	HistoryID        *int64
+	BindingID        *uuid.UUID
+	ActionName       string
+	Params           json.RawMessage
+	ExecutionContext json.RawMessage
+	Status           model.OutboxStatus
+	Attempts         int
+	ClaimedAt        *time.Time
+	ClaimedBy        string
+	LastError        string
+	CreatedAt        time.Time
 }
 
 func (r *PostgresRepository) InsertOutboxRow(
 	ctx context.Context, db DBTX,
 	instanceID uuid.UUID, historyID *int64, bindingID *uuid.UUID, actionName string, params json.RawMessage,
+	executionContexts ...model.ExecutionContext,
 ) error {
 	q := r.getQuerier(db)
 
@@ -41,12 +43,21 @@ func (r *PostgresRepository) InsertOutboxRow(
 		hID = pgtype.Int8{Int64: *historyID, Valid: true}
 	}
 
+	var executionContext []byte
+	if len(executionContexts) > 0 {
+		var err error
+		executionContext, err = json.Marshal(executionContexts[0])
+		if err != nil {
+			return fmt.Errorf("marshal outbox execution context: %w", err)
+		}
+	}
 	err := q.InsertOutboxRow(ctx, sqlcgen.InsertOutboxRowParams{
-		InstanceID: instanceID,
-		HistoryID:  hID,
-		BindingID:  bindingID,
-		ActionName: actionName,
-		Params:     nonEmptyJSON(params),
+		InstanceID:       instanceID,
+		HistoryID:        hID,
+		BindingID:        bindingID,
+		ActionName:       actionName,
+		Params:           nonEmptyJSON(params),
+		ExecutionContext: executionContext,
 	})
 	if err != nil {
 		return fmt.Errorf("insert outbox row: %w", err)
@@ -73,7 +84,9 @@ func (r *PostgresRepository) ClaimOutboxRows(ctx context.Context, db DBTX, limit
 
 	result := make([]OutboxRow, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, mapOutboxRow(row))
+		result = append(result, mapOutboxFields(row.OutboxID, row.InstanceID, row.HistoryID, row.BindingID,
+			row.ActionName, row.Params, row.ExecutionContext, row.Status, row.Attempts, row.ClaimedAt,
+			row.ClaimedBy, row.LastError, row.CreatedAt))
 	}
 	return result, nil
 }
@@ -118,29 +131,34 @@ func (r *PostgresRepository) ReapStuckOutbox(ctx context.Context, db DBTX, claim
 	return n, nil
 }
 
-func mapOutboxRow(row sqlcgen.SmActionOutbox) OutboxRow {
+func mapOutboxFields(
+	outboxID int64, instanceID uuid.UUID, rawHistoryID pgtype.Int8, bindingID *uuid.UUID,
+	actionName string, params, executionContext []byte, status string, attempts int32,
+	rawClaimedAt pgtype.Timestamptz, rawClaimedBy, rawLastError pgtype.Text, createdAt time.Time,
+) OutboxRow {
 	var historyID *int64
-	if row.HistoryID.Valid {
-		v := row.HistoryID.Int64
+	if rawHistoryID.Valid {
+		v := rawHistoryID.Int64
 		historyID = &v
 	}
 	var claimedAt *time.Time
-	if row.ClaimedAt.Valid {
-		v := row.ClaimedAt.Time
+	if rawClaimedAt.Valid {
+		v := rawClaimedAt.Time
 		claimedAt = &v
 	}
 	return OutboxRow{
-		OutboxID:   row.OutboxID,
-		InstanceID: row.InstanceID,
-		HistoryID:  historyID,
-		BindingID:  row.BindingID,
-		ActionName: row.ActionName,
-		Params:     row.Params,
-		Status:     model.OutboxStatus(row.Status),
-		Attempts:   int(row.Attempts),
-		ClaimedAt:  claimedAt,
-		ClaimedBy:  textValue(row.ClaimedBy),
-		LastError:  textValue(row.LastError),
-		CreatedAt:  row.CreatedAt,
+		OutboxID:         outboxID,
+		InstanceID:       instanceID,
+		HistoryID:        historyID,
+		BindingID:        bindingID,
+		ActionName:       actionName,
+		Params:           params,
+		ExecutionContext: executionContext,
+		Status:           model.OutboxStatus(status),
+		Attempts:         int(attempts),
+		ClaimedAt:        claimedAt,
+		ClaimedBy:        textValue(rawClaimedBy),
+		LastError:        textValue(rawLastError),
+		CreatedAt:        createdAt,
 	}
 }

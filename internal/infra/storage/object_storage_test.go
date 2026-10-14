@@ -9,6 +9,7 @@ import (
 
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	appconfig "github.com/thec1oud/billing/internal/config"
 )
 
@@ -16,7 +17,9 @@ type mockPutObjectAPI struct {
 	err error
 }
 
-func (m *mockPutObjectAPI) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+func (m *mockPutObjectAPI) PutObject(
+	ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options),
+) (*s3.PutObjectOutput, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -28,7 +31,9 @@ type mockPresignAPI struct {
 	url string
 }
 
-func (m *mockPresignAPI) PresignGetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error) {
+func (m *mockPresignAPI) PresignGetObject(
+	ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions),
+) (*v4.PresignedHTTPRequest, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

@@ -193,7 +193,9 @@ func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload,
 	return payload, nil
 }
 
-func (a *FakeAdapter) RespondWebhook(w http.ResponseWriter, r *http.Request, code ppi.WebhookResponseCode, payload ppi.ProviderWebhookPayload) {
+func (a *FakeAdapter) RespondWebhook(
+	w http.ResponseWriter, r *http.Request, code ppi.WebhookResponseCode, payload ppi.ProviderWebhookPayload,
+) {
 	w.Header().Set("Content-Type", "application/json")
 	switch code {
 	case ppi.WebhookResponseIgnored:

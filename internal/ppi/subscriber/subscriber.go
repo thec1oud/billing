@@ -11,7 +11,6 @@ import (
 	"github.com/thec1oud/billing/internal/ppi"
 )
 
-
 type WebhookSubscriberFunc func(ctx context.Context, payload ppi.ProviderWebhookPayload) error
 
 func RegisterModuleSubscriber(
