@@ -16,35 +16,6 @@ import (
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
-type mockBroker struct {
-	publishedKeys []string
-	publishedMsgs [][]byte
-	forceErr      bool
-}
-
-func (m *mockBroker) InitTopology(ctx context.Context) error {
-	return nil
-}
-
-func (m *mockBroker) PublishEvent(ctx context.Context, routingKey string, body []byte) error {
-	if m.forceErr {
-		return errors.New("broker connection failure")
-	}
-	m.publishedKeys = append(m.publishedKeys, routingKey)
-	m.publishedMsgs = append(m.publishedMsgs, body)
-	return nil
-}
-
-func (m *mockBroker) RegisterConsumerGroup(
-	ctx context.Context, queueName string, routingKeys []string, h func(ctx context.Context, msg []byte) error,
-) error {
-	return nil
-}
-
-func (m *mockBroker) Close() error {
-	return nil
-}
-
 type mockService struct {
 	adapters       map[string]ppi.Provider
 	processed      []ppi.ProviderWebhookPayload
@@ -96,8 +67,7 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 	fakeAdapter := fake.NewFakeAdapter()
 	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
 
-	broker := &mockBroker{}
-	h := handler.NewWebhookHandler(svc, broker)
+	h := handler.NewWebhookHandler(svc)
 
 	body := []byte(`{
 		"event_id": "evt_test_100",
@@ -128,65 +98,13 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 		t.Errorf("expected status 'processed', got %q", resp["status"])
 	}
 
-	if len(broker.publishedKeys) != 1 {
-		t.Fatalf("expected 1 published event to broker, got %d", len(broker.publishedKeys))
-	}
-
-	if broker.publishedKeys[0] != "ppi.webhook.payment.succeeded" {
-		t.Errorf("expected routing key 'ppi.webhook.payment.succeeded', got %q", broker.publishedKeys[0])
-	}
 }
-
-func TestWebhookHandler_BrokerPublishFailureRetriesOnNextRequest(t *testing.T) {
-	svc := newMockService()
-	fakeAdapter := fake.NewFakeAdapter()
-	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
-
-	broker := &mockBroker{}
-	h := handler.NewWebhookHandler(svc, broker)
-
-	body := []byte(`{
-		"event_id": "evt_test_retry",
-		"event": "charge.success",
-		"tx_ref": "tx_inv_56",
-		"reference": "ref_retry_999",
-		"status": "success"
-	}`)
-
-	// 1. First call: Broker fails
-	broker.forceErr = true
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
-	req1.SetPathValue("provider", "fake")
-	rec1 := httptest.NewRecorder()
-
-	h.HandleWebhook(rec1, req1)
-	if rec1.Code != http.StatusInternalServerError {
-		t.Fatalf("expected HTTP 500 when broker publish fails, got %d", rec1.Code)
-	}
-
-	// 2. Provider retries 5 seconds later: Broker is recovered
-	broker.forceErr = false
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
-	req2.SetPathValue("provider", "fake")
-	rec2 := httptest.NewRecorder()
-
-	h.HandleWebhook(rec2, req2)
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("expected HTTP 200 on retry after broker recovery, got %d", rec2.Code)
-	}
-
-	if len(broker.publishedKeys) != 1 {
-		t.Fatalf("expected broker to receive 1 successful publish on retry, got %d", len(broker.publishedKeys))
-	}
-}
-
 func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 	svc := newMockService()
 	fakeAdapter := fake.NewFakeAdapter()
 	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
 
-	broker := &mockBroker{}
-	h := handler.NewWebhookHandler(svc, broker)
+	h := handler.NewWebhookHandler(svc)
 
 	body := []byte(`{
 		"event_id": "evt_test_dup",
@@ -201,6 +119,12 @@ func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 	req1.SetPathValue("provider", "fake")
 	rec1 := httptest.NewRecorder()
 	h.HandleWebhook(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected first webhook request to succeed, got %d", rec1.Code)
+	}
+	if err := svc.MarkWebhookPublished(context.Background(), "evt_test_dup"); err != nil {
+		t.Fatalf("mark webhook published: %v", err)
+	}
 
 	// 2. Second call: Same payload after successful publish -> ignored as duplicate
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))

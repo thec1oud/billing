@@ -15,7 +15,6 @@ import (
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
 	CancelSubscriptionNow(ctx context.Context, arg CancelSubscriptionNowParams) (int64, error)
-	CheckPPIWebhookStatus(ctx context.Context, arg CheckPPIWebhookStatusParams) (CheckPPIWebhookStatusRow, error)
 	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]ClaimOutboxRowsRow, error)
 	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
 	ClearDefaultPaymentMethod(ctx context.Context, accountID int64) error
@@ -35,8 +34,9 @@ type Querier interface {
 	FinalizeInvoice(ctx context.Context, arg FinalizeInvoiceParams) (pgtype.Text, error)
 	FinalizeTransitionHistory(ctx context.Context, arg FinalizeTransitionHistoryParams) error
 	GetAccount(ctx context.Context, accountID int64) (GetAccountRow, error)
-	GetActiveDefinition(ctx context.Context, machineType string) (SmDefinition, error)
-	GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (SmDefinition, error)
+	GetActiveDefinition(ctx context.Context, machineType string) (GetActiveDefinitionRow, error)
+	GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (GetDefinitionByIDRow, error)
+	GetDefinitionByMachineTypeVersion(ctx context.Context, arg GetDefinitionByMachineTypeVersionParams) (GetDefinitionByMachineTypeVersionRow, error)
 	GetInstanceByID(ctx context.Context, instanceID uuid.UUID) (SmInstance, error)
 	GetInstanceBySubject(ctx context.Context, arg GetInstanceBySubjectParams) (SmInstance, error)
 	GetInstanceForUpdate(ctx context.Context, instanceID uuid.UUID) (SmInstance, error)
@@ -44,6 +44,7 @@ type Querier interface {
 	GetLatestPlanVersion(ctx context.Context, planCode string) (int32, error)
 	GetLatestTariffVersion(ctx context.Context, tariffCode string) (int32, error)
 	GetPPIWebhookByID(ctx context.Context, webhookID string) (PpiWebhook, error)
+	GetPPIWebhookPublishedStatus(ctx context.Context, arg GetPPIWebhookPublishedStatusParams) (bool, error)
 	GetPaymentAttemptByID(ctx context.Context, attemptID int64) (PaymentAttempt, error)
 	GetPaymentAttemptByInternalTxID(ctx context.Context, internalTxID string) (PaymentAttempt, error)
 	GetPaymentAttemptByProviderTxID(ctx context.Context, providerTxID pgtype.Text) (PaymentAttempt, error)
@@ -95,7 +96,7 @@ type Querier interface {
 	ReadStreamFrom(ctx context.Context, arg ReadStreamFromParams) ([]ReadStreamFromRow, error)
 	ReapStuckOutbox(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
 	ReapStuckSchedules(ctx context.Context, claimedAt pgtype.Timestamptz) (int64, error)
-	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) error
+	SavePPIWebhook(ctx context.Context, arg SavePPIWebhookParams) (string, error)
 	ScheduleSubscriptionCancellation(ctx context.Context, subscriptionID int64) (int64, error)
 	TransitionSubscription(ctx context.Context, arg TransitionSubscriptionParams) (int64, error)
 	UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error

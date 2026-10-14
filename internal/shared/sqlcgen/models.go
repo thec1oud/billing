@@ -269,12 +269,13 @@ type SmActionOutbox struct {
 }
 
 type SmDefinition struct {
-	DefinitionID uuid.UUID `json:"definition_id"`
-	MachineType  string    `json:"machine_type"`
-	Version      int32     `json:"version"`
-	InitialState string    `json:"initial_state"`
-	IsActive     bool      `json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
+	DefinitionID uuid.UUID   `json:"definition_id"`
+	MachineType  string      `json:"machine_type"`
+	Version      int32       `json:"version"`
+	InitialState string      `json:"initial_state"`
+	IsActive     bool        `json:"is_active"`
+	CreatedAt    time.Time   `json:"created_at"`
+	ContentHash  pgtype.Text `json:"content_hash"`
 }
 
 type SmGuardBinding struct {

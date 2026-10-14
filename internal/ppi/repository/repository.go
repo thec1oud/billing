@@ -24,7 +24,7 @@ func (r *PostgresRepository) getQuerier(db DBTX) *sqlcgen.Queries {
 
 func (r *PostgresRepository) SaveWebhook(ctx context.Context, db DBTX, payload ppi.ProviderWebhookPayload) error {
 	q := r.getQuerier(db)
-	err := q.SavePPIWebhook(ctx, sqlcgen.SavePPIWebhookParams{
+	_, err := q.SavePPIWebhook(ctx, sqlcgen.SavePPIWebhookParams{
 		WebhookID:    payload.WebhookID,
 		ProviderCode: payload.ProviderCode,
 		EventType:    payload.EventType,
@@ -59,21 +59,21 @@ func (r *PostgresRepository) GetWebhookByID(ctx context.Context, db DBTX, webhoo
 	}, nil
 }
 
-func (r *PostgresRepository) CheckWebhookStatus(
+func (r *PostgresRepository) GetWebhookPublishedStatus(
 	ctx context.Context, db DBTX, providerCode, providerTxID string,
-) (isDuplicate bool, isPublished bool, err error) {
+) (isPublished bool, err error) {
 	if providerTxID == "" {
-		return false, false, nil
+		return false, nil
 	}
 	q := r.getQuerier(db)
-	row, err := q.CheckPPIWebhookStatus(ctx, sqlcgen.CheckPPIWebhookStatusParams{
+	published, err := q.GetPPIWebhookPublishedStatus(ctx, sqlcgen.GetPPIWebhookPublishedStatusParams{
 		ProviderCode: providerCode,
 		ProviderTxID: pgtype.Text{String: providerTxID, Valid: true},
 	})
 	if err != nil {
-		return false, false, fmt.Errorf("check ppi webhook status failed: %w", err)
+		return false, fmt.Errorf("check ppi webhook status failed: %w", err)
 	}
-	return row.IsDuplicate, row.IsPublished, nil
+	return published, nil
 }
 
 func (r *PostgresRepository) MarkPublished(ctx context.Context, db DBTX, webhookID string) error {

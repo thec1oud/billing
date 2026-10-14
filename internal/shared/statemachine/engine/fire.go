@@ -277,12 +277,20 @@ func (e *Engine) Fire(
 	}
 
 	if selected.EmitEventType != "" && e.events != nil {
+		// SubjectType doubles as the event stream's aggregate type. Refuse
+		// anything that is not a declared aggregate so one entity can never end
+		// up split across two differently-spelled streams.
+		aggregateType := eventmodel.AggregateType(instance.SubjectType)
+		if !aggregateType.Valid() {
+			return model.FireResult{}, fmt.Errorf("emit event %q: subject type %q is not a known aggregate type",
+				selected.EmitEventType, instance.SubjectType)
+		}
 		actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem}
 		if o.actor != nil {
 			actor = *o.actor
 		}
 		_, err := e.events.AppendEvent(ctx, tx, eventmodel.AppendRequest{
-			AggregateType: eventmodel.AggregateType(instance.SubjectType),
+			AggregateType: aggregateType,
 			AggregateID:   instance.SubjectID,
 			EventType:     eventmodel.EventType(selected.EmitEventType),
 			EventVersion:  1,

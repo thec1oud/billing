@@ -88,7 +88,7 @@ func (s *Service) Create(
 	_, err = s.smEngine.CreateInstance(
 		ctx,
 		sm_model.MachineType(statemachine.AccountMachineType),
-		"account",
+		string(eventmodel.AggregateAccount),
 		fmt.Sprintf("%d", result.AccountID),
 		initialContext,
 		engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the account row and event

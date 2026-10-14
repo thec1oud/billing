@@ -1,22 +1,19 @@
-//go:build ignore
-
-package invoice
+package model
 
 import (
 	"encoding/json"
 	"fmt"
 	"strconv"
 
-	"github.com/thec1oud/billing/internal/invoice/model"
-	sharedEvents "github.com/thec1oud/billing/internal/shared/eventstore"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 // Reduce is retained for event-stream consumers while the write model is PostgreSQL-backed.
-func Reduce(state model.Invoice, event sharedEvents.Event) (model.Invoice, error) {
+func Reduce(state Invoice, event eventmodel.Event) (Invoice, error) {
 	switch event.EventType {
-	case sharedEvents.InvoiceCreated:
-		var payload model.CreatedPayload
+	case eventmodel.InvoiceCreated:
+		var payload CreatedPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
 			return state, fmt.Errorf("decode invoice.created: %w", err)
 		}
@@ -24,18 +21,20 @@ func Reduce(state model.Invoice, event sharedEvents.Event) (model.Invoice, error
 		if err != nil {
 			return state, fmt.Errorf("invalid invoice aggregate id %q: %w", event.AggregateID, err)
 		}
-		return model.Invoice{
+		return Invoice{
 			InvoiceID: id,
 			AccountID: payload.AccountID,
-			Status:    model.StatusDraft,
+			Status:    StatusDraft,
 			Currency:  money.Currency(payload.Currency),
 			LineItems: payload.LineItems,
 			Total:     payload.Total,
 		}, nil
-	case sharedEvents.InvoiceFinalized:
-		state.Status = model.StatusOpen
-	case sharedEvents.InvoicePaid:
-		state.Status = model.StatusPaid
+	case eventmodel.InvoiceFinalized:
+		state.Status = StatusOpen
+	case eventmodel.InvoicePaid:
+		state.Status = StatusPaid
+	case eventmodel.InvoiceVoided:
+		state.Status = StatusVoid
 	}
 	return state, nil
 }

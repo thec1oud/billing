@@ -1,4 +1,4 @@
-package events_test
+package eventstore_test
 
 import (
 	"context"
@@ -87,7 +87,7 @@ func TestPostgresEventStore_SequenceIsolation(t *testing.T) {
 	ctx := context.Background()
 	store := eventrepo.NewPostgresEventStore(pool)
 
-	aggType := eventmodel.AggregateType("ACCOUNT")
+	aggType := eventmodel.AggregateAccount
 	actor := eventmodel.Actor{Type: "USER", ID: "test-runner"}
 
 	aggID1 := "acc_" + uuid.NewString()

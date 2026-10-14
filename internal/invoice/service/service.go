@@ -104,7 +104,7 @@ func (s *Service) CreateDraftInvoice(
 	_, err = s.smEngine.CreateInstance(
 		ctx,
 		sm_model.MachineType(statemachine.InvoiceMachineType),
-		"invoice",
+		string(eventmodel.AggregateInvoice),
 		fmt.Sprintf("%d", invoiceID),
 		initialContext,
 		engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the invoice row and event

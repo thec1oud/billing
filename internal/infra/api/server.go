@@ -82,7 +82,7 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 
 	// PPI routes
 	if deps.PPIService != nil {
-		ppiHandler := ppiHandlers.NewPPIHandler(deps.PPIService, deps.Broker)
+		ppiHandler := ppiHandlers.NewPPIHandler(deps.PPIService)
 		mux.HandleFunc("POST /api/v1/payments/charge", ppiHandler.HandleAttemptPayment)
 		mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiHandler.HandleWebhook)
 	}

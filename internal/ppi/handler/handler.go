@@ -11,7 +11,6 @@ import (
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
-	"github.com/thec1oud/billing/internal/infra/messaging"
 	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
@@ -28,29 +27,25 @@ type PPIService interface {
 type WebhookService = PPIService
 
 type PPIHandler struct {
-	svc    PPIService
-	broker messaging.Broker
-	log    *slog.Logger
+	svc PPIService
+	log *slog.Logger
 }
 
 type WebhookHandler = PPIHandler
 
 func NewPPIHandler(
 	svc PPIService,
-	broker messaging.Broker,
 ) *PPIHandler {
 	return &PPIHandler{
-		svc:    svc,
-		broker: broker,
-		log:    logger.ForComponent("ppi_handler"),
+		svc: svc,
+		log: logger.ForComponent("ppi_handler"),
 	}
 }
 
 func NewWebhookHandler(
 	svc PPIService,
-	broker messaging.Broker,
 ) *PPIHandler {
-	return NewPPIHandler(svc, broker)
+	return NewPPIHandler(svc)
 }
 
 type AttemptPaymentRequest struct {
@@ -121,7 +116,7 @@ func (h *PPIHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	var isPublished bool
 
-	// 2. Delegate DB Idempotency check & Audit logging to Service layer
+	// 2. Delegate DB Idempotency check, Audit logging, & Broker publishing to Service layer
 	if h.svc != nil {
 		isPublished, err = h.svc.ProcessWebhook(ctx, payload)
 		if err != nil {
@@ -137,41 +132,9 @@ func (h *PPIHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			slog.String("provider", payload.ProviderCode),
 			slog.String("provider_tx_id", payload.ProviderTxID),
 		)
-	} else {
-		// 3. Synchronously Publish to RabbitMQ Message Broker
-		if h.broker != nil {
-			routingKey := DetermineRoutingKey(payload)
-			msgBytes, err := json.Marshal(payload)
-			if err != nil {
-				h.log.Error("Failed to marshal webhook payload for broker", logger.Err(err))
-				parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
-				return
-			}
-
-			if err := h.broker.PublishEvent(ctx, routingKey, msgBytes); err != nil {
-				h.log.Error(
-					"Failed to publish webhook payload to broker; returning HTTP 500 for provider retry",
-					slog.String("routingKey", routingKey),
-					logger.Err(err),
-				)
-				parser.RespondWebhook(w, r, ppi.WebhookResponseError, payload)
-				return
-			}
-
-			// 4. Mark as published in Service layer so subsequent retries are safely ignored as duplicate
-			if h.svc != nil {
-				if err := h.svc.MarkWebhookPublished(ctx, payload.WebhookID); err != nil {
-					h.log.Warn(
-						"Failed to mark webhook as published in DB; broker publish succeeded",
-						slog.String("webhook_id", payload.WebhookID),
-						logger.Err(err),
-					)
-				}
-			}
-		}
 	}
 
-	// 5. Respond HTTP 200 OK to payment provider
+	// 3. Respond HTTP 200 OK to payment provider
 	responseCode := ppi.WebhookResponseProcessed
 	if isPublished {
 		responseCode = ppi.WebhookResponseIgnored
@@ -184,15 +147,4 @@ func extractProviderCode(r *http.Request) string {
 		return strings.ToLower(code)
 	}
 	return strings.ToLower(r.URL.Query().Get("provider"))
-}
-
-func DetermineRoutingKey(p ppi.ProviderWebhookPayload) string {
-	switch p.Status {
-	case ppi.WebhookPaymentSucceeded:
-		return "ppi.webhook.payment.succeeded"
-	case ppi.WebhookPaymentFailed:
-		return "ppi.webhook.payment.failed"
-	default:
-		return "ppi.webhook.payment.pending"
-	}
 }

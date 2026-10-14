@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -79,11 +80,19 @@ func (r *PostgresRepository) InsertDefinition(
 	ctx context.Context, db DBTX,
 	machineType model.MachineType, version int, initialState model.StateName, isActive bool,
 ) (model.DefinitionMeta, error) {
+	return r.InsertDefinitionWithContentHash(ctx, db, machineType, version, "", initialState, isActive)
+}
+
+func (r *PostgresRepository) InsertDefinitionWithContentHash(
+	ctx context.Context, db DBTX,
+	machineType model.MachineType, version int, contentHash string, initialState model.StateName, isActive bool,
+) (model.DefinitionMeta, error) {
 	q := r.getQuerier(db)
 
 	row, err := q.InsertDefinition(ctx, sqlcgen.InsertDefinitionParams{
 		MachineType:  string(machineType),
 		Version:      int32(version),
+		ContentHash:  textOrNil(contentHash),
 		InitialState: string(initialState),
 		IsActive:     isActive,
 	})
@@ -99,6 +108,24 @@ func (r *PostgresRepository) InsertDefinition(
 		IsActive:     isActive,
 		CreatedAt:    row.CreatedAt,
 	}, nil
+}
+
+func (r *PostgresRepository) GetDefinitionByMachineTypeVersion(
+	ctx context.Context,
+	db DBTX,
+	machineType model.MachineType,
+	version int,
+) (uuid.UUID, string, error) {
+	row, err := r.getQuerier(db).GetDefinitionByMachineTypeVersion(ctx, sqlcgen.GetDefinitionByMachineTypeVersionParams{
+		MachineType: string(machineType), Version: int32(version),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, "", model.ErrDefinitionNotFound
+	}
+	if err != nil {
+		return uuid.Nil, "", fmt.Errorf("get definition by machine type and version: %w", err)
+	}
+	return row.DefinitionID, textValue(row.ContentHash), nil
 }
 
 func (r *PostgresRepository) DeactivateDefinitionsForMachineType(ctx context.Context, db DBTX, machineType model.MachineType) error {
@@ -121,7 +148,7 @@ func (r *PostgresRepository) GetActiveDefinition(ctx context.Context, db DBTX, m
 		return model.DefinitionMeta{}, fmt.Errorf("get active definition: %w", err)
 	}
 
-	return mapDefinitionMeta(row), nil
+	return mapDefinitionMeta(row.DefinitionID, row.MachineType, row.Version, row.InitialState, row.IsActive, row.CreatedAt), nil
 }
 
 func (r *PostgresRepository) GetDefinitionByID(ctx context.Context, db DBTX, definitionID uuid.UUID) (model.DefinitionMeta, error) {
@@ -135,17 +162,24 @@ func (r *PostgresRepository) GetDefinitionByID(ctx context.Context, db DBTX, def
 		return model.DefinitionMeta{}, fmt.Errorf("get definition by id: %w", err)
 	}
 
-	return mapDefinitionMeta(row), nil
+	return mapDefinitionMeta(row.DefinitionID, row.MachineType, row.Version, row.InitialState, row.IsActive, row.CreatedAt), nil
 }
 
-func mapDefinitionMeta(row sqlcgen.SmDefinition) model.DefinitionMeta {
+func mapDefinitionMeta(
+	id uuid.UUID,
+	machineType string,
+	version int32,
+	initialState string,
+	isActive bool,
+	createdAt time.Time,
+) model.DefinitionMeta {
 	return model.DefinitionMeta{
-		DefinitionID: row.DefinitionID,
-		MachineType:  model.MachineType(row.MachineType),
-		Version:      int(row.Version),
-		InitialState: model.StateName(row.InitialState),
-		IsActive:     row.IsActive,
-		CreatedAt:    row.CreatedAt,
+		DefinitionID: id,
+		MachineType:  model.MachineType(machineType),
+		Version:      int(version),
+		InitialState: model.StateName(initialState),
+		IsActive:     isActive,
+		CreatedAt:    createdAt,
 	}
 }
 

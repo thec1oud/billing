@@ -73,32 +73,15 @@ func (s *Service) Create(
 		)
 	}
 
-	p, err := s.plans.GetByID(ctx, input.PlanID)
-	if err != nil {
-		return model.Subscription{}, fmt.Errorf(
-			"get plan: %w",
-			err,
+	if s.accounts == nil {
+		return model.Subscription{}, errors.New(
+			"account repository is not configured",
 		)
 	}
 
-	if p.Version != input.PlanVersion {
-		return model.Subscription{}, fmt.Errorf(
-			"plan %d version mismatch: requested=%d actual=%d",
-			input.PlanID,
-			input.PlanVersion,
-			p.Version,
-		)
-	}
-
-	a, err := s.accounts.Get(ctx, s.accounts.Pool(), input.AccountID)
-	if err != nil {
-		return model.Subscription{}, err
-	}
-
-	if a.Status != accountmodel.StatusActive {
-		return model.Subscription{}, fmt.Errorf(
-			"account %d is not active",
-			input.AccountID,
+	if s.repository == nil {
+		return model.Subscription{}, errors.New(
+			"subscription repository is not configured",
 		)
 	}
 
@@ -118,6 +101,30 @@ func (s *Service) Create(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	p, err := s.plans.GetByID(ctx, input.PlanID)
+	if err != nil {
+		return model.Subscription{}, fmt.Errorf("get plan: %w", err)
+	}
+	if p.Version != input.PlanVersion {
+		return model.Subscription{}, fmt.Errorf(
+			"plan %d version mismatch: requested=%d actual=%d",
+			input.PlanID,
+			input.PlanVersion,
+			p.Version,
+		)
+	}
+
+	status, err := s.accounts.LockAccountForUpdate(ctx, tx, input.AccountID)
+	if err != nil {
+		return model.Subscription{}, err
+	}
+	if status != accountmodel.StatusActive {
+		return model.Subscription{}, fmt.Errorf(
+			"account %d is not active",
+			input.AccountID,
+		)
+	}
+
 	created, err := s.repository.Create(ctx, tx, input)
 	if err != nil {
 		return model.Subscription{}, err
@@ -127,7 +134,7 @@ func (s *Service) Create(
 		if _, err := s.smEngine.CreateInstance(
 			ctx,
 			sm_model.MachineType("subscription_lifecycle"),
-			"subscription",
+			string(eventmodel.AggregateSubscription),
 			fmt.Sprintf("%d", created.SubscriptionID),
 			initialContext,
 			sm_engine.WithTx(tx), // share the outer tx: SM instance is committed atomically with the subscription row and event
@@ -201,7 +208,7 @@ func (s *Service) fireTransition(
 
 	instance, err := s.smEngine.GetInstanceBySubject(
 		ctx,
-		"subscription",
+		string(eventmodel.AggregateSubscription),
 		fmt.Sprintf("%d", subscriptionID),
 		subscriptionstatemachine.SubscriptionMachineType,
 	)

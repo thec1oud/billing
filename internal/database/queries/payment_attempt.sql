@@ -63,10 +63,14 @@ DELETE FROM payment_attempts
 WHERE attempt_id = $1;
 
 -- name: GetStalePendingAttempts :many
-SELECT
-    attempt_id, invoice_id, provider_code, internal_tx_id, provider_tx_id,
-    amount_minor, currency, status, raw_response, raw_request, created_at, updated_at
-FROM payment_attempts
-WHERE status = 'PENDING' AND updated_at < $1
-ORDER BY updated_at ASC
-LIMIT $2;
+UPDATE payment_attempts
+SET updated_at = NOW()
+WHERE attempt_id IN (
+    SELECT pa.attempt_id
+    FROM payment_attempts pa
+    WHERE pa.status = 'PENDING' AND pa.updated_at < $1
+    ORDER BY pa.updated_at ASC
+    LIMIT $2
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING attempt_id, invoice_id, provider_code, internal_tx_id, provider_tx_id, amount_minor, currency, status, raw_response, raw_request, created_at, updated_at;
