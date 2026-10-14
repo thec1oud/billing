@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/shared/eventstore/model"
@@ -45,6 +46,16 @@ func (s *PostgresEventStore) Append(ctx context.Context, tx sqlcgen.DBTX, req mo
 	actorBytes, err := json.Marshal(req.Actor)
 	if err != nil {
 		actorBytes = []byte("{}")
+	}
+
+	// Acquire a transaction-scoped advisory lock keyed on (aggregate_type, aggregate_id)
+	// before computing MAX(sequence)+1. This serializes concurrent appends to the same
+	// stream and eliminates the TOCTOU race described in Issue #34.
+	if err := q.LockAggregateStream(ctx, sqlcgen.LockAggregateStreamParams{
+		Column1: pgtype.Text{String: string(req.AggregateType), Valid: true},
+		Column2: pgtype.Text{String: req.AggregateID, Valid: true},
+	}); err != nil {
+		return model.Event{}, fmt.Errorf("lock aggregate stream: %w", err)
 	}
 
 	row, err := q.AppendEvent(ctx, sqlcgen.AppendEventParams{
