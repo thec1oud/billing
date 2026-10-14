@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -231,10 +232,18 @@ func TestSameActionReceivesCompleteContextInSyncAndAsyncModes(t *testing.T) {
 		assertContextValue(t, ec.Context, "status", "PENDING")
 		assertContextValue(t, ec.Context, "account_id", float64(42))
 		assertContextValue(t, ec.Context, "action_id", float64(42))
-		if string(ec.EventPayload) != `{"reason":"requested"}` {
+		if !jsonEqual(ec.EventPayload, json.RawMessage(`{"reason":"requested"}`)) {
 			t.Fatalf("action call %d lost event payload: %s", i, ec.EventPayload)
 		}
 	}
+}
+
+func jsonEqual(left, right json.RawMessage) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return string(left) == string(right)
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
 }
 
 func assertContextValue(t *testing.T, ctxJSON json.RawMessage, key string, want any) {

@@ -11,6 +11,7 @@ import (
 	accountrepository "github.com/thec1oud/billing/internal/account/repository"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
+	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
 	subscription "github.com/thec1oud/billing/internal/subscription"
@@ -18,7 +19,6 @@ import (
 	"github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
-	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 )
 
 type Service struct {
@@ -116,7 +116,7 @@ func (s *Service) Create(
 	if err != nil {
 		return model.Subscription{}, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	created, err := s.repository.Create(ctx, tx, input)
 	if err != nil {

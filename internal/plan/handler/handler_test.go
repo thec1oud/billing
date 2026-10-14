@@ -22,7 +22,7 @@ type mockPlanService struct {
 
 	createPlanCalled         bool
 	createPlanDurationCalled bool
-	listActivePlansCalled   bool
+	listActivePlansCalled    bool
 
 	createdPlan planmodel.Plan
 }
@@ -88,8 +88,8 @@ func TestHandleCreatePlan(t *testing.T) {
 			LegacyPricePolicyCode: planmodel.LegacyPolicyKeepForever,
 			Durations: []planmodel.PlanDuration{
 				{
-					TariffID:  1,
-					Duration:  30 * 24 * time.Hour,
+					TariffID: 1,
+					Duration: 30 * 24 * time.Hour,
 				},
 			},
 		}

@@ -175,4 +175,3 @@ func (m Money) Format() string {
 		m.Currency,
 	)
 }
-

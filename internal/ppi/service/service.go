@@ -99,7 +99,7 @@ func (s *Service) ChargePaymentMethod(
 	if err != nil {
 		return ppi.ChargeResult{}, fmt.Errorf("failed to begin update transaction: %w", err)
 	}
-	defer updateTx.Rollback(ctx)
+	defer func() { _ = updateTx.Rollback(ctx) }()
 
 	// 6. Handle provider failure: mark attempt as FAILED and surface the error
 	if adapterErr != nil || result.Status == ppi.ChargeStatusFailed {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -95,9 +96,12 @@ func TestPublisher_Tick_ExecutesClaimedRowAndMarksPublished(t *testing.T) {
 		t.Fatalf("expected action to run once, got %d", action.callCount())
 	}
 	gotContext := action.executionContext()
-	if gotContext.SubjectID != executionContext.SubjectID || gotContext.SubjectType != executionContext.SubjectType ||
-		gotContext.EventName != executionContext.EventName || gotContext.TriggeredBy != executionContext.TriggeredBy ||
-		string(gotContext.EventPayload) != string(executionContext.EventPayload) || string(gotContext.Context) != string(executionContext.Context) ||
+	if gotContext.SubjectID != executionContext.SubjectID ||
+		gotContext.SubjectType != executionContext.SubjectType ||
+		gotContext.EventName != executionContext.EventName ||
+		gotContext.TriggeredBy != executionContext.TriggeredBy ||
+		!jsonEqual(gotContext.EventPayload, executionContext.EventPayload) ||
+		!jsonEqual(gotContext.Context, executionContext.Context) ||
 		!gotContext.Now.Equal(executionContext.Now) {
 		t.Fatalf("async action received incomplete execution context: %+v", gotContext)
 	}
@@ -109,6 +113,14 @@ func TestPublisher_Tick_ExecutesClaimedRowAndMarksPublished(t *testing.T) {
 	if len(remaining) != 0 {
 		t.Fatalf("expected no PENDING rows left after publish, got %d", len(remaining))
 	}
+}
+
+func jsonEqual(left, right json.RawMessage) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return string(left) == string(right)
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
 }
 
 func TestPublisher_Tick_FailingAction_RetriesThenFails(t *testing.T) {

@@ -59,7 +59,9 @@ func (r *PostgresRepository) GetWebhookByID(ctx context.Context, db DBTX, webhoo
 	}, nil
 }
 
-func (r *PostgresRepository) CheckWebhookStatus(ctx context.Context, db DBTX, providerCode, providerTxID string) (isDuplicate bool, isPublished bool, err error) {
+func (r *PostgresRepository) CheckWebhookStatus(
+	ctx context.Context, db DBTX, providerCode, providerTxID string,
+) (isDuplicate bool, isPublished bool, err error) {
 	if providerTxID == "" {
 		return false, false, nil
 	}

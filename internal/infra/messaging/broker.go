@@ -11,7 +11,6 @@ import (
 	"github.com/thec1oud/billing/internal/infra/logger"
 )
 
-
 const (
 	DefaultExchangeName = "billing.events"
 	DefaultDLXName      = "billing.dlx"
@@ -37,7 +36,12 @@ func WithExchange(exchangeName, dlxName, dlqName string) Option {
 type Broker interface {
 	InitTopology(ctx context.Context) error
 	PublishEvent(ctx context.Context, routingKey string, body []byte) error
-	RegisterConsumerGroup(ctx context.Context, queueName string, routingKeys []string, handler func(ctx context.Context, msg []byte) error) error
+	RegisterConsumerGroup(
+		ctx context.Context,
+		queueName string,
+		routingKeys []string,
+		handler func(ctx context.Context, msg []byte) error,
+	) error
 	Close() error
 }
 
@@ -84,7 +88,7 @@ func (b *RabbitBroker) InitTopology(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to open channel for topology init: %w", err)
 	}
-	defer ch.Close()
+	defer func() { _ = ch.Close() }()
 
 	// 1. Declare Topic Exchange for billing domain events
 	err = ch.ExchangeDeclare(
@@ -155,7 +159,7 @@ func (b *RabbitBroker) PublishEvent(ctx context.Context, routingKey string, body
 	if err != nil {
 		return fmt.Errorf("failed to open publish channel: %w", err)
 	}
-	defer ch.Close()
+	defer func() { _ = ch.Close() }()
 
 	// Enable Publisher Confirms to guarantee message durability before acknowledging success.
 	// This puts the channel into confirm mode, meaning RabbitMQ will send an Ack or Nack
@@ -226,7 +230,7 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		args,
 	)
 	if err != nil {
-		ch.Close()
+		_ = ch.Close()
 		return fmt.Errorf("failed to declare consumer queue %s: %w", queueName, err)
 	}
 
@@ -239,7 +243,7 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 			nil,
 		)
 		if err != nil {
-			ch.Close()
+			_ = ch.Close()
 			return fmt.Errorf("failed to bind queue %s with key %s: %w", queueName, rKey, err)
 		}
 	}
@@ -254,14 +258,14 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		nil,
 	)
 	if err != nil {
-		ch.Close()
+		_ = ch.Close()
 		return fmt.Errorf("failed to start consuming from %s: %w", queueName, err)
 	}
 
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
-		defer ch.Close()
+		defer func() { _ = ch.Close() }()
 
 		for {
 			select {

@@ -197,7 +197,9 @@ func (s *Service) FinalizeInvoice(
 	dueAt := now.AddDate(0, 0, dueDateDays)
 
 	// 3. Resolve the state machine instance
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType),
+	)
 	if err != nil {
 		return model.Invoice{}, fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -238,7 +240,9 @@ func (s *Service) PayInvoice(
 	amountDue money.Money,
 	paidAt time.Time,
 ) error {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to find state machine instance: %w", err)
 	}
@@ -261,7 +265,9 @@ func (s *Service) VoidInvoice(
 	actor eventmodel.Actor,
 	invoiceID int64,
 ) error {
-	instance, err := s.smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err := s.smEngine.GetInstanceBySubject(
+		ctx, "invoice", fmt.Sprintf("%d", invoiceID), sm_model.MachineType(statemachine.InvoiceMachineType),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to find state machine instance: %w", err)
 	}

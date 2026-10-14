@@ -35,7 +35,9 @@ func (m *mockBroker) PublishEvent(ctx context.Context, routingKey string, body [
 	return nil
 }
 
-func (m *mockBroker) RegisterConsumerGroup(ctx context.Context, queueName string, routingKeys []string, h func(ctx context.Context, msg []byte) error) error {
+func (m *mockBroker) RegisterConsumerGroup(
+	ctx context.Context, queueName string, routingKeys []string, h func(ctx context.Context, msg []byte) error,
+) error {
 	return nil
 }
 
@@ -83,7 +85,9 @@ func (s *mockService) MarkWebhookPublished(ctx context.Context, webhookID string
 	return nil
 }
 
-func (s *mockService) ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+func (s *mockService) ChargePaymentMethod(
+	ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string,
+) (ppi.ChargeResult, error) {
 	return ppi.ChargeResult{}, nil
 }
 

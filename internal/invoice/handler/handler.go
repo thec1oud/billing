@@ -21,7 +21,9 @@ import (
 
 type InvoiceService interface {
 	Get(ctx context.Context, invoiceID int64) (model.Invoice, error)
-	CreateDraftInvoice(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error)
+	CreateDraftInvoice(
+		ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem,
+	) (model.Invoice, error)
 	FinalizeInvoice(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error)
 }
 
@@ -162,7 +164,7 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	if in.ProviderCode == "" {
 		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
@@ -240,7 +242,7 @@ func (h *InvoiceHandler) HandleGenerateDevInvoice(w http.ResponseWriter, r *http
 		})
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	if in.AccountID <= 0 || in.PlanID <= 0 {
 		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
@@ -251,7 +253,7 @@ func (h *InvoiceHandler) HandleGenerateDevInvoice(w http.ResponseWriter, r *http
 	}
 
 	var itemID int64
-	var itemName string = "Dev Mock Subscription Charge"
+	itemName := "Dev Mock Subscription Charge"
 
 	if h.itemSvc != nil {
 		item, err := h.itemSvc.GetByPlanID(r.Context(), in.PlanID)
@@ -261,10 +263,6 @@ func (h *InvoiceHandler) HandleGenerateDevInvoice(w http.ResponseWriter, r *http
 		}
 		itemID = item.ID
 		itemName = item.Name
-	} else if db, ok := r.Context().Value("db_pool").(interface {
-		QueryRow(context.Context, string, ...any) interface{ Scan(...any) error }
-	}); ok {
-		_ = db.QueryRow(r.Context(), "SELECT item_id FROM purchasable_items WHERE plan_id = $1 LIMIT 1", in.PlanID).Scan(&itemID)
 	}
 
 	if itemID <= 0 {

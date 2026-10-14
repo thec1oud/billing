@@ -66,7 +66,7 @@ func (s *Service) Create(
 			err,
 		)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	created, err := s.repository.Create(ctx, tx, item)
 	if err != nil {
 		return PurchasableItem{}, err

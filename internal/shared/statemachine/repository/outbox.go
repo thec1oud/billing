@@ -131,12 +131,6 @@ func (r *PostgresRepository) ReapStuckOutbox(ctx context.Context, db DBTX, claim
 	return n, nil
 }
 
-func mapOutboxRow(row sqlcgen.SmActionOutbox) OutboxRow {
-	return mapOutboxFields(row.OutboxID, row.InstanceID, row.HistoryID, row.BindingID,
-		row.ActionName, row.Params, row.ExecutionContext, row.Status, row.Attempts, row.ClaimedAt,
-		row.ClaimedBy, row.LastError, row.CreatedAt)
-}
-
 func mapOutboxFields(
 	outboxID int64, instanceID uuid.UUID, rawHistoryID pgtype.Int8, bindingID *uuid.UUID,
 	actionName string, params, executionContext []byte, status string, attempts int32,
