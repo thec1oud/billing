@@ -7,22 +7,32 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepository "github.com/thec1oud/billing/internal/account/repository"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
+	"github.com/thec1oud/billing/internal/shared/timeutil"
 	subscription "github.com/thec1oud/billing/internal/subscription"
 	"github.com/thec1oud/billing/internal/subscription/model"
-	"github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
 )
 
+type SubscriptionRepository interface {
+	Pool() *pgxpool.Pool
+	Create(ctx context.Context, db sqlcgen.DBTX, in model.CreateInput) (model.Subscription, error)
+	Get(ctx context.Context, db sqlcgen.DBTX, id int64) (model.Subscription, error)
+	ListAccountSubscriptions(ctx context.Context, db sqlcgen.DBTX, accountID int64) ([]model.Subscription, error)
+}
+
 type Service struct {
-	repository *repository.Repository
+	repository SubscriptionRepository
 	accounts   *accountrepository.Repository
 	plans      planrepo.Repository
 	tariffs    tariffrepo.Repository
@@ -31,7 +41,7 @@ type Service struct {
 }
 
 func New(
-	repository *repository.Repository,
+	repository SubscriptionRepository,
 	accounts *accountrepository.Repository,
 	plans planrepo.Repository,
 	tariffs tariffrepo.Repository,
@@ -88,12 +98,17 @@ func (s *Service) Create(
 	// The plan repository only exposes immutable code/version lookup.
 	// Resolve by ID is intentionally performed through the database relation
 	// at insert time; callers supply the selected immutable ID.
-	now := time.Now().UTC()
-	end := now.AddDate(0, 1, 0)
-
-	input.CurrentPeriodStart = now
-	input.CurrentPeriodEnd = end
-	input.BillingCycleAnchor = now
+	periodStart, anchor, periodEnd, err := CalculatePeriod(
+		input.CurrentPeriodStart,
+		input.BillingCycleAnchor,
+		input.CurrentPeriodEnd,
+	)
+	if err != nil {
+		return model.Subscription{}, err
+	}
+	input.CurrentPeriodStart = periodStart
+	input.BillingCycleAnchor = anchor
+	input.CurrentPeriodEnd = periodEnd
 
 	tx, err := s.repository.Pool().Begin(ctx)
 	if err != nil {
@@ -237,6 +252,12 @@ func (s *Service) BillingProjection(
 	ctx context.Context,
 	subscriptionID int64,
 ) (subscription.BillingProjection, error) {
+	if s.repository == nil {
+		return subscription.BillingProjection{}, errors.New(
+			"subscription repository is not configured",
+		)
+	}
+
 	sub, err := s.repository.Get(ctx, s.repository.Pool(), subscriptionID)
 	if err != nil {
 		return subscription.BillingProjection{}, err
@@ -304,14 +325,54 @@ func (s *Service) BillingProjection(
 		}
 
 		return subscription.BillingProjection{
-			AccountID:   sub.AccountID,
-			Amount:      t.Amount,
-			PeriodStart: sub.CurrentPeriodStart,
-			PeriodEnd:   sub.CurrentPeriodEnd,
+			SubscriptionID: sub.SubscriptionID,
+			AccountID:      sub.AccountID,
+			PlanID:         sub.PlanID,
+			PlanVersion:    sub.PlanVersion,
+			Amount:         t.Amount,
+			Currency:       t.Amount.Currency,
+			PeriodStart:    sub.CurrentPeriodStart,
+			PeriodEnd:      sub.CurrentPeriodEnd,
 		}, nil
 	}
 
 	return subscription.BillingProjection{}, errors.New(
 		"active billing duration disappeared",
 	)
+}
+
+// CalculatePeriod computes the period boundaries and cycle anchor for a subscription.
+// Defaulting rules:
+//   - If start is zero, timeutil.NowUTC() is used.
+//   - If anchor is zero, the start timestamp is used as the anchor.
+//   - If end is zero, it is computed via timeutil.MonthlyPeriodEnd(start, anchor.Day()),
+//     which properly clamps days (29, 30, 31) to target month ends without month overflow.
+//
+// All boundaries are strictly normalized to UTC. Account timezones are preserved for
+// customer invoice display and communication, while period boundaries remain UTC-only
+// to ensure deterministic, monotonic recurrence across DST changes.
+func CalculatePeriod(start, anchor, end time.Time) (periodStart, billingAnchor, periodEnd time.Time, err error) {
+	if start.IsZero() {
+		periodStart = timeutil.NowUTC()
+	} else {
+		periodStart = timeutil.ToUTC(start)
+	}
+
+	if anchor.IsZero() {
+		billingAnchor = periodStart
+	} else {
+		billingAnchor = timeutil.ToUTC(anchor)
+	}
+
+	if end.IsZero() {
+		computedEnd, err := timeutil.MonthlyPeriodEnd(periodStart, billingAnchor.Day())
+		if err != nil {
+			return time.Time{}, time.Time{}, time.Time{}, fmt.Errorf("calculate period end: %w", err)
+		}
+		periodEnd = computedEnd
+	} else {
+		periodEnd = timeutil.ToUTC(end)
+	}
+
+	return periodStart, billingAnchor, periodEnd, nil
 }

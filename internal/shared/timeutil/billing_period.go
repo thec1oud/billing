@@ -11,7 +11,15 @@ var (
 )
 
 // MonthlyPeriodEnd returns the next monthly anchor after periodStart. Missing
-// anchor days use the target month's final day. It is UTC-only; local-time/DST
+// anchor days use the target month's final day (clamping days 29, 30, and 31
+// when the target month has fewer days).
+//
+// Calculation is strictly UTC-normalized: local-time/DST adjustments are
+// omitted so that billing periods remain predictable, monotonic, and immune
+// to daylight saving shifts (such as 23-hour or 25-hour day anomalies).
+// Account timezones are preserved on customer records for localized invoice
+// presentation, reporting, and customer communications, while internal period
+// boundaries and recurrence calculations operate exclusively in UTC.
 func MonthlyPeriodEnd(periodStart time.Time, anchorDay int) (time.Time, error) {
 	if periodStart.IsZero() {
 		return time.Time{}, ErrZeroTime

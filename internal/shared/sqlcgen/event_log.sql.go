@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const appendEvent = `-- name: AppendEvent :one
@@ -71,6 +72,23 @@ func (q *Queries) AppendEvent(ctx context.Context, arg AppendEventParams) (Appen
 	var i AppendEventRow
 	err := row.Scan(&i.EventID, &i.Sequence, &i.OccurredAt)
 	return i, err
+}
+
+const lockAggregateStream = `-- name: LockAggregateStream :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))
+`
+
+type LockAggregateStreamParams struct {
+	Column1 pgtype.Text `json:"column_1"`
+	Column2 pgtype.Text `json:"column_2"`
+}
+
+// Acquires a transaction-scoped advisory lock keyed on (aggregate_type, aggregate_id).
+// Must be called inside a transaction before AppendEvent to serialize concurrent
+// writers on the same stream and eliminate the MAX(sequence)+1 TOCTOU race (#34).
+func (q *Queries) LockAggregateStream(ctx context.Context, arg LockAggregateStreamParams) error {
+	_, err := q.db.Exec(ctx, lockAggregateStream, arg.Column1, arg.Column2)
+	return err
 }
 
 const readStream = `-- name: ReadStream :many

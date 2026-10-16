@@ -18,13 +18,13 @@ erDiagram
 
     plan_legacy_price_policy ||--o{ plans : "references"
     tariff_type ||--o{ tariffs : "categorized by"
-    
+
     plans ||--o{ plan_durations : "configured with"
     tariffs ||--o{ plan_durations : "priced by"
 
     item_type ||--o{ purchasable_items : "type"
     plans ||--o| purchasable_items : "represents"
-    
+
     pricing_rules ||--o{ purchasable_item_pricing_rules : "binds"
     purchasable_items ||--o{ purchasable_item_pricing_rules : "associated"
 
@@ -138,6 +138,7 @@ erDiagram
         timestamptz ended_at
         timestamptz paused_at
         timestamptz resumes_at
+        timestamptz resumed_at
         jsonb metadata
         timestamptz created_at
     }

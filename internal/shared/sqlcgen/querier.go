@@ -83,6 +83,10 @@ type Querier interface {
 	ListTariffVersions(ctx context.Context, tariffCode string) ([]ListTariffVersionsRow, error)
 	ListTransitionsByDefinition(ctx context.Context, definitionID uuid.UUID) ([]SmTransition, error)
 	LockAccountForUpdate(ctx context.Context, accountID int64) (string, error)
+	// Acquires a transaction-scoped advisory lock keyed on (aggregate_type, aggregate_id).
+	// Must be called inside a transaction before AppendEvent to serialize concurrent
+	// writers on the same stream and eliminate the MAX(sequence)+1 TOCTOU race (#34).
+	LockAggregateStream(ctx context.Context, arg LockAggregateStreamParams) error
 	// Transitions -> PAID. Updates amounts and sets paid_at timestamp.
 	MarkInvoicePaid(ctx context.Context, arg MarkInvoicePaidParams) (int64, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) error
