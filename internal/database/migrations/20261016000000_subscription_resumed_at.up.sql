@@ -1,0 +1,2 @@
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS resumed_at TIMESTAMPTZ;

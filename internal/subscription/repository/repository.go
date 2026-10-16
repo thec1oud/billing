@@ -67,6 +67,7 @@ func (r *Repository) Create(
 		EndedAt:            timestampPtr(row.EndedAt),
 		PausedAt:           timestampPtr(row.PausedAt),
 		ResumesAt:          timestampPtr(row.ResumesAt),
+		ResumedAt:          timestampPtr(row.ResumedAt),
 	}, nil
 }
 
@@ -103,6 +104,7 @@ func (r *Repository) Get(
 		EndedAt:            timestampPtr(row.EndedAt),
 		PausedAt:           timestampPtr(row.PausedAt),
 		ResumesAt:          timestampPtr(row.ResumesAt),
+		ResumedAt:          timestampPtr(row.ResumedAt),
 	}, nil
 }
 
@@ -199,6 +201,7 @@ func (r *Repository) ListAccountSubscriptions(
 			EndedAt:            timestampPtr(row.EndedAt),
 			PausedAt:           timestampPtr(row.PausedAt),
 			ResumesAt:          timestampPtr(row.ResumesAt),
+			ResumedAt:          timestampPtr(row.ResumedAt),
 		}
 	}
 
