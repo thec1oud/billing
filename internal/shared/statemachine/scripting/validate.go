@@ -22,6 +22,9 @@ func ValidateActionParamsSource(source string) error {
 }
 
 func validateSource(source, funcName string) error {
+	if err := validateScriptShape(source); err != nil {
+		return err
+	}
 	i := interp.New(interp.Options{})
 	if err := i.Use(env.Exports); err != nil {
 		return fmt.Errorf("load script env: %w", err)

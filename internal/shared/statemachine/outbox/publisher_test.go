@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -20,13 +21,15 @@ type recordingAction struct {
 	mu    sync.Mutex
 	calls int
 	err   error
+	ec    model.ExecutionContext
 }
 
 func (a *recordingAction) Name() string { return "recording" }
-func (a *recordingAction) Execute(context.Context, sqlcgen.DBTX, *model.ExecutionContext, json.RawMessage) error {
+func (a *recordingAction) Execute(_ context.Context, _ sqlcgen.DBTX, ec *model.ExecutionContext, _ json.RawMessage) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls++
+	a.ec = *ec
 	return a.err
 }
 
@@ -34,6 +37,12 @@ func (a *recordingAction) callCount() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.calls
+}
+
+func (a *recordingAction) executionContext() model.ExecutionContext {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.ec
 }
 
 func seedInstance(t *testing.T, ctx context.Context, repo *repository.PostgresRepository, machineType model.MachineType) model.Instance {
@@ -63,7 +72,18 @@ func TestPublisher_Tick_ExecutesClaimedRowAndMarksPublished(t *testing.T) {
 	}
 
 	instance := seedInstance(t, ctx, repo, "publisher_tick_machine")
-	if err := repo.InsertOutboxRow(ctx, nil, instance.InstanceID, nil, nil, "recording", json.RawMessage(`{}`)); err != nil {
+	executionContext := model.ExecutionContext{
+		InstanceID:   instance.InstanceID,
+		SubjectType:  instance.SubjectType,
+		SubjectID:    instance.SubjectID,
+		FromState:    "A",
+		EventName:    "run",
+		EventPayload: json.RawMessage(`{"reason":"test"}`),
+		Context:      json.RawMessage(`{"account_id":42}`),
+		Now:          time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC),
+		TriggeredBy:  "test",
+	}
+	if err := repo.InsertOutboxRow(ctx, nil, instance.InstanceID, nil, nil, "recording", json.RawMessage(`{}`), executionContext); err != nil {
 		t.Fatalf("insert outbox row: %v", err)
 	}
 
@@ -75,6 +95,16 @@ func TestPublisher_Tick_ExecutesClaimedRowAndMarksPublished(t *testing.T) {
 	if action.callCount() != 1 {
 		t.Fatalf("expected action to run once, got %d", action.callCount())
 	}
+	gotContext := action.executionContext()
+	if gotContext.SubjectID != executionContext.SubjectID ||
+		gotContext.SubjectType != executionContext.SubjectType ||
+		gotContext.EventName != executionContext.EventName ||
+		gotContext.TriggeredBy != executionContext.TriggeredBy ||
+		!jsonEqual(gotContext.EventPayload, executionContext.EventPayload) ||
+		!jsonEqual(gotContext.Context, executionContext.Context) ||
+		!gotContext.Now.Equal(executionContext.Now) {
+		t.Fatalf("async action received incomplete execution context: %+v", gotContext)
+	}
 
 	remaining, err := repo.ClaimOutboxRows(ctx, nil, 10, "verify")
 	if err != nil {
@@ -83,6 +113,14 @@ func TestPublisher_Tick_ExecutesClaimedRowAndMarksPublished(t *testing.T) {
 	if len(remaining) != 0 {
 		t.Fatalf("expected no PENDING rows left after publish, got %d", len(remaining))
 	}
+}
+
+func jsonEqual(left, right json.RawMessage) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return string(left) == string(right)
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
 }
 
 func TestPublisher_Tick_FailingAction_RetriesThenFails(t *testing.T) {

@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/subscription/handler"
 	"github.com/thec1oud/billing/internal/subscription/model"
-	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 )
 
 type mockSubscriptionService struct {
@@ -58,7 +58,9 @@ func (m *mockSubscriptionService) Resume(ctx context.Context, actor eventmodel.A
 	return model.Subscription{SubscriptionID: subscriptionID, Status: model.StatusActive}, nil
 }
 
-func (m *mockSubscriptionService) Cancel(ctx context.Context, actor eventmodel.Actor, subscriptionID int64, atPeriodEnd bool) (model.Subscription, error) {
+func (m *mockSubscriptionService) Cancel(
+	ctx context.Context, actor eventmodel.Actor, subscriptionID int64, atPeriodEnd bool,
+) (model.Subscription, error) {
 	return model.Subscription{SubscriptionID: subscriptionID, Status: model.StatusCanceled}, nil
 }
 

@@ -44,7 +44,7 @@ func (h *SubscriptionHandler) HandleCreateSubscription(w http.ResponseWriter, r 
 		})
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	actor := actorFromRequest(r)
 	created, err := h.svc.Create(r.Context(), actor, in)
@@ -116,7 +116,9 @@ func (h *SubscriptionHandler) HandlePauseSubscription(w http.ResponseWriter, r *
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
-		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{Code: "INVALID_SUBSCRIPTION_ID", Message: "Subscription ID must be a positive integer"})
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code: "INVALID_SUBSCRIPTION_ID", Message: "Subscription ID must be a positive integer",
+		})
 		return
 	}
 
@@ -134,7 +136,9 @@ func (h *SubscriptionHandler) HandleResumeSubscription(w http.ResponseWriter, r 
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
-		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{Code: "INVALID_SUBSCRIPTION_ID", Message: "Subscription ID must be a positive integer"})
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code: "INVALID_SUBSCRIPTION_ID", Message: "Subscription ID must be a positive integer",
+		})
 		return
 	}
 
@@ -152,14 +156,13 @@ func (h *SubscriptionHandler) HandleCancelSubscription(w http.ResponseWriter, r 
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
-		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{Code: "INVALID_SUBSCRIPTION_ID", Message: "Subscription ID must be a positive integer"})
+		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
+			Code: "INVALID_SUBSCRIPTION_ID", Message: "Subscription ID must be a positive integer",
+		})
 		return
 	}
 
-	atPeriodEnd := false
-	if r.URL.Query().Get("at_period_end") == "true" {
-		atPeriodEnd = true
-	}
+	atPeriodEnd := r.URL.Query().Get("at_period_end") == "true"
 
 	actor := actorFromRequest(r)
 	sub, err := h.svc.Cancel(r.Context(), actor, id, atPeriodEnd)

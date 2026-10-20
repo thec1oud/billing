@@ -57,7 +57,7 @@ func TestReconciler_Integration(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: redisHost + ":" + redisPort.Port(),
 	})
-	defer redisClient.Close()
+	defer func() { _ = redisClient.Close() }()
 
 	// 3. Wire up dependencies
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository(cluster.DBPool)
@@ -139,7 +139,9 @@ func TestReconciler_Integration(t *testing.T) {
 
 		var status string
 		var updatedAt time.Time
-		err = cluster.DBPool.QueryRow(ctx, "SELECT status, updated_at FROM payment_attempts WHERE internal_tx_id = $1", internalTxID).Scan(&status, &updatedAt)
+		err = cluster.DBPool.QueryRow(ctx, `
+			SELECT status, updated_at FROM payment_attempts WHERE internal_tx_id = $1
+		`, internalTxID).Scan(&status, &updatedAt)
 		require.NoError(t, err)
 		require.Equal(t, "PENDING", status)
 		// updated_at should have been refreshed
@@ -183,12 +185,14 @@ func TestReconciler_Integration(t *testing.T) {
 
 		var status string
 		var updatedAt time.Time
-		err = cluster.DBPool.QueryRow(ctx, "SELECT status, updated_at FROM payment_attempts WHERE internal_tx_id = $1", internalTxID).Scan(&status, &updatedAt)
+		err = cluster.DBPool.QueryRow(ctx, `
+			SELECT status, updated_at FROM payment_attempts WHERE internal_tx_id = $1
+		`, internalTxID).Scan(&status, &updatedAt)
 		require.NoError(t, err)
 		require.Equal(t, "PENDING", status)
 
 		// The updated_at should remain stale (30 mins ago) since it was never processed
-		require.True(t, time.Now().Sub(updatedAt) > 25*time.Minute, "updated_at should be unmodified")
+		require.True(t, time.Since(updatedAt) > 25*time.Minute, "updated_at should be unmodified")
 
 		// Cleanup lock
 		redisClient.Del(ctx, lockKey)
@@ -231,7 +235,11 @@ func TestReconciler_Integration(t *testing.T) {
 		// Even though both workers fired at the same time, the Redis lock ensures
 		// one sweeps the DB while the other skips, preventing duplicate processing.
 		var count int
-		err = cluster.DBPool.QueryRow(ctx, "SELECT COUNT(*) FROM payment_attempts WHERE internal_tx_id LIKE 'success_verify_concurrent_%' AND status = 'SUCCESS'").Scan(&count)
+		err = cluster.DBPool.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM payment_attempts
+			WHERE internal_tx_id LIKE 'success_verify_concurrent_%' AND status = 'SUCCESS'
+		`).Scan(&count)
 		require.NoError(t, err)
 		require.Equal(t, 5, count)
 	})

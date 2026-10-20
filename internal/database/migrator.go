@@ -15,7 +15,6 @@ import (
 	"github.com/thec1oud/billing/internal/infra/logger"
 )
 
-
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 

@@ -14,7 +14,6 @@ import (
 	"github.com/thec1oud/billing/internal/receipt/model"
 )
 
-
 type DeliveryService interface {
 	Deliver(ctx context.Context, payload model.ReceiptPayload) error
 }
@@ -58,7 +57,7 @@ func (s *webhookDeliveryService) Deliver(ctx context.Context, payload model.Rece
 		resp, err := s.httpClient.Do(req)
 
 		if err == nil {
-			resp.Body.Close() // Safe to close here inside loop
+			_ = resp.Body.Close() // Safe to close here inside loop
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil // Success!
 			}

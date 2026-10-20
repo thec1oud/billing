@@ -34,7 +34,10 @@ func (r *PostgresRepository) SaveWebhook(ctx context.Context, db DBTX, payload p
 		Payload:      payload.RawPayload,
 		ProcessedAt:  payload.OccurredAt,
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to save ppi webhook via sqlc: %w", err)
+	}
+	return nil
 }
 
 func (r *PostgresRepository) GetWebhookByID(ctx context.Context, db DBTX, webhookID string) (ppi.ProviderWebhookPayload, error) {
@@ -57,10 +60,7 @@ func (r *PostgresRepository) GetWebhookByID(ctx context.Context, db DBTX, webhoo
 }
 
 func (r *PostgresRepository) GetWebhookPublishedStatus(
-	ctx context.Context,
-	db DBTX,
-	providerCode,
-	providerTxID string,
+	ctx context.Context, db DBTX, providerCode, providerTxID string,
 ) (isPublished bool, err error) {
 	if providerTxID == "" {
 		return false, nil

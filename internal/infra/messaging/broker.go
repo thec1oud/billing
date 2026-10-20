@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/rabbitmq/amqp091-go"
 
 	"github.com/thec1oud/billing/internal/infra/logger"
 )
-
 
 const (
 	DefaultExchangeName = "billing.events"
@@ -19,6 +19,16 @@ const (
 )
 
 type Option func(*RabbitBroker)
+
+const (
+	DefaultPrefetch       = 10
+	DefaultRetries        = 3
+	DefaultHandlerTimeout = 30 * time.Second
+)
+
+func WithDialer(dial func() (*amqp091.Connection, error)) Option {
+	return func(b *RabbitBroker) { b.dial = dial }
+}
 
 func WithExchange(exchangeName, dlxName, dlqName string) Option {
 	return func(b *RabbitBroker) {
@@ -37,7 +47,12 @@ func WithExchange(exchangeName, dlxName, dlqName string) Option {
 type Broker interface {
 	InitTopology(ctx context.Context) error
 	PublishEvent(ctx context.Context, routingKey string, body []byte) error
-	RegisterConsumerGroup(ctx context.Context, queueName string, routingKeys []string, handler func(ctx context.Context, msg []byte) error) error
+	RegisterConsumerGroup(
+		ctx context.Context,
+		queueName string,
+		routingKeys []string,
+		handler func(ctx context.Context, msg []byte) error,
+	) error
 	Close() error
 }
 
@@ -47,7 +62,13 @@ type RabbitBroker struct {
 	dlxName      string
 	dlqName      string
 
-	pubMu sync.Mutex // Mutex ensuring thread-safe concurrent publishing calls
+	pubMu          sync.Mutex
+	pubCh          *amqp091.Channel
+	pubConfirms    <-chan amqp091.Confirmation
+	dial           func() (*amqp091.Connection, error)
+	prefetch       int
+	retries        int
+	handlerTimeout time.Duration
 
 	wg     sync.WaitGroup     // WaitGroup tracking all consumer background goroutines
 	ctx    context.Context    // Parent lifecycle context
@@ -70,6 +91,7 @@ func NewRabbitBroker(conn *amqp091.Connection, opts ...Option) (*RabbitBroker, e
 		ctx:          ctx,
 		cancel:       cancel,
 		log:          logger.ForComponent("infra_messaging"),
+		prefetch:     DefaultPrefetch, retries: DefaultRetries, handlerTimeout: DefaultHandlerTimeout,
 	}
 
 	for _, opt := range opts {
@@ -84,7 +106,7 @@ func (b *RabbitBroker) InitTopology(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to open channel for topology init: %w", err)
 	}
-	defer ch.Close()
+	defer func() { _ = ch.Close() }()
 
 	// 1. Declare Topic Exchange for billing domain events
 	err = ch.ExchangeDeclare(
@@ -150,22 +172,11 @@ func (b *RabbitBroker) InitTopology(ctx context.Context) error {
 func (b *RabbitBroker) PublishEvent(ctx context.Context, routingKey string, body []byte) error {
 	b.pubMu.Lock()
 	defer b.pubMu.Unlock()
-
-	ch, err := b.conn.Channel()
+	ch, err := b.publisherChannel()
 	if err != nil {
-		return fmt.Errorf("failed to open publish channel: %w", err)
+		return err
 	}
-	defer ch.Close()
-
-	// Enable Publisher Confirms to guarantee message durability before acknowledging success.
-	// This puts the channel into confirm mode, meaning RabbitMQ will send an Ack or Nack
-	// once it processes the published message.
-	if err := ch.Confirm(false); err != nil {
-		return fmt.Errorf("failed to put channel in confirm mode: %w", err)
-	}
-
-	// Create a channel to receive the confirmation from RabbitMQ.
-	confirms := ch.NotifyPublish(make(chan amqp091.Confirmation, 1))
+	confirms := b.pubConfirms
 
 	err = ch.PublishWithContext(
 		ctx,
@@ -180,6 +191,7 @@ func (b *RabbitBroker) PublishEvent(ctx context.Context, routingKey string, body
 		},
 	)
 	if err != nil {
+		b.resetPublisher()
 		return fmt.Errorf("failed to publish event with routingKey %s: %w", routingKey, err)
 	}
 
@@ -190,14 +202,65 @@ func (b *RabbitBroker) PublishEvent(ctx context.Context, routingKey string, body
 		return ctx.Err()
 	case confirm, ok := <-confirms:
 		if !ok {
+			b.resetPublisher()
 			return fmt.Errorf("publisher confirm channel closed prematurely")
 		}
 		if !confirm.Ack {
+			b.resetPublisher()
 			return fmt.Errorf("message nacked by rabbitmq broker (delivery tag: %d)", confirm.DeliveryTag)
 		}
 	}
 
 	return nil
+}
+
+func (b *RabbitBroker) publisherChannel() (*amqp091.Channel, error) {
+	if b.pubCh != nil && !b.pubCh.IsClosed() {
+		return b.pubCh, nil
+	}
+	if err := b.ensureConnection(); err != nil {
+		return nil, err
+	}
+	ch, err := b.conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open publish channel: %w", err)
+	}
+	if err = ch.Confirm(false); err != nil {
+		_ = ch.Close()
+		return nil, err
+	}
+	b.pubCh = ch
+	b.pubConfirms = ch.NotifyPublish(make(chan amqp091.Confirmation, 1))
+	return ch, nil
+}
+func (b *RabbitBroker) resetPublisher() {
+	if b.pubCh != nil {
+		_ = b.pubCh.Close()
+		b.pubCh = nil
+		b.pubConfirms = nil
+	}
+}
+func (b *RabbitBroker) ensureConnection() error {
+	if b.conn != nil && !b.conn.IsClosed() {
+		return nil
+	}
+	if b.dial == nil {
+		return fmt.Errorf("rabbitmq connection is closed and no reconnect dialer is configured")
+	}
+	for b.ctx.Err() == nil {
+		conn, err := b.dial()
+		if err == nil {
+			b.conn = conn
+			return nil
+		}
+		b.log.Warn("RabbitMQ reconnect failed", logger.Err(err))
+		select {
+		case <-b.ctx.Done():
+			return b.ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return b.ctx.Err()
 }
 
 func (b *RabbitBroker) RegisterConsumerGroup(
@@ -209,6 +272,10 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 	ch, err := b.conn.Channel()
 	if err != nil {
 		return fmt.Errorf("failed to open consumer channel: %w", err)
+	}
+	if err := ch.Qos(b.prefetch, 0, false); err != nil {
+		_ = ch.Close()
+		return fmt.Errorf("failed to set consumer prefetch: %w", err)
 	}
 
 	// Queue configured with Dead-Letter Exchange (DLX) & Dead-Letter Routing Key (DLQ)
@@ -226,7 +293,7 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		args,
 	)
 	if err != nil {
-		ch.Close()
+		_ = ch.Close()
 		return fmt.Errorf("failed to declare consumer queue %s: %w", queueName, err)
 	}
 
@@ -239,9 +306,18 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 			nil,
 		)
 		if err != nil {
-			ch.Close()
+			_ = ch.Close()
 			return fmt.Errorf("failed to bind queue %s with key %s: %w", queueName, rKey, err)
 		}
+	}
+	// Expired retry messages return to this queue through RabbitMQ's default exchange.
+	retryQueue := queueName + ".retry"
+	_, err = ch.QueueDeclare(retryQueue, true, false, false, false, amqp091.Table{
+		"x-message-ttl": int32(5000), "x-dead-letter-exchange": "", "x-dead-letter-routing-key": queueName,
+	})
+	if err != nil {
+		_ = ch.Close()
+		return fmt.Errorf("failed to declare retry queue %s: %w", retryQueue, err)
 	}
 
 	deliveries, err := ch.Consume(
@@ -254,14 +330,14 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 		nil,
 	)
 	if err != nil {
-		ch.Close()
+		_ = ch.Close()
 		return fmt.Errorf("failed to start consuming from %s: %w", queueName, err)
 	}
 
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
-		defer ch.Close()
+		defer func() { _ = ch.Close() }()
 
 		for {
 			select {
@@ -277,11 +353,28 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 					return
 				}
 
-				// Execute module handler in isolated context
-				if err := handler(parentCtx, d.Body); err != nil {
-					b.log.Error("Consumer handler failed; sending message to DLQ", slog.String("queue", queueName), logger.Err(err))
-					// Reject message without requeue -> routes to x-dead-letter-exchange (billing.dlq)
-					_ = d.Nack(false, false)
+				// Bound each handler invocation so a stuck downstream call cannot hold a delivery forever.
+				msgCtx, cancel := context.WithTimeout(parentCtx, b.handlerTimeout)
+				handlerErr := handler(msgCtx, d.Body)
+				cancel()
+				if handlerErr != nil {
+					count := retryCount(d.Headers)
+					if count < b.retries {
+						err := ch.PublishWithContext(parentCtx, "", retryQueue, false, false, amqp091.Publishing{
+							ContentType: d.ContentType, DeliveryMode: amqp091.Persistent, Body: d.Body,
+							Headers: amqp091.Table{"x-retry-count": int32(count + 1)},
+						})
+						if err == nil {
+							err = d.Ack(false)
+						}
+						if err != nil {
+							b.log.Error("Failed to schedule message retry", slog.String("queue", queueName), logger.Err(err))
+							_ = d.Nack(false, true)
+						}
+					} else {
+						b.log.Error("Consumer retries exhausted; sending message to DLQ", slog.String("queue", queueName), logger.Err(handlerErr))
+						_ = d.Nack(false, false)
+					}
 				} else {
 					_ = d.Ack(false)
 				}
@@ -293,9 +386,28 @@ func (b *RabbitBroker) RegisterConsumerGroup(
 	return nil
 }
 
+func retryCount(headers amqp091.Table) int {
+	if headers == nil {
+		return 0
+	}
+	switch n := headers["x-retry-count"].(type) {
+	case int32:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
 func (b *RabbitBroker) Close() error {
 	b.cancel()  // Signal all consumer loops to terminate cleanly
 	b.wg.Wait() // Wait for all background goroutines to finish processing
+	b.pubMu.Lock()
+	b.resetPublisher()
+	b.pubMu.Unlock()
 	return nil
 }
 

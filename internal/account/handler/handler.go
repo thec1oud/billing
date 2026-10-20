@@ -196,7 +196,7 @@ func (h *AccountHandler) HandleAddPaymentMethod(w http.ResponseWriter, r *http.R
 }
 
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {

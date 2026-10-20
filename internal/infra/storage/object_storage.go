@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	appconfig "github.com/thec1oud/billing/internal/config"
 )
 
@@ -31,9 +32,9 @@ type PresignAPI interface {
 }
 
 type s3Storage struct {
-	client         PutObjectAPI
-	presignClient  PresignAPI
-	bucket         string
+	client        PutObjectAPI
+	presignClient PresignAPI
+	bucket        string
 }
 
 // NewObjectStorage creates a new S3-compatible object storage client.
@@ -85,10 +86,10 @@ func (s *s3Storage) GetPresignedURL(ctx context.Context, key string, lifetime ti
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	}, s3.WithPresignExpires(lifetime))
-	
+
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
-	
+
 	return req.URL, nil
 }

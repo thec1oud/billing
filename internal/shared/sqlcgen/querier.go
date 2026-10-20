@@ -15,7 +15,7 @@ import (
 type Querier interface {
 	AppendEvent(ctx context.Context, arg AppendEventParams) (AppendEventRow, error)
 	CancelSubscriptionNow(ctx context.Context, arg CancelSubscriptionNowParams) (int64, error)
-	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error)
+	ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]ClaimOutboxRowsRow, error)
 	ClaimScheduledTransitions(ctx context.Context, arg ClaimScheduledTransitionsParams) ([]SmScheduledTransition, error)
 	ClearDefaultPaymentMethod(ctx context.Context, accountID int64) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (CreateAccountRow, error)

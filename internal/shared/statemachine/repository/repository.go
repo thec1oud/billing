@@ -110,7 +110,12 @@ func (r *PostgresRepository) InsertDefinitionWithContentHash(
 	}, nil
 }
 
-func (r *PostgresRepository) GetDefinitionByMachineTypeVersion(ctx context.Context, db DBTX, machineType model.MachineType, version int) (uuid.UUID, string, error) {
+func (r *PostgresRepository) GetDefinitionByMachineTypeVersion(
+	ctx context.Context,
+	db DBTX,
+	machineType model.MachineType,
+	version int,
+) (uuid.UUID, string, error) {
 	row, err := r.getQuerier(db).GetDefinitionByMachineTypeVersion(ctx, sqlcgen.GetDefinitionByMachineTypeVersionParams{
 		MachineType: string(machineType), Version: int32(version),
 	})
@@ -160,7 +165,14 @@ func (r *PostgresRepository) GetDefinitionByID(ctx context.Context, db DBTX, def
 	return mapDefinitionMeta(row.DefinitionID, row.MachineType, row.Version, row.InitialState, row.IsActive, row.CreatedAt), nil
 }
 
-func mapDefinitionMeta(id uuid.UUID, machineType string, version int32, initialState string, isActive bool, createdAt time.Time) model.DefinitionMeta {
+func mapDefinitionMeta(
+	id uuid.UUID,
+	machineType string,
+	version int32,
+	initialState string,
+	isActive bool,
+	createdAt time.Time,
+) model.DefinitionMeta {
 	return model.DefinitionMeta{
 		DefinitionID: id,
 		MachineType:  model.MachineType(machineType),

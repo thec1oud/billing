@@ -102,7 +102,7 @@ func (s *Service) CreateTariff(
 			err,
 		)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	created, err := s.repository.Create(ctx, tx, tariff)
 	if err != nil {

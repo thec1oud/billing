@@ -16,7 +16,6 @@ import (
 	"github.com/thec1oud/billing/internal/receipt/service"
 )
 
-
 // InvoiceFetcher defines the interface for fetching invoices, decoupling the receipt module from the invoice repository.
 type InvoiceFetcher interface {
 	Get(ctx context.Context, invoiceID int64) (invoicemodel.Invoice, error)

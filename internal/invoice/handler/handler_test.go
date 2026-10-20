@@ -21,8 +21,10 @@ import (
 type mockInvoiceService struct {
 	getFn                func(ctx context.Context, id int64) (model.Invoice, error)
 	listInvoicesFn       func(ctx context.Context, accountID int64) ([]model.Invoice, error)
-	createDraftInvoiceFn func(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error)
-	finalizeInvoiceFn    func(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error)
+	createDraftInvoiceFn func(
+		ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem,
+	) (model.Invoice, error)
+	finalizeInvoiceFn func(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error)
 }
 
 func (m *mockInvoiceService) Get(ctx context.Context, id int64) (model.Invoice, error) {
@@ -39,14 +41,18 @@ func (m *mockInvoiceService) ListInvoices(ctx context.Context, accountID int64) 
 	return []model.Invoice{{AccountID: accountID}}, nil
 }
 
-func (m *mockInvoiceService) CreateDraftInvoice(ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem) (model.Invoice, error) {
+func (m *mockInvoiceService) CreateDraftInvoice(
+	ctx context.Context, actor eventmodel.Actor, accountID int64, currency money.Currency, items []model.LineItem,
+) (model.Invoice, error) {
 	if m.createDraftInvoiceFn != nil {
 		return m.createDraftInvoiceFn(ctx, actor, accountID, currency, items)
 	}
 	return model.Invoice{InvoiceID: 10, Status: model.StatusDraft}, nil
 }
 
-func (m *mockInvoiceService) FinalizeInvoice(ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int) (model.Invoice, error) {
+func (m *mockInvoiceService) FinalizeInvoice(
+	ctx context.Context, actor eventmodel.Actor, invoiceID int64, paymentTermsDays int,
+) (model.Invoice, error) {
 	if m.finalizeInvoiceFn != nil {
 		return m.finalizeInvoiceFn(ctx, actor, invoiceID, paymentTermsDays)
 	}
@@ -57,7 +63,9 @@ type mockPPIService struct {
 	charge func(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error)
 }
 
-func (m *mockPPIService) ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+func (m *mockPPIService) ChargePaymentMethod(
+	ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string,
+) (ppi.ChargeResult, error) {
 	return m.charge(ctx, providerCode, invoiceID, amount, idempotencyKey)
 }
 
@@ -124,7 +132,9 @@ func TestHandlePayInvoice(t *testing.T) {
 		},
 	}
 	ppiSvc := &mockPPIService{
-		charge: func(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+		charge: func(
+			ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string,
+		) (ppi.ChargeResult, error) {
 			return ppi.ChargeResult{Status: ppi.ChargeStatusPending, CheckoutURL: "http://checkout.local"}, nil
 		},
 	}
@@ -143,7 +153,7 @@ func TestHandlePayInvoice(t *testing.T) {
 	var envelope struct {
 		Data PayInvoiceResponse `json:"data"`
 	}
-	json.NewDecoder(rec.Body).Decode(&envelope)
+	assert.NoError(t, json.NewDecoder(rec.Body).Decode(&envelope))
 	assert.Equal(t, "http://checkout.local", envelope.Data.CheckoutURL)
 
 	// Test invalid status

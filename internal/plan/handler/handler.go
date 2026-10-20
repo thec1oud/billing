@@ -57,14 +57,14 @@ func (h *PlanHandler) HandleCreatePlan(
 			w,
 			http.StatusBadRequest,
 			&response.ErrorResponse{
-				Code: "INVALID_REQUEST_BODY",
+				Code:    "INVALID_REQUEST_BODY",
 				Message: "Failed to decode request body: " + err.Error(),
 			},
 		)
 		return
 	}
 
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	created, err := h.svc.CreatePlan(
 		r.Context(),

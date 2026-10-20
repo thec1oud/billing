@@ -16,8 +16,6 @@ import (
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
-
-
 type mockService struct {
 	adapters       map[string]ppi.Provider
 	processed      []ppi.ProviderWebhookPayload
@@ -58,7 +56,9 @@ func (s *mockService) MarkWebhookPublished(ctx context.Context, webhookID string
 	return nil
 }
 
-func (s *mockService) ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+func (s *mockService) ChargePaymentMethod(
+	ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string,
+) (ppi.ChargeResult, error) {
 	return ppi.ChargeResult{}, nil
 }
 
@@ -98,11 +98,7 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 		t.Errorf("expected status 'processed', got %q", resp["status"])
 	}
 
-
 }
-
-
-
 func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 	svc := newMockService()
 	fakeAdapter := fake.NewFakeAdapter()
@@ -123,6 +119,12 @@ func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 	req1.SetPathValue("provider", "fake")
 	rec1 := httptest.NewRecorder()
 	h.HandleWebhook(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected first webhook request to succeed, got %d", rec1.Code)
+	}
+	if err := svc.MarkWebhookPublished(context.Background(), "evt_test_dup"); err != nil {
+		t.Fatalf("mark webhook published: %v", err)
+	}
 
 	// 2. Second call: Same payload after successful publish -> ignored as duplicate
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
