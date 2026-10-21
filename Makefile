@@ -1,4 +1,4 @@
-.PHONY: fmt lint pre-commit-install sqlc-diff sqlc-generate test test-race ci web-dev web-build bff-dev bff-test
+.PHONY: fmt lint pre-commit-install sqlc-diff sqlc-generate test test-race test-integration ci web-dev web-build bff-dev bff-test
 
 fmt:
 	gofmt -s -w .
@@ -22,11 +22,14 @@ test:
 test-race:
 	go test -race ./...
 
+test-integration:
+	go test -tags=integration -v ./internal/integration/...
+
 ci:
 	sqlc diff
 	go vet ./...
 	golangci-lint run ./...
-	go test -race $$(go list ./... | grep -v 'github.com/thec1oud/billing/internal/integration')
+	go test -race ./...
 	cd platform/bff && npm test
 
 web-dev:
