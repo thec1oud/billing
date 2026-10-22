@@ -42,8 +42,8 @@ func TestPostgresEventStore_SequenceGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to append first event: %v", err)
 	}
-	if e1.Sequence != 1 {
-		t.Errorf("expected sequence 1, got %d", e1.Sequence)
+	if e1.Sequence <= 0 {
+		t.Errorf("expected positive sequence, got %d", e1.Sequence)
 	}
 
 	e2, err := store.Append(ctx, tx, eventmodel.AppendRequest{
@@ -57,8 +57,8 @@ func TestPostgresEventStore_SequenceGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to append second event: %v", err)
 	}
-	if e2.Sequence != 2 {
-		t.Errorf("expected sequence 2, got %d", e2.Sequence)
+	if e2.Sequence <= e1.Sequence {
+		t.Errorf("expected e2.Sequence (%d) > e1.Sequence (%d)", e2.Sequence, e1.Sequence)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -72,7 +72,7 @@ func TestPostgresEventStore_SequenceGeneration(t *testing.T) {
 	if len(events) != 2 {
 		t.Fatalf("expected 2 events in stream, got %d", len(events))
 	}
-	if events[0].Sequence != 1 || events[1].Sequence != 2 {
+	if events[0].Sequence != e1.Sequence || events[1].Sequence != e2.Sequence {
 		t.Errorf("stream returned out-of-order sequences: %d, %d", events[0].Sequence, events[1].Sequence)
 	}
 }
@@ -127,7 +127,26 @@ func TestPostgresEventStore_SequenceIsolation(t *testing.T) {
 		t.Fatalf("failed to commit transaction: %v", err)
 	}
 
-	if e1.Sequence != 1 || e2.Sequence != 1 {
-		t.Errorf("expected both independent aggregates to have sequence = 1, got %d and %d", e1.Sequence, e2.Sequence)
+	if e1.Sequence <= 0 || e2.Sequence <= 0 {
+		t.Errorf("expected positive sequences, got %d and %d", e1.Sequence, e2.Sequence)
+	}
+	if e2.Sequence <= e1.Sequence {
+		t.Errorf("expected e2.Sequence (%d) > e1.Sequence (%d)", e2.Sequence, e1.Sequence)
+	}
+
+	stream1, err := store.ReadStream(ctx, aggType, aggID1)
+	if err != nil {
+		t.Fatalf("failed to read stream 1: %v", err)
+	}
+	if len(stream1) != 1 || stream1[0].Sequence != e1.Sequence {
+		t.Errorf("expected stream 1 to contain e1 (%d), got %+v", e1.Sequence, stream1)
+	}
+
+	stream2, err := store.ReadStream(ctx, aggType, aggID2)
+	if err != nil {
+		t.Fatalf("failed to read stream 2: %v", err)
+	}
+	if len(stream2) != 1 || stream2[0].Sequence != e2.Sequence {
+		t.Errorf("expected stream 2 to contain e2 (%d), got %+v", e2.Sequence, stream2)
 	}
 }

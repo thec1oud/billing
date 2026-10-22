@@ -1,34 +1,23 @@
--- name: LockAggregateStream :exec
--- Acquires a transaction-scoped advisory lock keyed on (aggregate_type, aggregate_id).
--- Must be called inside a transaction before AppendEvent to serialize concurrent
--- writers on the same stream and eliminate the MAX(sequence)+1 TOCTOU race (#34).
-SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0));
-
 -- name: AppendEvent :one
 INSERT INTO event_log (
     event_type,
     event_version,
     aggregate_type,
     aggregate_id,
-    sequence,
     actor,
     causation_id,
     correlation_id,
     payload
-) 
-SELECT 
-    $1, 
-    $2, 
-    $3, 
-    $4, 
-    COALESCE(MAX(e.sequence), 0) + 1,
-    $5, 
-    $6, 
-    $7, 
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
     $8
-FROM (SELECT 1) AS dummy
-LEFT JOIN event_log e ON e.aggregate_type = $3 AND e.aggregate_id = $4
-GROUP BY e.aggregate_type, e.aggregate_id
+)
 RETURNING event_id, sequence, occurred_at;
 
 -- name: ReadStream :many

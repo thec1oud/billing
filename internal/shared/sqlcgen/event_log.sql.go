@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const appendEvent = `-- name: AppendEvent :one
@@ -19,25 +18,20 @@ INSERT INTO event_log (
     event_version,
     aggregate_type,
     aggregate_id,
-    sequence,
     actor,
     causation_id,
     correlation_id,
     payload
-) 
-SELECT 
-    $1, 
-    $2, 
-    $3, 
-    $4, 
-    COALESCE(MAX(e.sequence), 0) + 1,
-    $5, 
-    $6, 
-    $7, 
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
     $8
-FROM (SELECT 1) AS dummy
-LEFT JOIN event_log e ON e.aggregate_type = $3 AND e.aggregate_id = $4
-GROUP BY e.aggregate_type, e.aggregate_id
+)
 RETURNING event_id, sequence, occurred_at
 `
 
@@ -72,23 +66,6 @@ func (q *Queries) AppendEvent(ctx context.Context, arg AppendEventParams) (Appen
 	var i AppendEventRow
 	err := row.Scan(&i.EventID, &i.Sequence, &i.OccurredAt)
 	return i, err
-}
-
-const lockAggregateStream = `-- name: LockAggregateStream :exec
-SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))
-`
-
-type LockAggregateStreamParams struct {
-	Column1 pgtype.Text `json:"column_1"`
-	Column2 pgtype.Text `json:"column_2"`
-}
-
-// Acquires a transaction-scoped advisory lock keyed on (aggregate_type, aggregate_id).
-// Must be called inside a transaction before AppendEvent to serialize concurrent
-// writers on the same stream and eliminate the MAX(sequence)+1 TOCTOU race (#34).
-func (q *Queries) LockAggregateStream(ctx context.Context, arg LockAggregateStreamParams) error {
-	_, err := q.db.Exec(ctx, lockAggregateStream, arg.Column1, arg.Column2)
-	return err
 }
 
 const readStream = `-- name: ReadStream :many
