@@ -1,8 +1,11 @@
-.PHONY: fmt lint pre-commit-install sqlc-diff sqlc-generate test test-race test-integration ci web-dev web-build bff-dev bff-test
+.PHONY: fmt vet lint pre-commit-install sqlc-diff sqlc-generate test test-race test-integration ci web-dev web-build bff-dev bff-test
 
 fmt:
 	gofmt -s -w .
 	goimports -w . || true
+
+vet:
+	go vet ./...
 
 lint:
 	golangci-lint run ./...
@@ -20,17 +23,17 @@ test:
 	go test ./...
 
 test-race:
-	go test -race ./...
+	go test -v -race ./...
 
 test-integration:
 	go test -tags=integration -v ./internal/integration/...
 
 ci:
-	sqlc diff
-	go vet ./...
-	golangci-lint run ./...
-	go test -race ./...
-	cd platform/bff && npm test
+	$(MAKE) sqlc-diff
+	$(MAKE) vet
+	$(MAKE) lint
+	$(MAKE) test-race
+	$(MAKE) bff-test
 
 web-dev:
 	cd platform/web && npm run dev

@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: Run go vet
-        run: go vet ./...
+        run: make vet
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -47,7 +47,7 @@ jobs:
           sqlc-version: '1.31.1'
 
       - name: Check sqlc diff
-        run: sqlc diff
+        run: make sqlc-diff
 
   unit-tests:
     name: runner / unit-tests (-race)
@@ -63,7 +63,7 @@ jobs:
           cache: true
 
       - name: Run unit tests with race detector
-        run: go test -v -race $(go list ./... | grep -v 'github.com/thec1oud/billing/internal/integration')
+        run: make test-race
 
   integration-tests:
     name: runner / integration-tests
@@ -79,7 +79,7 @@ jobs:
           cache: true
 
       - name: Run integration tests
-        run: go test -v ./internal/integration/...
+        run: make test-integration
 
   bff:
     name: runner / bff-tests
@@ -98,8 +98,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        working-directory: platform/bff
-        run: npm test
+        run: make bff-test
 
   web:
     name: runner / web-build
@@ -118,6 +117,4 @@ jobs:
         run: npm ci
 
       - name: Build web application
-        working-directory: platform/web
-        run: npm run build
-
+        run: make web-build
