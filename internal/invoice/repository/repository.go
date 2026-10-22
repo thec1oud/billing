@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -69,7 +70,10 @@ func (r *PostgresRepository) Get(ctx context.Context, invoiceID int64) (model.In
 		unitAmt, _ := money.New(li.UnitAmount, row.Currency)
 		totalAmt, _ := money.New(li.TotalAmount, row.Currency)
 
-		qVal, _ := li.QuantityValue.Float64Value()
+		qVal, err := li.QuantityValue.Float64Value()
+		if err != nil {
+			return model.Invoice{}, fmt.Errorf("read line item quantity: %w", err)
+		}
 
 		var subID int64
 		if li.SubscriptionID.Valid {
@@ -147,7 +151,9 @@ func (r *PostgresRepository) Create(ctx context.Context, db DBTX, inv model.Invo
 		}
 
 		var qVal pgtype.Numeric
-		_ = qVal.Scan(fmt.Sprintf("%.4f", li.QuantityValue))
+		if err := qVal.Scan(strconv.FormatFloat(li.QuantityValue, 'f', -1, 64)); err != nil {
+			return 0, fmt.Errorf("scan line item quantity: %w", err)
+		}
 
 		metaBytes := []byte("{}")
 		if len(li.Metadata) > 0 {

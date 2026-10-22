@@ -12,18 +12,19 @@ func TestGeneratorService_Generate(t *testing.T) {
 	svc := NewGeneratorService()
 
 	now := time.Now()
+	currency := money.Currency("USD")
 	invoice := &invoicemodel.Invoice{
 		InvoiceID:     101,
 		AccountID:     202,
 		InvoiceNumber: "INV-101",
 		Status:        invoicemodel.StatusPaid,
-		Currency:      money.DefaultCurrency,
-		Subtotal:      money.MustNew(10000, money.DefaultCurrency),
-		Tax:           money.MustNew(500, money.DefaultCurrency),
-		Discount:      money.MustNew(1000, money.DefaultCurrency),
-		Total:         money.MustNew(9500, money.DefaultCurrency),
-		AmountPaid:    money.MustNew(9500, money.DefaultCurrency),
-		AmountDue:     money.MustZero(money.DefaultCurrency),
+		Currency:      currency,
+		Subtotal:      money.MustNew(10000, currency),
+		Tax:           money.MustNew(500, currency),
+		Discount:      money.MustNew(1000, currency),
+		Total:         money.MustNew(9500, currency),
+		AmountPaid:    money.MustNew(9500, currency),
+		AmountDue:     money.MustZero(currency),
 		DueAt:         &now,
 		FinalizedAt:   &now,
 		PaidAt:        &now,
@@ -32,8 +33,8 @@ func TestGeneratorService_Generate(t *testing.T) {
 				Description:   "API Usage",
 				QuantityValue: 1000,
 				QuantityUnit:  "requests",
-				UnitAmount:    money.MustNew(10, money.DefaultCurrency),
-				TotalAmount:   money.MustNew(10000, money.DefaultCurrency),
+				UnitAmount:    money.MustNew(10, currency),
+				TotalAmount:   money.MustNew(10000, currency),
 			},
 		},
 	}

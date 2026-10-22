@@ -40,17 +40,17 @@ func (m *mockInvoiceFetcher) Get(ctx context.Context, invoiceID int64) (invoicem
 		AccountID:     202,
 		InvoiceNumber: "INV-12345",
 		Status:        invoicemodel.StatusPaid,
-		Currency:      money.DefaultCurrency,
+		Currency:      "USD",
 		LineItems: []invoicemodel.LineItem{
 			{
 				Description:   "Integration Test Item",
 				QuantityValue: 1,
 				QuantityUnit:  "pkg",
-				UnitAmount:    money.MustNew(1000, money.DefaultCurrency),
-				TotalAmount:   money.MustNew(1000, money.DefaultCurrency),
+				UnitAmount:    money.MustNew(1000, "USD"),
+				TotalAmount:   money.MustNew(1000, "USD"),
 			},
 		},
-		AmountPaid: money.MustNew(1000, money.DefaultCurrency),
+		AmountPaid: money.MustNew(1000, "USD"),
 		PaidAt:     &now,
 	}, nil
 }
@@ -88,7 +88,7 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 	t.Log("Starting MinIO container...")
 	// Ensure bin directory exists for MinIO data mount
 	_ = os.MkdirAll("../../bin/minio_data", 0755)
-	
+
 	minioContainer, err := minio.Run(ctx, "quay.io/minio/minio:latest",
 		minio.WithUsername("testuser"),
 		minio.WithPassword("testpass123"),

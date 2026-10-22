@@ -64,6 +64,14 @@ func TestPostgresRepository_CreateAndGet(t *testing.T) {
 				UnitAmount:    subtotal,
 				TotalAmount:   subtotal,
 			},
+			{
+				ItemID:        2,
+				Description:   "Fractional API Units",
+				QuantityValue: 0.12345,
+				QuantityUnit:  "units",
+				UnitAmount:    subtotal,
+				TotalAmount:   subtotal,
+			},
 		},
 	}
 
@@ -93,11 +101,14 @@ func TestPostgresRepository_CreateAndGet(t *testing.T) {
 	if fetched.Status != model.StatusDraft {
 		t.Errorf("expected status draft, got %s", fetched.Status)
 	}
-	if len(fetched.LineItems) != 1 {
-		t.Fatalf("expected 1 line item, got %d", len(fetched.LineItems))
+	if len(fetched.LineItems) != 2 {
+		t.Fatalf("expected 2 line items, got %d", len(fetched.LineItems))
 	}
 	if fetched.LineItems[0].QuantityValue != 2.5 {
 		t.Errorf("expected quantity 2.5, got %f", fetched.LineItems[0].QuantityValue)
+	}
+	if fetched.LineItems[1].QuantityValue != 0.12345 {
+		t.Errorf("expected quantity 0.12345, got %f", fetched.LineItems[1].QuantityValue)
 	}
 }
 
