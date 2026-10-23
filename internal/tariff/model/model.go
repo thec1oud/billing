@@ -255,8 +255,10 @@ func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 
 	case TariffTypeTieredUsage:
 		switch t.TierStrategy {
-		case TierStrategyGraduated, TierStrategyVolume:
+		case TierStrategyGraduated:
 			return t.calculateTieredUsageCharge(qty)
+		case TierStrategyVolume:
+			return t.calculateVolumeCharge(qty)
 		default:
 			return money.Money{}, fmt.Errorf(
 				"charge calculation for tier strategy %s is not implemented",
@@ -351,4 +353,22 @@ func (t Tariff) calculateTieredUsageCharge(
 	}
 
 	return total, nil
+}
+
+func (t Tariff) calculateVolumeCharge(qty Quantity) (money.Money, error) {
+	if len(t.Tiers) == 0 {
+		return money.Money{}, errors.New("tiered tariff has no tiers")
+	}
+
+	for _, tier := range t.Tiers {
+		if tier.UpToQuantity == nil || qty.Value <= *tier.UpToQuantity {
+			charge, err := tier.UnitPrice.MultiplyByScalar(qty.Value)
+			if err != nil {
+				return money.Money{}, err
+			}
+			return charge.Add(tier.FlatFee)
+		}
+	}
+
+	return money.Money{}, errors.New("tier configuration does not contain an unbounded final tier")
 }

@@ -224,8 +224,246 @@ func TestTieredVolumeCalculateCharge(t *testing.T) {
 
 	result, err := tariff.CalculateCharge(Quantity{Value: 15, Unit: UnitCount})
 	require.NoError(t, err)
-	require.Equal(t, int64(1250), result.AmountMinor)
+	require.Equal(t, int64(750), result.AmountMinor)
 	require.Equal(t, "USD", string(result.Currency))
+}
+
+func TestTieredPricingBoundaries(t *testing.T) {
+	zeroUSD, err := money.New(0, "USD")
+	require.NoError(t, err)
+
+	price100, err := money.New(100, "USD")
+	require.NoError(t, err)
+
+	price50, err := money.New(50, "USD")
+	require.NoError(t, err)
+
+	limit10 := int64(10)
+
+	baseTiers := []Tier{
+		{
+			UpToQuantity: &limit10,
+			UnitPrice:    price100,
+			FlatFee:      zeroUSD,
+		},
+		{
+			UpToQuantity: nil,
+			UnitPrice:    price50,
+			FlatFee:      zeroUSD,
+		},
+	}
+
+	tests := []struct {
+		name          string
+		qty           int64
+		wantVolume    int64
+		wantGraduated int64
+	}{
+		{
+			name:          "zero units",
+			qty:           0,
+			wantVolume:    0,
+			wantGraduated: 0,
+		},
+		{
+			name:          "within first tier",
+			qty:           5,
+			wantVolume:    500, // 5 * 100
+			wantGraduated: 500, // 5 * 100
+		},
+		{
+			name:          "exactly on first tier boundary",
+			qty:           10,
+			wantVolume:    1000, // 10 * 100
+			wantGraduated: 1000, // 10 * 100
+		},
+		{
+			name:          "one unit into second tier",
+			qty:           11,
+			wantVolume:    550,  // 11 * 50
+			wantGraduated: 1050, // 10 * 100 + 1 * 50
+		},
+		{
+			name:          "unbounded second tier",
+			qty:           15,
+			wantVolume:    750,  // 15 * 50
+			wantGraduated: 1250, // 10 * 100 + 5 * 50
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			volumeTariff := Tariff{
+				TariffCode:     "USAGE_VOL",
+				Version:        1,
+				Name:           "Usage Volume",
+				TariffTypeCode: TariffTypeTieredUsage,
+				TierStrategy:   TierStrategyVolume,
+				Amount:         zeroUSD,
+				Tiers:          baseTiers,
+			}
+			volRes, err := volumeTariff.CalculateCharge(Quantity{Value: tt.qty, Unit: UnitCount})
+			require.NoError(t, err)
+			require.Equal(t, tt.wantVolume, volRes.AmountMinor)
+
+			gradTariff := Tariff{
+				TariffCode:     "USAGE_GRAD",
+				Version:        1,
+				Name:           "Usage Graduated",
+				TariffTypeCode: TariffTypeTieredUsage,
+				TierStrategy:   TierStrategyGraduated,
+				Amount:         zeroUSD,
+				Tiers:          baseTiers,
+			}
+			gradRes, err := gradTariff.CalculateCharge(Quantity{Value: tt.qty, Unit: UnitCount})
+			require.NoError(t, err)
+			require.Equal(t, tt.wantGraduated, gradRes.AmountMinor)
+		})
+	}
+}
+
+func TestTieredPricingWithFlatFees(t *testing.T) {
+	zeroUSD, err := money.New(0, "USD")
+	require.NoError(t, err)
+
+	price100, err := money.New(100, "USD")
+	require.NoError(t, err)
+
+	fee200, err := money.New(200, "USD")
+	require.NoError(t, err)
+
+	price50, err := money.New(50, "USD")
+	require.NoError(t, err)
+
+	fee300, err := money.New(300, "USD")
+	require.NoError(t, err)
+
+	limit10 := int64(10)
+
+	tiers := []Tier{
+		{
+			UpToQuantity: &limit10,
+			UnitPrice:    price100,
+			FlatFee:      fee200,
+		},
+		{
+			UpToQuantity: nil,
+			UnitPrice:    price50,
+			FlatFee:      fee300,
+		},
+	}
+
+	volumeTariff := Tariff{
+		TariffCode:     "USAGE_VOL",
+		Version:        1,
+		Name:           "Usage Volume",
+		TariffTypeCode: TariffTypeTieredUsage,
+		TierStrategy:   TierStrategyVolume,
+		Amount:         zeroUSD,
+		Tiers:          tiers,
+	}
+
+	gradTariff := Tariff{
+		TariffCode:     "USAGE_GRAD",
+		Version:        1,
+		Name:           "Usage Graduated",
+		TariffTypeCode: TariffTypeTieredUsage,
+		TierStrategy:   TierStrategyGraduated,
+		Amount:         zeroUSD,
+		Tiers:          tiers,
+	}
+
+	// 0 units: volume charges tier 1 flat fee; graduated doesn't enter any tier
+	volRes, err := volumeTariff.CalculateCharge(Quantity{Value: 0, Unit: UnitCount})
+	require.NoError(t, err)
+	require.Equal(t, int64(200), volRes.AmountMinor)
+
+	gradRes, err := gradTariff.CalculateCharge(Quantity{Value: 0, Unit: UnitCount})
+	require.NoError(t, err)
+	require.Equal(t, int64(0), gradRes.AmountMinor)
+
+	// 10 units (boundary): both pay tier 1 unit price + tier 1 flat fee
+	volRes, err = volumeTariff.CalculateCharge(Quantity{Value: 10, Unit: UnitCount})
+	require.NoError(t, err)
+	require.Equal(t, int64(1200), volRes.AmountMinor) // 10 * 100 + 200
+
+	gradRes, err = gradTariff.CalculateCharge(Quantity{Value: 10, Unit: UnitCount})
+	require.NoError(t, err)
+	require.Equal(t, int64(1200), gradRes.AmountMinor) // 10 * 100 + 200
+
+	// 15 units (unbounded):
+	// volume pays tier 2 price + tier 2 flat fee: 15 * 50 + 300 = 1050
+	volRes, err = volumeTariff.CalculateCharge(Quantity{Value: 15, Unit: UnitCount})
+	require.NoError(t, err)
+	require.Equal(t, int64(1050), volRes.AmountMinor)
+
+	// graduated pays tier 1 (10 * 100 + 200 = 1200) + tier 2 (5 * 50 + 300 = 550) = 1750
+	gradRes, err = gradTariff.CalculateCharge(Quantity{Value: 15, Unit: UnitCount})
+	require.NoError(t, err)
+	require.Equal(t, int64(1750), gradRes.AmountMinor)
+}
+
+func TestTieredVolumeValidationAndErrors(t *testing.T) {
+	zeroUSD, err := money.New(0, "USD")
+	require.NoError(t, err)
+
+	price100, err := money.New(100, "USD")
+	require.NoError(t, err)
+
+	// No tiers
+	tariffNoTiers := Tariff{
+		TariffTypeCode: TariffTypeTieredUsage,
+		TierStrategy:   TierStrategyVolume,
+		Amount:         zeroUSD,
+		Tiers:          nil,
+	}
+	_, err = tariffNoTiers.CalculateCharge(Quantity{Value: 5, Unit: UnitCount})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tiered tariff has no tiers")
+
+	// Missing unbounded tier
+	limit10 := int64(10)
+	tariffBoundedOnly := Tariff{
+		TariffTypeCode: TariffTypeTieredUsage,
+		TierStrategy:   TierStrategyVolume,
+		Amount:         zeroUSD,
+		Tiers: []Tier{
+			{
+				UpToQuantity: &limit10,
+				UnitPrice:    price100,
+				FlatFee:      zeroUSD,
+			},
+		},
+	}
+	_, err = tariffBoundedOnly.CalculateCharge(Quantity{Value: 15, Unit: UnitCount})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tier configuration does not contain an unbounded final tier")
+
+	// Invalid tier boundaries (non-increasing) are rejected by Validate()
+	limit5 := int64(5)
+	tariffInvalidBounds := Tariff{
+		TariffCode:     "USAGE",
+		Version:        1,
+		Name:           "Usage",
+		TariffTypeCode: TariffTypeTieredUsage,
+		TierStrategy:   TierStrategyVolume,
+		Amount:         zeroUSD,
+		Tiers: []Tier{
+			{
+				UpToQuantity: &limit10,
+				UnitPrice:    price100,
+				FlatFee:      zeroUSD,
+			},
+			{
+				UpToQuantity: &limit5,
+				UnitPrice:    price100,
+				FlatFee:      zeroUSD,
+			},
+		},
+	}
+	err = tariffInvalidBounds.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "upper bound must be greater than previous tier")
 }
 
 func TestTieredCurrencyMismatch(t *testing.T) {
