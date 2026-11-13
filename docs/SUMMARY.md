@@ -1,6 +1,9 @@
 # Summary
 
-* [System Architecture](README.md)
+* [Introduction](README.md)
+* [Getting Started](getting-started.md)
+* [Quickstart Guide](quickstart.md)
+* [System Architecture](architecture.md)
 
 ## Database Reference
 * [Database Overview](database/README.md)
