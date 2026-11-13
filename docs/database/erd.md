@@ -8,7 +8,7 @@ This section maps out the physical data models and relational structures across 
 
 The primary operational model covers customer accounts, payment methods, the pricing catalog (tariffs, plans, purchasable items), subscriptions, invoices, and the credit ledger.
 
-```mermaid
+{% mermaid %}
 erDiagram
     account_status ||--o{ accounts : "references"
     accounts ||--o{ payment_methods : "has many"
@@ -191,7 +191,7 @@ erDiagram
         timestamptz expires_at
         timestamptz created_at
     }
-```
+{% endmermaid %}
 
 ---
 
@@ -199,7 +199,7 @@ erDiagram
 
 The payment interface layer isolates external gateway interactions, partial payment attempts, and webhook audit trails.
 
-```mermaid
+{% mermaid %}
 erDiagram
     invoices ||--o{ payment_attempts : "attempts payment for"
     payment_provider ||--o{ payment_attempts : "processed by"
@@ -231,7 +231,7 @@ erDiagram
         timestamptz published_at
         timestamptz processed_at
     }
-```
+{% endmermaid %}
 
 ---
 
@@ -239,7 +239,7 @@ erDiagram
 
 The generic state machine framework manages lifecycle execution for domains such as `invoice_lifecycle` and `subscription_lifecycle`.
 
-```mermaid
+{% mermaid %}
 erDiagram
     sm_definitions ||--o{ sm_states : "defines"
     sm_definitions ||--o{ sm_transitions : "defines"
@@ -365,7 +365,7 @@ erDiagram
         text last_error
         timestamptz created_at
     }
-```
+{% endmermaid %}
 
 ---
 
@@ -373,7 +373,7 @@ erDiagram
 
 The event ledger records historical state mutations.
 
-```mermaid
+{% mermaid %}
 erDiagram
     event_log ||--o{ event_log : "causation_id references event_id"
 
@@ -390,4 +390,4 @@ erDiagram
         uuid correlation_id
         jsonb payload
     }
-```
+{% endmermaid %}

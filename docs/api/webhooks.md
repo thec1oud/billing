@@ -6,7 +6,7 @@ The Webhooks API receives, verifies, deduplicates, and forwards asynchronous pay
 
 ## 1. Webhook Ingestion Pipeline
 
-```mermaid
+{% mermaid %}
 sequenceDiagram
     autonumber
     actor Gateway as Payment Gateway
@@ -28,7 +28,7 @@ sequenceDiagram
     Handler->>Broker: Publish to exchange (routing key based on status)
     Handler->>DB: Mark webhook as published (published_at = NOW())
     Handler-->>Gateway: HTTP 200 OK {"status": "processed", "webhook_id": "..."}
-```
+{% endmermaid %}
 
 ---
 

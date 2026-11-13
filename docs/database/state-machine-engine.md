@@ -6,7 +6,7 @@ The Gebeta Billing service embeds a database-driven, transactional Finite State 
 
 ## 1. State Machine Engine Architecture
 
-```mermaid
+{% mermaid %}
 graph TD
     App[Domain Service: Invoice / Subscription] -->|Fire Event| Engine[FSM Engine]
     Engine -->|Lock Instance FOR UPDATE| DB_Inst[(sm_instances)]
@@ -21,7 +21,7 @@ graph TD
 
     SchedulerWorker[Scheduler Poller Worker] -->|Claim Due fire_at| Timers
     SchedulerWorker -->|Fire Scheduled Event| Engine
-```
+{% endmermaid %}
 
 ---
 
@@ -48,14 +48,14 @@ graph TD
 - **Initial State**: `DRAFT`
 - **States**: `DRAFT`, `OPEN`, `PAID` (final), `UNCOLLECTIBLE` (final), `VOID` (final)
 - **Transitions**:
-  ```mermaid
+  {% mermaid %}
   stateDiagram-v2
       [*] --> DRAFT
       DRAFT --> OPEN : finalize [Action: invoice.action.finalize]
       OPEN --> PAID : pay [Action: invoice.action.mark_paid]
       OPEN --> VOID : void [Action: invoice.action.void]
       OPEN --> UNCOLLECTIBLE : uncollectible
-  ```
+  {% endmermaid %}
 
 - **Registered Actions**:
   - `invoice.action.finalize`: Generates sequential `invoice_number`, calculates totals, sets `due_at` and `finalized_at`, and returns the open invoice projection.
@@ -67,14 +67,14 @@ graph TD
 - **Initial State**: `ACTIVE`
 - **States**: `ACTIVE`, `PAUSED`, `CANCELED` (final)
 - **Transitions**:
-  ```mermaid
+  {% mermaid %}
   stateDiagram-v2
       [*] --> ACTIVE
       ACTIVE --> PAUSED : pause [Action: subscription.transition]
       PAUSED --> ACTIVE : resume [Action: subscription.transition]
       ACTIVE --> CANCELED : cancel [Action: subscription.transition]
       PAUSED --> CANCELED : cancel [Action: subscription.transition]
-  ```
+  {% endmermaid %}
 
 - **Registered Actions**:
   - `subscription.transition`: Updates `subscription_status_code` in the `subscriptions` table inside the transaction and records transition metadata in the working context.
