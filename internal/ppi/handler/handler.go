@@ -15,19 +15,20 @@ import (
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
-
 type PPIService interface {
 	GetAdapter(providerCode string) (ppi.Provider, bool)
 	ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) (bool, error)
 	MarkWebhookPublished(ctx context.Context, webhookID string) error
-	ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error)
+	ChargePaymentMethod(
+		ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string,
+	) (ppi.ChargeResult, error)
 }
 
 type WebhookService = PPIService
 
 type PPIHandler struct {
-	svc    PPIService
-	log    *slog.Logger
+	svc PPIService
+	log *slog.Logger
 }
 
 type WebhookHandler = PPIHandler
@@ -36,8 +37,8 @@ func NewPPIHandler(
 	svc PPIService,
 ) *PPIHandler {
 	return &PPIHandler{
-		svc:    svc,
-		log:    logger.ForComponent("ppi_handler"),
+		svc: svc,
+		log: logger.ForComponent("ppi_handler"),
 	}
 }
 

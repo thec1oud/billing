@@ -114,16 +114,12 @@ func (s *Service) Create(
 	if err != nil {
 		return model.Subscription{}, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	p, err := s.plans.GetByID(ctx, input.PlanID)
 	if err != nil {
-		return model.Subscription{}, fmt.Errorf(
-			"get plan: %w",
-			err,
-		)
+		return model.Subscription{}, fmt.Errorf("get plan: %w", err)
 	}
-
 	if p.Version != input.PlanVersion {
 		return model.Subscription{}, fmt.Errorf(
 			"plan %d version mismatch: requested=%d actual=%d",
@@ -137,7 +133,6 @@ func (s *Service) Create(
 	if err != nil {
 		return model.Subscription{}, err
 	}
-
 	if status != accountmodel.StatusActive {
 		return model.Subscription{}, fmt.Errorf(
 			"account %d is not active",

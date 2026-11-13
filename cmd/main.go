@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rabbitmq/amqp091-go"
 
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
@@ -23,6 +24,7 @@ import (
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/thec1oud/billing/internal/infra/storage"
 	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
 	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
@@ -140,14 +142,16 @@ func run() error {
 	defer smScheduler.Stop()
 
 	// 8. Initialize Messaging Broker Topology
-	rabbitBroker, err := messaging.NewRabbitBroker(deps.Rabbit)
+	rabbitBroker, err := messaging.NewRabbitBroker(deps.Rabbit, messaging.WithDialer(func() (*amqp091.Connection, error) {
+		return storage.DialRabbitMQ(cfg)
+	}))
 	if err != nil {
 		return fmt.Errorf("messaging broker: %w", err)
 	}
 	if err := rabbitBroker.InitTopology(ctx); err != nil {
 		return fmt.Errorf("broker topology init: %w", err)
 	}
-	defer rabbitBroker.Close()
+	defer func() { _ = rabbitBroker.Close() }()
 
 	//  Initialize Payment Attempt Repository & Service
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
@@ -233,7 +237,7 @@ func SeedCatalog(
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	amt, _ := money.New(1000, "ETB") // 10.00 ETB per unit
 

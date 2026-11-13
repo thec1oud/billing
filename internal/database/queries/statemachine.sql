@@ -172,9 +172,10 @@ INSERT INTO sm_action_outbox (
     history_id,
     binding_id,
     action_name,
-    params
+    params,
+    execution_context
 ) VALUES (
-    $1, $2, $3, $4, $5
+    $1, $2, $3, $4, $5, $6
 );
 
 -- name: ClaimOutboxRows :many
@@ -194,7 +195,7 @@ SET status = 'PROCESSING',
 FROM candidates c
 WHERE o.outbox_id = c.outbox_id
 RETURNING o.outbox_id, o.instance_id, o.history_id, o.binding_id, o.action_name, o.params,
-          o.status, o.attempts, o.claimed_at, o.claimed_by, o.last_error, o.created_at;
+          o.execution_context, o.status, o.attempts, o.claimed_at, o.claimed_by, o.last_error, o.created_at;
 
 -- name: MarkOutboxPublished :exec
 UPDATE sm_action_outbox

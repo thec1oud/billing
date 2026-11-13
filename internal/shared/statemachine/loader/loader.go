@@ -36,10 +36,18 @@ func Publish(
 	}
 	if id, existingHash, err := repo.GetDefinitionByMachineTypeVersion(ctx, nil, spec.MachineType, spec.Version); err == nil {
 		if existingHash == "" {
-			return uuid.Nil, fmt.Errorf("definition %s version %d exists without a content hash; bump its version to publish verifiable content", spec.MachineType, spec.Version)
+			return uuid.Nil, fmt.Errorf(
+				"definition %s version %d exists without a content hash; bump its version to publish verifiable content",
+				spec.MachineType,
+				spec.Version,
+			)
 		}
 		if existingHash != hash {
-			return uuid.Nil, fmt.Errorf("definition %s version %d has changed content; bump the version before publishing", spec.MachineType, spec.Version)
+			return uuid.Nil, fmt.Errorf(
+				"definition %s version %d has changed content; bump the version before publishing",
+				spec.MachineType,
+				spec.Version,
+			)
 		}
 		return id, nil
 	} else if !errors.Is(err, model.ErrDefinitionNotFound) {

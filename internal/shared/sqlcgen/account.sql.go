@@ -186,8 +186,8 @@ func (q *Queries) ListPaymentMethodReferences(ctx context.Context, accountID int
 
 const lockAccountForUpdate = `-- name: LockAccountForUpdate :one
 SELECT account_status_code
-FROM accounts 
-WHERE account_id = $1 
+FROM accounts
+WHERE account_id = $1
 FOR UPDATE
 `
 

@@ -193,6 +193,58 @@ func (e *Engine) Fire(
 		opt(&o)
 	}
 
+	var preflightInstance model.Instance
+	var preflightDefinition *model.Definition
+	var preflightTransition *model.Transition
+	var preflightExecutionContext model.ExecutionContext
+	preflightScripts := false
+	instance, err := e.repo.GetInstanceByID(ctx, o.tx, instanceID)
+	if err != nil {
+		return model.FireResult{}, err
+	}
+	if instance.Status != model.InstanceStatusRunning {
+		return model.FireResult{}, model.ErrInstanceTerminal
+	}
+	definition, err := e.loadDefinition(ctx, o.tx, instance.DefinitionID)
+	if err != nil {
+		return model.FireResult{}, err
+	}
+	candidates := definition.TransitionsFor(instance.CurrentState, eventName)
+	for _, candidate := range candidates {
+		for _, guard := range candidate.Guards {
+			if guard.ImplementationKind == model.GuardImplScript {
+				preflightScripts = true
+				break
+			}
+		}
+		if preflightScripts {
+			break
+		}
+	}
+	if preflightScripts {
+		// SCRIPT guards can outlive their deadline. Evaluate them before
+		// acquiring the instance row lock, then validate the snapshot below.
+		executionContext := model.ExecutionContext{
+			InstanceID:   instance.InstanceID,
+			SubjectType:  instance.SubjectType,
+			SubjectID:    instance.SubjectID,
+			FromState:    instance.CurrentState,
+			EventName:    eventName,
+			EventPayload: payload,
+			Context:      instance.Context,
+			Now:          time.Now(),
+			TriggeredBy:  o.triggeredBy,
+		}
+		selected, err := e.selectTransition(ctx, candidates, executionContext)
+		if err != nil {
+			return model.FireResult{}, err
+		}
+		preflightInstance = instance
+		preflightDefinition = definition
+		preflightTransition = selected
+		preflightExecutionContext = executionContext
+	}
+
 	// Use the caller-supplied transaction when provided; otherwise open one.
 	// In the injected-tx case the caller owns commit/rollback — Fire will not
 	// call Commit or Rollback on it, keeping all writes in one atomic unit.
@@ -210,20 +262,28 @@ func (e *Engine) Fire(
 		tx = ownedTx
 	}
 
-	instance, err := e.repo.GetInstanceForUpdate(ctx, tx, instanceID)
+	instance, err = e.repo.GetInstanceForUpdate(ctx, tx, instanceID)
 	if err != nil {
 		return model.FireResult{}, err
 	}
 	if instance.Status != model.InstanceStatusRunning {
 		return model.FireResult{}, model.ErrInstanceTerminal
 	}
-
-	def, err := e.loadDefinition(ctx, tx, instance.DefinitionID)
-	if err != nil {
-		return model.FireResult{}, err
+	if preflightScripts && (instance.Version != preflightInstance.Version ||
+		instance.CurrentState != preflightInstance.CurrentState ||
+		instance.DefinitionID != preflightInstance.DefinitionID) {
+		return model.FireResult{}, model.ErrOptimisticConflict
 	}
 
-	candidates := def.TransitionsFor(instance.CurrentState, eventName)
+	def := preflightDefinition
+	if !preflightScripts {
+		def, err = e.loadDefinition(ctx, tx, instance.DefinitionID)
+		if err != nil {
+			return model.FireResult{}, err
+		}
+	}
+
+	candidates = def.TransitionsFor(instance.CurrentState, eventName)
 	if len(candidates) == 0 {
 		return model.FireResult{}, model.ErrNoValidTransition
 	}
@@ -239,10 +299,16 @@ func (e *Engine) Fire(
 		Now:          time.Now(),
 		TriggeredBy:  o.triggeredBy,
 	}
+	if preflightScripts {
+		ec = preflightExecutionContext
+	}
 
-	selected, err := e.selectTransition(ctx, candidates, ec)
-	if err != nil {
-		return model.FireResult{}, err
+	selected := preflightTransition
+	if !preflightScripts {
+		selected, err = e.selectTransition(ctx, candidates, ec)
+		if err != nil {
+			return model.FireResult{}, err
+		}
 	}
 	if selected == nil {
 		return model.FireResult{}, model.ErrNoValidTransition
@@ -423,7 +489,7 @@ func (e *Engine) runActionHooks(
 		case model.ActionModeAsync:
 			bindingID := ab.BindingID
 			hID := historyID
-			if err := e.repo.InsertOutboxRow(ctx, tx, instanceID, &hID, &bindingID, ab.ActionName, params); err != nil {
+			if err := e.repo.InsertOutboxRow(ctx, tx, instanceID, &hID, &bindingID, ab.ActionName, params, *ec); err != nil {
 				if ab.OnError == model.OnErrorContinue {
 					continue
 				}

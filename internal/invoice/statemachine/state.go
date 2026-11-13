@@ -64,9 +64,9 @@ func (a *FinalizeAction) Execute(
 		return fmt.Errorf("failed to parse finalize payload: %w", err)
 	}
 
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse invoice ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse invoice ID: %w", err)
 	}
 
 	invoiceNumber, err := a.repo.Finalize(ctx, db, intID, p.Subtotal, p.Tax, p.Discount, p.Total, p.AmountDue, p.DueAt, p.Now)
@@ -75,7 +75,7 @@ func (a *FinalizeAction) Execute(
 	}
 
 	// Update the State Machine's context so the published event payload is fully enriched
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"invoice_id":      intID,
 		"invoice_number":  invoiceNumber,
 		"subtotal_amount": p.Subtotal,
@@ -85,11 +85,9 @@ func (a *FinalizeAction) Execute(
 		"amount_due":      p.AmountDue,
 		"due_at":          p.DueAt,
 		"finalized_at":    p.Now,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }
 
@@ -113,27 +111,25 @@ func (a *MarkPaidAction) Execute(
 		return fmt.Errorf("failed to parse pay payload: %w", err)
 	}
 
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse invoice ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse invoice ID: %w", err)
 	}
 
-	err := a.repo.MarkPaid(ctx, db, intID, p.AmountPaid, p.AmountDue, p.PaidAt)
+	err = a.repo.MarkPaid(ctx, db, intID, p.AmountPaid, p.AmountDue, p.PaidAt)
 	if err != nil {
 		return err
 	}
 
 	// Update Context for standard event publication
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"invoice_id":  intID,
 		"amount_paid": p.AmountPaid,
 		"amount_due":  p.AmountDue,
 		"paid_at":     p.PaidAt,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }
 
@@ -148,9 +144,9 @@ func (a *VoidAction) Name() string { return "invoice.action.void" }
 func (a *VoidAction) Execute(
 	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
 ) error {
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse invoice ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse invoice ID: %w", err)
 	}
 
 	return a.repo.MarkVoid(ctx, db, intID)

@@ -66,7 +66,9 @@ func (m *mockAccountService) Close(ctx context.Context, actor eventmodel.Actor, 
 	return model.Account{AccountID: accountID, Status: model.StatusClosed}, nil
 }
 
-func (m *mockAccountService) AddPaymentMethod(ctx context.Context, actor eventmodel.Actor, accountID int64, paymentMethodID string) (model.Account, error) {
+func (m *mockAccountService) AddPaymentMethod(
+	ctx context.Context, actor eventmodel.Actor, accountID int64, paymentMethodID string,
+) (model.Account, error) {
 	if m.addPaymentMethodFn != nil {
 		return m.addPaymentMethodFn(ctx, actor, accountID, paymentMethodID)
 	}

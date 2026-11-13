@@ -388,9 +388,9 @@ func (r *PostgresRepository) GetDurationByPlanAndDuration(
 
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
-		"get plan duration by plan and duration: %w",
-		err,
-	)
+			"get plan duration by plan and duration: %w",
+			err,
+		)
 	}
 
 	return toPlanDurationModel(row), nil

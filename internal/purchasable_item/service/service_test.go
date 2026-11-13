@@ -356,7 +356,7 @@ func TestServiceGetByPlanID(t *testing.T) {
 		ItemCode:     "BASIC",
 		ItemTypeCode: ItemTypePlan,
 		Name:         "Basic Plan",
-		PlanID:       func() *int64 {
+		PlanID: func() *int64 {
 			id := int64(10)
 			return &id
 		}(),

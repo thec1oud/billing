@@ -9,13 +9,18 @@ import (
 )
 
 func NewRabbitMQConnection(cfg *config.Config) (*amqp091.Connection, error) {
-	uri := fmt.Sprintf("amqp://%s:%s@%s:%s/",
-		cfg.RabbitMQUser, cfg.RabbitMQPass, cfg.RabbitMQHost, cfg.RabbitMQPort)
-
-	conn, err := amqp091.Dial(uri)
+	conn, err := DialRabbitMQ(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("rabbitmq connection failed: %w", err)
 	}
+	return conn, nil
+}
 
+func DialRabbitMQ(cfg *config.Config) (*amqp091.Connection, error) {
+	uri := fmt.Sprintf("amqp://%s:%s@%s:%s/", cfg.RabbitMQUser, cfg.RabbitMQPass, cfg.RabbitMQHost, cfg.RabbitMQPort)
+	conn, err := amqp091.Dial(uri)
+	if err != nil {
+		return nil, err
+	}
 	return conn, nil
 }

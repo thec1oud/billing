@@ -96,7 +96,7 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start minio: %v", err)
 	}
-	defer minioContainer.Terminate(context.Background())
+	defer func() { _ = minioContainer.Terminate(context.Background()) }()
 
 	minioHost, err := minioContainer.Endpoint(ctx, "")
 	if err != nil {
@@ -115,7 +115,7 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start rabbitmq: %v", err)
 	}
-	defer rmqContainer.Terminate(context.Background())
+	defer func() { _ = rmqContainer.Terminate(context.Background()) }()
 
 	rmqURL, err := rmqContainer.AmqpURL(ctx)
 	if err != nil {
@@ -125,7 +125,7 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to dial rabbitmq: %v", err)
 	}
-	defer amqpConn.Close()
+	defer func() { _ = amqpConn.Close() }()
 
 	broker, err := messaging.NewRabbitBroker(amqpConn)
 	if err != nil {
@@ -208,7 +208,7 @@ func TestReceiptWorker_EndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to download PDF: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected HTTP 200 OK from presigned URL, got %d", resp.StatusCode)
