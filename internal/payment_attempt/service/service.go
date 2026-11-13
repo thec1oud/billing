@@ -53,13 +53,21 @@ func (s *Service) CreatePaymentAttempt(
 	ctx context.Context,
 	db repository.DBTX,
 	input model.CreatePaymentAttemptInput,
-) (model.PaymentAttempt, error) {
+) (model.PaymentAttempt, bool, error) {
 	existing, err := s.repo.GetByInternalTxID(ctx, db, input.InternalTxID)
 	if err == nil {
-		return existing, nil
+		return existing, false, nil
 	}
 	if !errors.Is(err, repository.ErrPaymentAttemptNotFound) {
-		return model.PaymentAttempt{}, fmt.Errorf("check internal tx id idempotency: %w", err)
+		return model.PaymentAttempt{}, false, fmt.Errorf("check internal tx id idempotency: %w", err)
+	}
+
+	pending, err := s.repo.GetPendingByInvoiceID(ctx, db, input.InvoiceID)
+	if err == nil {
+		return pending, false, repository.ErrPendingAttemptExists
+	}
+	if !errors.Is(err, repository.ErrPaymentAttemptNotFound) {
+		return model.PaymentAttempt{}, false, fmt.Errorf("check pending attempt: %w", err)
 	}
 
 	attempt := model.PaymentAttempt{
@@ -73,10 +81,10 @@ func (s *Service) CreatePaymentAttempt(
 
 	created, err := s.repo.Create(ctx, db, attempt)
 	if err != nil {
-		return model.PaymentAttempt{}, err
+		return model.PaymentAttempt{}, false, err
 	}
 
-	return created, nil
+	return created, true, nil
 }
 
 func (s *Service) UpdatePaymentAttemptResult(

@@ -281,7 +281,7 @@ SET
     provider_tx_id = COALESCE($3, provider_tx_id),
     raw_response = COALESCE($4, raw_response),
     updated_at = NOW()
-WHERE attempt_id = $1
+WHERE attempt_id = $1 AND status = 'PENDING'
 `
 
 type UpdatePaymentAttemptResultParams struct {
