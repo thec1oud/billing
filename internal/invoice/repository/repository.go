@@ -14,13 +14,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/invoice/model"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
 var (
-	ErrInvoiceNotFound = errors.New("invoice not found")
-	ErrInvalidStatus   = errors.New("invalid invoice status code")
+	ErrInvoiceNotFound = apperr.NotFound("invoice_not_found", "invoice not found")
+	ErrInvalidStatus   = apperr.Validation("invalid_status", "invalid invoice status code")
 )
 
 type DBTX interface {

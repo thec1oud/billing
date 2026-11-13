@@ -11,13 +11,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 	"github.com/thec1oud/billing/internal/tariff/model"
 )
 
 var (
-	ErrTariffNotFound = errors.New("tariff not found")
+	ErrTariffNotFound = apperr.NotFound("tariff_not_found", "tariff not found")
 )
 
 type DBTX interface {

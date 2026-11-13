@@ -11,6 +11,7 @@ import (
 
 	"github.com/thec1oud/billing/internal/account/handler"
 	"github.com/thec1oud/billing/internal/account/model"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 )
 
@@ -100,7 +101,7 @@ func TestHandleCreateAccount(t *testing.T) {
 			name: "service validation error",
 			body: model.CreateInput{},
 			mockCreate: func(ctx context.Context, actor eventmodel.Actor, in model.CreateInput) (model.Account, error) {
-				return model.Account{}, errors.New("currency is required")
+				return model.Account{}, apperr.Validation("invalid_request", "currency is required")
 			},
 			expectedStatus: http.StatusBadRequest,
 		},

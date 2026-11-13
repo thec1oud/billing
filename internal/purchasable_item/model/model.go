@@ -2,9 +2,10 @@ package model
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
+
+	"github.com/thec1oud/billing/internal/shared/apperr"
 )
 
 type ItemTypeCode string
@@ -40,18 +41,18 @@ type PurchasableItem struct {
 
 func (i PurchasableItem) Validate() error {
 	if i.ItemCode == "" {
-		return errors.New("item code is required")
+		return apperr.Validation("required_field", "item code is required")
 	}
 
 	if !i.ItemTypeCode.Valid() {
-		return fmt.Errorf(
-			"unsupported item type %q",
-			i.ItemTypeCode,
+		return apperr.Validation(
+			"invalid_item_type",
+			fmt.Sprintf("unsupported item type %q", i.ItemTypeCode),
 		)
 	}
 
 	if i.Name == "" {
-		return errors.New("item name is required")
+		return apperr.Validation("required_field", "item name is required")
 	}
 
 	return nil

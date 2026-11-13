@@ -3,7 +3,6 @@ package invoice
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/thec1oud/billing/internal/invoice/repository"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	"github.com/thec1oud/billing/internal/ppi"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -56,7 +56,7 @@ func (s *Service) CreateDraftInvoice(
 	lineItems []model.LineItem,
 ) (model.Invoice, error) {
 	if len(lineItems) == 0 {
-		return model.Invoice{}, errors.New("cannot create draft invoice without at least one purchased item")
+		return model.Invoice{}, apperr.Validation("invalid_request", "cannot create draft invoice without at least one purchased item")
 	}
 
 	zeroMoney, err := money.Zero(currency)
@@ -67,7 +67,10 @@ func (s *Service) CreateDraftInvoice(
 	// Validate line item currencies match the target invoice currency
 	for i, li := range lineItems {
 		if li.TotalAmount.Currency != currency {
-			return model.Invoice{}, fmt.Errorf("line item %d currency %s does not match invoice currency %s", i, li.TotalAmount.Currency, currency)
+			return model.Invoice{}, apperr.Validation(
+				"currency_mismatch",
+				fmt.Sprintf("line item %d currency %s does not match invoice currency %s", i, li.TotalAmount.Currency, currency),
+			)
 		}
 	}
 
@@ -161,7 +164,7 @@ func (s *Service) FinalizeInvoice(
 	}
 
 	if len(inv.LineItems) == 0 {
-		return model.Invoice{}, errors.New("cannot finalize an invoice with no line items")
+		return model.Invoice{}, apperr.Validation("invalid_request", "cannot finalize an invoice with no line items")
 	}
 
 	// 2. Calculate line item subtotal
