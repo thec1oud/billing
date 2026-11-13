@@ -16,7 +16,6 @@ func (w *responseWriterInterceptor) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
-
 // RequestLogger is an HTTP middleware that comprehensively logs API requests and responses.
 func RequestLogger(next http.Handler) http.Handler {
 	log := ForComponent("http_api")

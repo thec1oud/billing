@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/statemachine/model"
 	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
 	"github.com/thec1oud/billing/internal/shared/statemachine/scripting"
@@ -18,7 +19,8 @@ type transitionKey struct {
 }
 
 // validate checks referential integrity (every from/to state exists, every
-// guard/action name resolves in reg) and structural well-formedness before
+// guard/action name resolves in reg, every EmitEventType is a declared
+// eventmodel.EventType) and structural well-formedness before
 // Publish writes anything. This is what lets a broken definition fail fast at
 // publish time instead of at first Fire().
 func validate(spec DefinitionSpec, reg *registry.Registry) error {
@@ -67,6 +69,10 @@ func validate(spec DefinitionSpec, reg *registry.Registry) error {
 		}
 		if t.EventName == "" {
 			return fmt.Errorf("%w: transition event_name cannot be empty", ErrInvalidSpec)
+		}
+		if t.EmitEventType != "" && !eventmodel.EventType(t.EmitEventType).Valid() {
+			return fmt.Errorf("%w: transition %s/%s emit_event_type %q is not a known event type",
+				ErrInvalidSpec, t.FromState, t.EventName, t.EmitEventType)
 		}
 
 		key := transitionKey{from: t.FromState, event: t.EventName, priority: t.Priority}

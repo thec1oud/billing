@@ -113,6 +113,41 @@ func TestEvalGuard_DangerousImport_FailsToCompile(t *testing.T) {
 	}
 }
 
+func TestValidateGuardSource_RejectsStateAndSpawnedGoroutines(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "package variable",
+			source: `package script
+var count int
+func Guard(context, payload, params map[string]any) bool { return true }`,
+		},
+		{
+			name: "init function",
+			source: `package script
+func init() {}
+func Guard(context, payload, params map[string]any) bool { return true }`,
+		},
+		{
+			name: "spawned goroutine",
+			source: `package script
+func Guard(context, payload, params map[string]any) bool {
+			go func() { for {} }()
+			return true
+}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := scripting.ValidateGuardSource(test.source); err == nil {
+				t.Fatal("expected script shape validation to fail")
+			}
+		})
+	}
+}
+
 func TestEvalGuard_TimesOutWithoutHanging(t *testing.T) {
 	pool := scripting.NewPool(4, 30*time.Millisecond)
 

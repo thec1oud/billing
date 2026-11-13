@@ -13,6 +13,11 @@ ON CONFLICT (tariff_type_code) DO NOTHING;
 
 -- Amount and currency must either both exist
 -- or both be NULL.
+
+ALTER TABLE tariffs
+    ADD COLUMN tier_strategy VARCHAR(32),
+    ADD COLUMN quantity_unit VARCHAR(32);
+
 ALTER TABLE tariffs
     ADD CONSTRAINT chk_tariff_amount_currency
     CHECK (

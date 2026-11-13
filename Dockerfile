@@ -12,6 +12,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o billing-app ./cmd
 
 FROM alpine:3.20
 
+# Install tzdata for timezone support
+RUN apk add --no-cache tzdata
+
 WORKDIR /app
 
 # Copy the  binary from prev stage

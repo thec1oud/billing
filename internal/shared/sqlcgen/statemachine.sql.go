@@ -30,7 +30,7 @@ SET status = 'PROCESSING',
 FROM candidates c
 WHERE o.outbox_id = c.outbox_id
 RETURNING o.outbox_id, o.instance_id, o.history_id, o.binding_id, o.action_name, o.params,
-          o.status, o.attempts, o.claimed_at, o.claimed_by, o.last_error, o.created_at
+          o.execution_context, o.status, o.attempts, o.claimed_at, o.claimed_by, o.last_error, o.created_at
 `
 
 type ClaimOutboxRowsParams struct {
@@ -38,15 +38,31 @@ type ClaimOutboxRowsParams struct {
 	ClaimedBy pgtype.Text `json:"claimed_by"`
 }
 
-func (q *Queries) ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]SmActionOutbox, error) {
+type ClaimOutboxRowsRow struct {
+	OutboxID         int64              `json:"outbox_id"`
+	InstanceID       uuid.UUID          `json:"instance_id"`
+	HistoryID        pgtype.Int8        `json:"history_id"`
+	BindingID        *uuid.UUID         `json:"binding_id"`
+	ActionName       string             `json:"action_name"`
+	Params           []byte             `json:"params"`
+	ExecutionContext []byte             `json:"execution_context"`
+	Status           string             `json:"status"`
+	Attempts         int32              `json:"attempts"`
+	ClaimedAt        pgtype.Timestamptz `json:"claimed_at"`
+	ClaimedBy        pgtype.Text        `json:"claimed_by"`
+	LastError        pgtype.Text        `json:"last_error"`
+	CreatedAt        time.Time          `json:"created_at"`
+}
+
+func (q *Queries) ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams) ([]ClaimOutboxRowsRow, error) {
 	rows, err := q.db.Query(ctx, claimOutboxRows, arg.Limit, arg.ClaimedBy)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SmActionOutbox
+	var items []ClaimOutboxRowsRow
 	for rows.Next() {
-		var i SmActionOutbox
+		var i ClaimOutboxRowsRow
 		if err := rows.Scan(
 			&i.OutboxID,
 			&i.InstanceID,
@@ -54,6 +70,7 @@ func (q *Queries) ClaimOutboxRows(ctx context.Context, arg ClaimOutboxRowsParams
 			&i.BindingID,
 			&i.ActionName,
 			&i.Params,
+			&i.ExecutionContext,
 			&i.Status,
 			&i.Attempts,
 			&i.ClaimedAt,
@@ -212,9 +229,18 @@ FROM sm_definitions
 WHERE machine_type = $1 AND is_active
 `
 
-func (q *Queries) GetActiveDefinition(ctx context.Context, machineType string) (SmDefinition, error) {
+type GetActiveDefinitionRow struct {
+	DefinitionID uuid.UUID `json:"definition_id"`
+	MachineType  string    `json:"machine_type"`
+	Version      int32     `json:"version"`
+	InitialState string    `json:"initial_state"`
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (q *Queries) GetActiveDefinition(ctx context.Context, machineType string) (GetActiveDefinitionRow, error) {
 	row := q.db.QueryRow(ctx, getActiveDefinition, machineType)
-	var i SmDefinition
+	var i GetActiveDefinitionRow
 	err := row.Scan(
 		&i.DefinitionID,
 		&i.MachineType,
@@ -232,9 +258,18 @@ FROM sm_definitions
 WHERE definition_id = $1
 `
 
-func (q *Queries) GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (SmDefinition, error) {
+type GetDefinitionByIDRow struct {
+	DefinitionID uuid.UUID `json:"definition_id"`
+	MachineType  string    `json:"machine_type"`
+	Version      int32     `json:"version"`
+	InitialState string    `json:"initial_state"`
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (q *Queries) GetDefinitionByID(ctx context.Context, definitionID uuid.UUID) (GetDefinitionByIDRow, error) {
 	row := q.db.QueryRow(ctx, getDefinitionByID, definitionID)
-	var i SmDefinition
+	var i GetDefinitionByIDRow
 	err := row.Scan(
 		&i.DefinitionID,
 		&i.MachineType,
@@ -243,6 +278,29 @@ func (q *Queries) GetDefinitionByID(ctx context.Context, definitionID uuid.UUID)
 		&i.IsActive,
 		&i.CreatedAt,
 	)
+	return i, err
+}
+
+const getDefinitionByMachineTypeVersion = `-- name: GetDefinitionByMachineTypeVersion :one
+SELECT definition_id, content_hash
+FROM sm_definitions
+WHERE machine_type = $1 AND version = $2
+`
+
+type GetDefinitionByMachineTypeVersionParams struct {
+	MachineType string `json:"machine_type"`
+	Version     int32  `json:"version"`
+}
+
+type GetDefinitionByMachineTypeVersionRow struct {
+	DefinitionID uuid.UUID   `json:"definition_id"`
+	ContentHash  pgtype.Text `json:"content_hash"`
+}
+
+func (q *Queries) GetDefinitionByMachineTypeVersion(ctx context.Context, arg GetDefinitionByMachineTypeVersionParams) (GetDefinitionByMachineTypeVersionRow, error) {
+	row := q.db.QueryRow(ctx, getDefinitionByMachineTypeVersion, arg.MachineType, arg.Version)
+	var i GetDefinitionByMachineTypeVersionRow
+	err := row.Scan(&i.DefinitionID, &i.ContentHash)
 	return i, err
 }
 
@@ -387,19 +445,21 @@ const insertDefinition = `-- name: InsertDefinition :one
 INSERT INTO sm_definitions (
     machine_type,
     version,
+    content_hash,
     initial_state,
     is_active
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 RETURNING definition_id, created_at
 `
 
 type InsertDefinitionParams struct {
-	MachineType  string `json:"machine_type"`
-	Version      int32  `json:"version"`
-	InitialState string `json:"initial_state"`
-	IsActive     bool   `json:"is_active"`
+	MachineType  string      `json:"machine_type"`
+	Version      int32       `json:"version"`
+	ContentHash  pgtype.Text `json:"content_hash"`
+	InitialState string      `json:"initial_state"`
+	IsActive     bool        `json:"is_active"`
 }
 
 type InsertDefinitionRow struct {
@@ -411,6 +471,7 @@ func (q *Queries) InsertDefinition(ctx context.Context, arg InsertDefinitionPara
 	row := q.db.QueryRow(ctx, insertDefinition,
 		arg.MachineType,
 		arg.Version,
+		arg.ContentHash,
 		arg.InitialState,
 		arg.IsActive,
 	)
@@ -459,18 +520,20 @@ INSERT INTO sm_action_outbox (
     history_id,
     binding_id,
     action_name,
-    params
+    params,
+    execution_context
 ) VALUES (
-    $1, $2, $3, $4, $5
+    $1, $2, $3, $4, $5, $6
 )
 `
 
 type InsertOutboxRowParams struct {
-	InstanceID uuid.UUID   `json:"instance_id"`
-	HistoryID  pgtype.Int8 `json:"history_id"`
-	BindingID  *uuid.UUID  `json:"binding_id"`
-	ActionName string      `json:"action_name"`
-	Params     []byte      `json:"params"`
+	InstanceID       uuid.UUID   `json:"instance_id"`
+	HistoryID        pgtype.Int8 `json:"history_id"`
+	BindingID        *uuid.UUID  `json:"binding_id"`
+	ActionName       string      `json:"action_name"`
+	Params           []byte      `json:"params"`
+	ExecutionContext []byte      `json:"execution_context"`
 }
 
 func (q *Queries) InsertOutboxRow(ctx context.Context, arg InsertOutboxRowParams) error {
@@ -480,6 +543,7 @@ func (q *Queries) InsertOutboxRow(ctx context.Context, arg InsertOutboxRowParams
 		arg.BindingID,
 		arg.ActionName,
 		arg.Params,
+		arg.ExecutionContext,
 	)
 	return err
 }

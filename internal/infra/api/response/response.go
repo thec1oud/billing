@@ -79,4 +79,3 @@ func Write(w http.ResponseWriter, status int, payload any, headers ...map[string
 
 	_ = json.NewEncoder(w).Encode(resp)
 }
-

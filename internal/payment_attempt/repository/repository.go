@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -27,12 +28,36 @@ type DBTX interface {
 	sqlcgen.DBTX
 }
 
+type Repository interface {
+	Pool() *pgxpool.Pool
+	Create(ctx context.Context, db DBTX, attempt model.PaymentAttempt) (model.PaymentAttempt, error)
+	GetByID(ctx context.Context, db DBTX, attemptID int64) (model.PaymentAttempt, error)
+	GetByInternalTxID(ctx context.Context, db DBTX, internalTxID string) (model.PaymentAttempt, error)
+	GetByProviderTxID(ctx context.Context, db DBTX, providerTxID string) (model.PaymentAttempt, error)
+	GetPendingByInvoiceID(ctx context.Context, db DBTX, invoiceID int64) (model.PaymentAttempt, error)
+	UpdateResult(
+		ctx context.Context,
+		db DBTX,
+		attemptID int64,
+		status model.Status,
+		providerTxID *string,
+		rawResponse json.RawMessage,
+	) error
+	ListByInvoiceID(ctx context.Context, db DBTX, invoiceID int64) ([]model.PaymentAttempt, error)
+	GetStalePendingAttempts(ctx context.Context, db DBTX, before time.Time, limit int32) ([]model.PaymentAttempt, error)
+	DeleteByAttemptID(ctx context.Context, db DBTX, attemptID int64) error
+}
+
 type PostgresRepository struct {
 	pool *pgxpool.Pool
 }
 
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
+}
+
+func (r *PostgresRepository) Pool() *pgxpool.Pool {
+	return r.pool
 }
 
 func (r *PostgresRepository) getQuerier(db DBTX) *sqlcgen.Queries {
@@ -172,6 +197,26 @@ func (r *PostgresRepository) ListByInvoiceID(ctx context.Context, db DBTX, invoi
 	rows, err := q.ListPaymentAttemptsByInvoiceID(ctx, invoiceID)
 	if err != nil {
 		return nil, fmt.Errorf("list payment attempts by invoice id: %w", err)
+	}
+
+	attempts := make([]model.PaymentAttempt, 0, len(rows))
+	for _, row := range rows {
+		attempts = append(attempts, r.mapRowToModel(sqlcgen.PaymentAttempt(row)))
+	}
+
+	return attempts, nil
+}
+
+//nolint:lll // Kept together for readability.
+func (r *PostgresRepository) GetStalePendingAttempts(ctx context.Context, db DBTX, before time.Time, limit int32) ([]model.PaymentAttempt, error) {
+	q := r.getQuerier(db)
+
+	rows, err := q.GetStalePendingAttempts(ctx, sqlcgen.GetStalePendingAttemptsParams{
+		UpdatedAt: before,
+		Limit:     limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get stale pending attempts: %w", err)
 	}
 
 	attempts := make([]model.PaymentAttempt, 0, len(rows))

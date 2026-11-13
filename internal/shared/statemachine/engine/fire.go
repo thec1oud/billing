@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
@@ -17,6 +18,7 @@ import (
 type fireOptions struct {
 	triggeredBy string
 	actor       *eventmodel.Actor
+	tx          sqlcgen.DBTX // optional: share caller's transaction
 }
 
 // FireOption configures one Fire() call.
@@ -33,8 +35,16 @@ func WithEventActor(actor eventmodel.Actor) FireOption {
 	return func(o *fireOptions) { o.actor = &actor }
 }
 
+// WithFireTx makes Fire run inside an existing transaction supplied by the
+// caller instead of opening its own. The caller is responsible for committing
+// or rolling back that transaction
+func WithFireTx(tx sqlcgen.DBTX) FireOption {
+	return func(o *fireOptions) { o.tx = tx }
+}
+
 type instanceOptions struct {
 	triggeredBy string
+	tx          sqlcgen.DBTX // optional: share caller's transaction
 }
 
 // InstanceOption configures one CreateInstance() call.
@@ -43,6 +53,14 @@ type InstanceOption func(*instanceOptions)
 // WithCreatedBy records who/what created this instance in the audit trail.
 func WithCreatedBy(who string) InstanceOption {
 	return func(o *instanceOptions) { o.triggeredBy = who }
+}
+
+// WithTx makes CreateInstance run inside an existing transaction supplied by
+// the caller instead of opening its own. The caller is responsible for
+// committing or rolling back that transaction — CreateInstance will not call
+// Commit or Rollback on it.
+func WithTx(tx sqlcgen.DBTX) InstanceOption {
+	return func(o *instanceOptions) { o.tx = tx }
 }
 
 // CreateInstance creates a new instance against the currently active definition
@@ -60,21 +78,39 @@ func (e *Engine) CreateInstance(
 		opt(&o)
 	}
 
-	active, err := e.repo.GetActiveDefinition(ctx, nil, machineType)
+	// Resolve the active definition using the caller's tx when available to
+	// avoid borrowing a second pool connection (which can deadlock under load).
+	// On a cache hit loadDefinition never touches the DB regardless of db arg.
+	var readDB sqlcgen.DBTX
+	if o.tx != nil {
+		readDB = o.tx
+	}
+	active, err := e.repo.GetActiveDefinition(ctx, readDB, machineType)
 	if err != nil {
 		return model.Instance{}, err
 	}
 
-	def, err := e.loadDefinition(ctx, active.DefinitionID)
+	// Use the caller-supplied transaction when provided; otherwise open one.
+	// In the injected-tx case the caller owns commit/rollback — we must not
+	// touch it here so that all work stays in the caller's atomic unit.
+	var tx sqlcgen.DBTX
+	var ownedTx pgx.Tx // non-nil only when we opened the transaction ourselves
+	if o.tx != nil {
+		tx = o.tx
+	} else {
+		var err error
+		ownedTx, err = e.pool.Begin(ctx)
+		if err != nil {
+			return model.Instance{}, fmt.Errorf("begin transaction: %w", err)
+		}
+		defer ownedTx.Rollback(ctx) //nolint:errcheck
+		tx = ownedTx
+	}
+
+	def, err := e.loadDefinition(ctx, tx, active.DefinitionID)
 	if err != nil {
 		return model.Instance{}, err
 	}
-
-	tx, err := e.pool.Begin(ctx)
-	if err != nil {
-		return model.Instance{}, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
 
 	//nolint:lll // Kept together for readability.
 	instance, err := e.repo.CreateInstance(ctx, tx, def.Meta.DefinitionID, machineType, subjectType, subjectID, def.Meta.InitialState, initialContext)
@@ -127,8 +163,12 @@ func (e *Engine) CreateInstance(
 		return model.Instance{}, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return model.Instance{}, fmt.Errorf("commit create instance: %w", err)
+	// Only commit when we own the transaction. If the caller injected their tx,
+	// they are responsible for committing it after all their work is done.
+	if ownedTx != nil {
+		if err := ownedTx.Commit(ctx); err != nil {
+			return model.Instance{}, fmt.Errorf("commit create instance: %w", err)
+		}
 	}
 
 	instance.Context = ec.Context
@@ -153,26 +193,97 @@ func (e *Engine) Fire(
 		opt(&o)
 	}
 
-	tx, err := e.pool.Begin(ctx)
-	if err != nil {
-		return model.FireResult{}, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	instance, err := e.repo.GetInstanceForUpdate(ctx, tx, instanceID)
+	var preflightInstance model.Instance
+	var preflightDefinition *model.Definition
+	var preflightTransition *model.Transition
+	var preflightExecutionContext model.ExecutionContext
+	preflightScripts := false
+	instance, err := e.repo.GetInstanceByID(ctx, o.tx, instanceID)
 	if err != nil {
 		return model.FireResult{}, err
 	}
 	if instance.Status != model.InstanceStatusRunning {
 		return model.FireResult{}, model.ErrInstanceTerminal
 	}
-
-	def, err := e.loadDefinition(ctx, instance.DefinitionID)
+	definition, err := e.loadDefinition(ctx, o.tx, instance.DefinitionID)
 	if err != nil {
 		return model.FireResult{}, err
 	}
+	candidates := definition.TransitionsFor(instance.CurrentState, eventName)
+	for _, candidate := range candidates {
+		for _, guard := range candidate.Guards {
+			if guard.ImplementationKind == model.GuardImplScript {
+				preflightScripts = true
+				break
+			}
+		}
+		if preflightScripts {
+			break
+		}
+	}
+	if preflightScripts {
+		// SCRIPT guards can outlive their deadline. Evaluate them before
+		// acquiring the instance row lock, then validate the snapshot below.
+		executionContext := model.ExecutionContext{
+			InstanceID:   instance.InstanceID,
+			SubjectType:  instance.SubjectType,
+			SubjectID:    instance.SubjectID,
+			FromState:    instance.CurrentState,
+			EventName:    eventName,
+			EventPayload: payload,
+			Context:      instance.Context,
+			Now:          time.Now(),
+			TriggeredBy:  o.triggeredBy,
+		}
+		selected, err := e.selectTransition(ctx, candidates, executionContext)
+		if err != nil {
+			return model.FireResult{}, err
+		}
+		preflightInstance = instance
+		preflightDefinition = definition
+		preflightTransition = selected
+		preflightExecutionContext = executionContext
+	}
 
-	candidates := def.TransitionsFor(instance.CurrentState, eventName)
+	// Use the caller-supplied transaction when provided; otherwise open one.
+	// In the injected-tx case the caller owns commit/rollback — Fire will not
+	// call Commit or Rollback on it, keeping all writes in one atomic unit.
+	var tx sqlcgen.DBTX
+	var ownedTx pgx.Tx
+	if o.tx != nil {
+		tx = o.tx
+	} else {
+		var err error
+		ownedTx, err = e.pool.Begin(ctx)
+		if err != nil {
+			return model.FireResult{}, fmt.Errorf("begin transaction: %w", err)
+		}
+		defer ownedTx.Rollback(ctx) //nolint:errcheck
+		tx = ownedTx
+	}
+
+	instance, err = e.repo.GetInstanceForUpdate(ctx, tx, instanceID)
+	if err != nil {
+		return model.FireResult{}, err
+	}
+	if instance.Status != model.InstanceStatusRunning {
+		return model.FireResult{}, model.ErrInstanceTerminal
+	}
+	if preflightScripts && (instance.Version != preflightInstance.Version ||
+		instance.CurrentState != preflightInstance.CurrentState ||
+		instance.DefinitionID != preflightInstance.DefinitionID) {
+		return model.FireResult{}, model.ErrOptimisticConflict
+	}
+
+	def := preflightDefinition
+	if !preflightScripts {
+		def, err = e.loadDefinition(ctx, tx, instance.DefinitionID)
+		if err != nil {
+			return model.FireResult{}, err
+		}
+	}
+
+	candidates = def.TransitionsFor(instance.CurrentState, eventName)
 	if len(candidates) == 0 {
 		return model.FireResult{}, model.ErrNoValidTransition
 	}
@@ -188,10 +299,16 @@ func (e *Engine) Fire(
 		Now:          time.Now(),
 		TriggeredBy:  o.triggeredBy,
 	}
+	if preflightScripts {
+		ec = preflightExecutionContext
+	}
 
-	selected, err := e.selectTransition(ctx, candidates, ec)
-	if err != nil {
-		return model.FireResult{}, err
+	selected := preflightTransition
+	if !preflightScripts {
+		selected, err = e.selectTransition(ctx, candidates, ec)
+		if err != nil {
+			return model.FireResult{}, err
+		}
 	}
 	if selected == nil {
 		return model.FireResult{}, model.ErrNoValidTransition
@@ -226,12 +343,20 @@ func (e *Engine) Fire(
 	}
 
 	if selected.EmitEventType != "" && e.events != nil {
+		// SubjectType doubles as the event stream's aggregate type. Refuse
+		// anything that is not a declared aggregate so one entity can never end
+		// up split across two differently-spelled streams.
+		aggregateType := eventmodel.AggregateType(instance.SubjectType)
+		if !aggregateType.Valid() {
+			return model.FireResult{}, fmt.Errorf("emit event %q: subject type %q is not a known aggregate type",
+				selected.EmitEventType, instance.SubjectType)
+		}
 		actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem}
 		if o.actor != nil {
 			actor = *o.actor
 		}
 		_, err := e.events.AppendEvent(ctx, tx, eventmodel.AppendRequest{
-			AggregateType: eventmodel.AggregateType(instance.SubjectType),
+			AggregateType: aggregateType,
 			AggregateID:   instance.SubjectID,
 			EventType:     eventmodel.EventType(selected.EmitEventType),
 			EventVersion:  1,
@@ -264,8 +389,11 @@ func (e *Engine) Fire(
 		return model.FireResult{}, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return model.FireResult{}, fmt.Errorf("commit fire: %w", err)
+	// Only commit when we own the transaction.
+	if ownedTx != nil {
+		if err := ownedTx.Commit(ctx); err != nil {
+			return model.FireResult{}, fmt.Errorf("commit fire: %w", err)
+		}
 	}
 
 	return model.FireResult{
@@ -361,7 +489,7 @@ func (e *Engine) runActionHooks(
 		case model.ActionModeAsync:
 			bindingID := ab.BindingID
 			hID := historyID
-			if err := e.repo.InsertOutboxRow(ctx, tx, instanceID, &hID, &bindingID, ab.ActionName, params); err != nil {
+			if err := e.repo.InsertOutboxRow(ctx, tx, instanceID, &hID, &bindingID, ab.ActionName, params, *ec); err != nil {
 				if ab.OnError == model.OnErrorContinue {
 					continue
 				}

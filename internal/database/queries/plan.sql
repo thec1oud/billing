@@ -1,4 +1,11 @@
 -- name: CreatePlan :one
+WITH locked AS (
+    SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
+), next_version AS (
+    SELECT COALESCE(MAX(version), 0) + 1 AS version
+    FROM plans, locked
+    WHERE plan_code = $1
+)
 INSERT INTO plans (
     plan_code,
     version,
@@ -8,15 +15,15 @@ INSERT INTO plans (
     migration_path,
     metadata
 )
-VALUES (
+SELECT
     $1,
+    next_version.version,
     $2,
     $3,
     $4,
     $5,
-    $6,
-    $7
-)
+    $6
+FROM next_version
 RETURNING
     plan_id,
     plan_code,
@@ -71,6 +78,20 @@ SELECT
 FROM plans
 WHERE plan_code = $1
 ORDER BY version DESC;
+
+-- name: ListPlans :many
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+ORDER BY plan_id DESC;
 
 
 -- name: CreatePlanDuration :one
@@ -146,3 +167,18 @@ RETURNING
     duration,
     is_active,
     created_at;
+
+-- name: ListActivePlans :many
+SELECT DISTINCT ON (plan_code)
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+WHERE effective_until IS NULL
+ORDER BY plan_code, version DESC;

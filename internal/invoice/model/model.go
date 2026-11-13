@@ -46,6 +46,14 @@ type Invoice struct {
 	LineItems     []LineItem     `json:"line_items"`
 }
 
+// Request payload for POST /api/v1/invoices
+type CreateDraftInput struct {
+	AccountID      int64      `json:"account_id"`
+	SubscriptionID int64      `json:"subscription_id,omitempty"`
+	Currency       string     `json:"currency"`
+	LineItems      []LineItem `json:"line_items"`
+}
+
 type CreatedPayload struct {
 	AccountID      int64       `json:"account_id"`
 	SubscriptionID int64       `json:"subscription_id,omitempty"`

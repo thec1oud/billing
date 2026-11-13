@@ -1,0 +1,1129 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Gebeta Billing API",
+    "version": "1.0.0",
+    "description": "Comprehensive API documentation for the Gebeta Billing Service and Platform BFF Gateway.\nInherits directly from Go HTTP routers, models, and Node.js gateway routes.\n"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Core Billing Service (Go)"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Platform BFF Gateway (Node.js)"
+    }
+  ],
+  "tags": [
+    { "name": "Health", "description": "Service health and readiness probes" },
+    { "name": "Accounts", "description": "Customer billing accounts and payment methods" },
+    { "name": "Tariffs", "description": "Versioned pricing configurations" },
+    { "name": "Plans", "description": "Commercial recurring subscription plans" },
+    { "name": "Purchasable Items", "description": "Billable catalog items" },
+    { "name": "Subscriptions", "description": "Recurring customer billing agreements" },
+    { "name": "Invoices", "description": "Billing statements, finalization, and settlement" },
+    { "name": "Payments", "description": "Payment Provider Interface (PPI) charges and attempts" },
+    { "name": "Webhooks", "description": "External payment gateway notifications and simulation" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Core service health check",
+        "operationId": "getHealth",
+        "description": "Returns liveness status of the Core Go Billing Service.",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "BFF liveness check",
+        "operationId": "getBffHealth",
+        "description": "Returns liveness status of the Platform BFF Node.js process.",
+        "responses": {
+          "200": {
+            "description": "BFF is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "service": { "type": "string", "example": "platform-bff" },
+                    "time": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ready": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "BFF readiness probe",
+        "operationId": "getBffReady",
+        "description": "Validates BFF and upstream Core Billing Service availability.",
+        "responses": {
+          "200": {
+            "description": "All dependencies ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ready" },
+                    "billing_service": {
+                      "type": "object",
+                      "properties": {
+                        "url": { "type": "string" },
+                        "status": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Upstream service unavailable or degraded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "not_ready" },
+                    "billing_service": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts": {
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Create customer account",
+        "operationId": "createAccount",
+        "description": "Creates a new billing account in PENDING_VERIFICATION status.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAccountInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or invalid currency",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "409": {
+            "description": "External ID already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountID}": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "Get account details",
+        "operationId": "getAccount",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountID}/activate": {
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Activate account",
+        "operationId": "activateAccount",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account transitioned to ACTIVE",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid transition",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountID}/suspend": {
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Suspend account",
+        "operationId": "suspendAccount",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ReasonRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account suspended",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Reason required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountID}/reactivate": {
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Reactivate suspended account",
+        "operationId": "reactivateAccount",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account returned to ACTIVE",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountID}/close": {
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Close account permanently",
+        "operationId": "closeAccount",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ReasonRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account closed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountID}/payment-methods": {
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Attach payment method to account",
+        "operationId": "addPaymentMethod",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PaymentMethodRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment method attached",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tariffs": {
+      "post": {
+        "tags": ["Tariffs"],
+        "summary": "Create pricing tariff",
+        "operationId": "createTariff",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateTariffInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tariff created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TariffResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plans": {
+      "get": {
+        "tags": ["Plans"],
+        "summary": "List active plans",
+        "operationId": "listActivePlans",
+        "responses": {
+          "200": {
+            "description": "Active plans retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Plan" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Plans"],
+        "summary": "Create plan version",
+        "operationId": "createPlan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreatePlanInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Plan created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PlanResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/purchasable-items": {
+      "get": {
+        "tags": ["Purchasable Items"],
+        "summary": "List purchasable items",
+        "operationId": "listPurchasableItems",
+        "responses": {
+          "200": {
+            "description": "Catalog items retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/PurchasableItem" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions": {
+      "post": {
+        "tags": ["Subscriptions"],
+        "summary": "Create subscription agreement",
+        "operationId": "createSubscription",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateSubscriptionInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Subscription created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubscriptionResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{subscriptionID}": {
+      "get": {
+        "tags": ["Subscriptions"],
+        "summary": "Get subscription by ID",
+        "operationId": "getSubscription",
+        "parameters": [
+          {
+            "name": "subscriptionID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubscriptionResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{id}/subscriptions": {
+      "get": {
+        "tags": ["Subscriptions"],
+        "summary": "List active subscriptions for account",
+        "operationId": "listAccountSubscriptions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active subscriptions retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Subscription" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dev/invoices/generate": {
+      "post": {
+        "tags": ["Invoices"],
+        "summary": "Generate development invoice",
+        "operationId": "generateDevInvoice",
+        "description": "Development endpoint to issue an OPEN invoice against an account and plan.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DevGenerateInvoiceInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invoice generated and opened",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InvoiceResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invoices/{invoiceID}": {
+      "get": {
+        "tags": ["Invoices"],
+        "summary": "Get invoice details",
+        "operationId": "getInvoice",
+        "parameters": [
+          {
+            "name": "invoiceID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invoice retrieved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InvoiceResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invoices/{invoiceID}/pay": {
+      "post": {
+        "tags": ["Invoices"],
+        "summary": "Pay open invoice",
+        "operationId": "payInvoice",
+        "parameters": [
+          {
+            "name": "invoiceID",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PayInvoiceInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment initiated or settled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": { "$ref": "#/components/schemas/PayInvoiceResponse" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{id}/invoices": {
+      "get": {
+        "tags": ["Invoices"],
+        "summary": "List account invoices",
+        "operationId": "listAccountInvoices",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invoices list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Invoice" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/charge": {
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Direct gateway charge",
+        "operationId": "directCharge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DirectChargeInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Charge executed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChargeResult" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{provider}": {
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "Ingest payment gateway webhook",
+        "operationId": "handleWebhook",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "example": "fake" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed or ignored as duplicate",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WebhookReceiptResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/fake": {
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "Simulate fake provider webhook (BFF)",
+        "operationId": "simulateFakeWebhook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FakeWebhookPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook simulated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WebhookReceiptResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Money": {
+        "type": "object",
+        "required": ["amount_minor", "currency"],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "description": "Monetary amount in minor currency units (e.g. cents).",
+            "example": 1000
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 three-letter currency code.",
+            "example": "ETB"
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["success", "error"],
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string", "example": "invalid_request" },
+              "message": { "type": "string", "example": "Currency must be a three-letter ISO 4217 code" }
+            }
+          }
+        }
+      },
+      "CreateAccountInput": {
+        "type": "object",
+        "required": ["currency", "timezone"],
+        "properties": {
+          "external_id": { "type": "string", "maxLength": 255, "example": "cust_org_102" },
+          "currency": { "type": "string", "example": "ETB" },
+          "timezone": { "type": "string", "example": "Africa/Addis_Ababa" },
+          "locale": { "type": "string", "default": "en-US", "example": "en-US" },
+          "net_terms": { "type": "integer", "minimum": 0, "maximum": 32767, "default": 0, "example": 30 },
+          "dunning_profile_id": { "type": "integer" },
+          "tax_identifiers": { "type": "object" },
+          "billing_address": { "type": "object" },
+          "compliance_flags": { "type": "object" },
+          "metadata": { "type": "object" }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "external_id": { "type": "string", "example": "cust_org_102" },
+          "status": {
+            "type": "string",
+            "enum": ["PENDING_VERIFICATION", "ACTIVE", "SUSPENDED", "CLOSED"],
+            "example": "ACTIVE"
+          },
+          "currency": { "type": "string", "example": "ETB" },
+          "timezone": { "type": "string", "example": "Africa/Addis_Ababa" },
+          "locale": { "type": "string", "example": "en-US" },
+          "net_terms": { "type": "integer", "example": 30 },
+          "payment_methods": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["pm_chapa_active"]
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AccountResponse": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Account" }
+        }
+      },
+      "ReasonRequest": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+          "reason": { "type": "string", "example": "Overdue balance" }
+        }
+      },
+      "PaymentMethodRequest": {
+        "type": "object",
+        "required": ["payment_method_id"],
+        "properties": {
+          "payment_method_id": { "type": "string", "example": "pm_chapa_active" }
+        }
+      },
+      "Tier": {
+        "type": "object",
+        "required": ["unit_price", "flat_fee"],
+        "properties": {
+          "up_to": { "type": "integer", "nullable": true, "example": 10000 },
+          "unit_price": { "$ref": "#/components/schemas/Money" },
+          "flat_fee": { "$ref": "#/components/schemas/Money" }
+        }
+      },
+      "CreateTariffInput": {
+        "type": "object",
+        "required": ["code", "name", "tariff_type_code", "amount"],
+        "properties": {
+          "code": { "type": "string", "example": "STANDARD_USAGE_V1" },
+          "name": { "type": "string", "example": "Standard Usage Pricing" },
+          "description": { "type": "string" },
+          "tariff_type_code": {
+            "type": "string",
+            "enum": ["FLAT_FEE", "PER_UNIT", "TIERED_USAGE", "STAIRSTEP", "PACKAGE", "MATRIX", "COMPOSITE"],
+            "example": "FLAT_FEE"
+          },
+          "tier_strategy": { "type": "string", "enum": ["GRADUATED", "VOLUME"] },
+          "quantity_unit": { "type": "string", "enum": ["COUNT", "SEAT", "GIGABYTE", "HOUR", "API_CALL"] },
+          "amount": { "$ref": "#/components/schemas/Money" },
+          "tiers": { "type": "array", "items": { "$ref": "#/components/schemas/Tier" } }
+        }
+      },
+      "Tariff": {
+        "type": "object",
+        "properties": {
+          "tariff_id": { "type": "integer", "example": 1 },
+          "tariff_code": { "type": "string", "example": "STANDARD_USAGE_V1" },
+          "version": { "type": "integer", "example": 1 },
+          "name": { "type": "string", "example": "Standard Usage Pricing" },
+          "tariff_type_code": { "type": "string", "example": "FLAT_FEE" },
+          "amount": { "$ref": "#/components/schemas/Money" },
+          "is_active": { "type": "boolean", "example": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TariffResponse": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Tariff" }
+        }
+      },
+      "PlanDuration": {
+        "type": "object",
+        "required": ["tariff_id", "duration"],
+        "properties": {
+          "plan_duration_id": { "type": "integer" },
+          "plan_id": { "type": "integer" },
+          "tariff_id": { "type": "integer", "example": 1 },
+          "duration": {
+            "type": "integer",
+            "description": "Duration in nanoseconds (30 days = 2592000000000000)",
+            "example": 2592000000000000
+          },
+          "is_active": { "type": "boolean" }
+        }
+      },
+      "CreatePlanInput": {
+        "type": "object",
+        "required": ["plan_code", "legacy_price_policy_code", "durations"],
+        "properties": {
+          "plan_code": { "type": "string", "example": "USAGE_PLAN_A" },
+          "legacy_price_policy_code": {
+            "type": "string",
+            "enum": ["KEEP_FOREVER", "MIGRATE_IMMEDIATELY", "MIGRATE_ON_RENEWAL"],
+            "example": "KEEP_FOREVER"
+          },
+          "effective_from": { "type": "string", "format": "date-time" },
+          "effective_until": { "type": "string", "format": "date-time" },
+          "durations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PlanDuration" }
+          }
+        }
+      },
+      "Plan": {
+        "type": "object",
+        "properties": {
+          "plan_id": { "type": "integer", "example": 1 },
+          "plan_code": { "type": "string", "example": "USAGE_PLAN_A" },
+          "version": { "type": "integer", "example": 1 },
+          "legacy_price_policy_code": { "type": "string", "example": "KEEP_FOREVER" },
+          "durations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PlanDuration" }
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PlanResponse": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Plan" }
+        }
+      },
+      "PurchasableItem": {
+        "type": "object",
+        "properties": {
+          "item_id": { "type": "integer", "example": 1 },
+          "item_code": { "type": "string", "example": "USAGE_PLAN_A" },
+          "item_type_code": {
+            "type": "string",
+            "enum": ["PLAN", "ONE_TIME_SERVICE", "PRODUCT"],
+            "example": "PLAN"
+          },
+          "name": { "type": "string", "example": "USAGE_PLAN_A" },
+          "plan_id": { "type": "integer", "example": 1 },
+          "is_active": { "type": "boolean", "example": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateSubscriptionInput": {
+        "type": "object",
+        "required": ["account_id", "plan_id", "plan_version"],
+        "properties": {
+          "account_id": { "type": "integer", "minimum": 1, "example": 1 },
+          "plan_id": { "type": "integer", "minimum": 1, "example": 1 },
+          "plan_version": { "type": "integer", "minimum": 1, "example": 1 },
+          "quantity": { "type": "integer", "default": 1, "example": 1 }
+        }
+      },
+      "Subscription": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "version": { "type": "integer", "example": 1 },
+          "account_id": { "type": "integer", "example": 1 },
+          "plan_id": { "type": "integer", "example": 1 },
+          "plan_version": { "type": "integer", "example": 1 },
+          "status": {
+            "type": "string",
+            "enum": ["TRIALING", "ACTIVE", "PAUSED", "PAST_DUE", "CANCELED", "UNPAID"],
+            "example": "ACTIVE"
+          },
+          "quantity": { "type": "integer", "example": 1 },
+          "current_period_start": { "type": "string", "format": "date-time" },
+          "current_period_end": { "type": "string", "format": "date-time" },
+          "billing_cycle_anchor": { "type": "string", "format": "date-time" },
+          "cancel_at_period_end": { "type": "boolean", "example": false }
+        }
+      },
+      "SubscriptionResponse": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Subscription" }
+        }
+      },
+      "DevGenerateInvoiceInput": {
+        "type": "object",
+        "required": ["account_id", "plan_id"],
+        "properties": {
+          "account_id": { "type": "integer", "minimum": 1, "example": 1 },
+          "plan_id": { "type": "integer", "minimum": 1, "example": 1 }
+        }
+      },
+      "InvoiceLineItem": {
+        "type": "object",
+        "properties": {
+          "line_item_id": { "type": "integer", "example": 1 },
+          "item_id": { "type": "integer", "example": 1 },
+          "description": { "type": "string", "example": "USAGE_PLAN_A" },
+          "quantity_value": { "type": "number", "example": 1.0 },
+          "quantity_unit": { "type": "string", "example": "units" },
+          "unit_amount": { "$ref": "#/components/schemas/Money" },
+          "total_amount": { "$ref": "#/components/schemas/Money" }
+        }
+      },
+      "Invoice": {
+        "type": "object",
+        "properties": {
+          "invoice_id": { "type": "integer", "example": 1 },
+          "account_id": { "type": "integer", "example": 1 },
+          "invoice_number": { "type": "string", "example": "INV-2026-000001" },
+          "status": {
+            "type": "string",
+            "enum": ["DRAFT", "OPEN", "PAID", "UNCOLLECTIBLE", "VOID"],
+            "example": "OPEN"
+          },
+          "currency": { "type": "string", "example": "ETB" },
+          "subtotal": { "$ref": "#/components/schemas/Money" },
+          "tax": { "$ref": "#/components/schemas/Money" },
+          "discount": { "$ref": "#/components/schemas/Money" },
+          "total": { "$ref": "#/components/schemas/Money" },
+          "amount_paid": { "$ref": "#/components/schemas/Money" },
+          "amount_due": { "$ref": "#/components/schemas/Money" },
+          "due_at": { "type": "string", "format": "date-time" },
+          "finalized_at": { "type": "string", "format": "date-time" },
+          "paid_at": { "type": "string", "format": "date-time" },
+          "line_items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InvoiceLineItem" }
+          }
+        }
+      },
+      "InvoiceResponse": {
+        "type": "object",
+        "required": ["success", "data"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Invoice" }
+        }
+      },
+      "PayInvoiceInput": {
+        "type": "object",
+        "required": ["provider_code", "idempotency_key"],
+        "properties": {
+          "provider_code": { "type": "string", "example": "fake" },
+          "idempotency_key": { "type": "string", "example": "tx_inv1_1727865600" }
+        }
+      },
+      "PayInvoiceResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED"], "example": "PENDING" },
+          "internal_tx_id": { "type": "string", "example": "tx_inv1_1727865600" },
+          "provider_reference": { "type": "string", "example": "fake_ref_6b1e5a28-3e4e-4f7d-8f2c-e5d0a68c92a1" },
+          "checkout_url": { "type": "string", "example": "https://checkout.fake-provider.com/pay/fake_ref_6b1e5a28-3e4e-4f7d-8f2c-e5d0a68c92a1" }
+        }
+      },
+      "DirectChargeInput": {
+        "type": "object",
+        "required": ["provider", "invoice_id", "amount_minor", "currency"],
+        "properties": {
+          "provider": { "type": "string", "example": "fake" },
+          "invoice_id": { "type": "integer", "example": 1 },
+          "amount_minor": { "type": "integer", "example": 1000 },
+          "currency": { "type": "string", "example": "ETB" }
+        }
+      },
+      "ChargeResult": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["PENDING", "SUCCESS", "FAILED"], "example": "PENDING" },
+          "idempotency_key": { "type": "string" },
+          "provider_reference": { "type": "string" },
+          "checkout_url": { "type": "string" },
+          "raw_response": { "type": "object" }
+        }
+      },
+      "FakeWebhookPayload": {
+        "type": "object",
+        "required": ["event_id", "event", "tx_ref", "reference", "status", "amount_minor", "currency"],
+        "properties": {
+          "event_id": { "type": "string", "example": "evt_9f3a1e28" },
+          "event": { "type": "string", "example": "charge.success" },
+          "tx_ref": { "type": "string", "example": "tx_inv1_1727865600" },
+          "reference": { "type": "string", "example": "fake_ref_6b1e5a28-3e4e-4f7d-8f2c-e5d0a68c92a1" },
+          "status": { "type": "string", "example": "success" },
+          "amount_minor": { "type": "integer", "example": 1000 },
+          "currency": { "type": "string", "example": "ETB" },
+          "failure_reason": { "type": "string" },
+          "timestamp": { "type": "integer", "example": 1727865650 }
+        }
+      },
+      "WebhookReceiptResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["processed", "ignored", "error"], "example": "processed" },
+          "webhook_id": { "type": "string", "example": "evt_9f3a1e28" },
+          "reason": { "type": "string", "example": "duplicate_event" }
+        }
+      }
+    }
+  }
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 	"github.com/thec1oud/billing/internal/shared/statemachine/model"
 	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
@@ -164,5 +165,22 @@ func TestValidate_DuplicateState(t *testing.T) {
 	err := validate(spec, newTestRegistry(t))
 	if !errors.Is(err, ErrInvalidSpec) {
 		t.Fatalf("expected ErrInvalidSpec for duplicate state, got %v", err)
+	}
+}
+
+func TestValidate_UnknownEmitEventType_Rejected(t *testing.T) {
+	spec := validSpec()
+	spec.Transitions[0].EmitEventType = "invoice.finalized" // missing the billing. prefix
+	err := validate(spec, newTestRegistry(t))
+	if !errors.Is(err, ErrInvalidSpec) {
+		t.Fatalf("expected ErrInvalidSpec for unknown emit_event_type, got %v", err)
+	}
+}
+
+func TestValidate_KnownEmitEventType_Passes(t *testing.T) {
+	spec := validSpec()
+	spec.Transitions[0].EmitEventType = string(eventmodel.InvoiceFinalized)
+	if err := validate(spec, newTestRegistry(t)); err != nil {
+		t.Fatalf("expected known emit_event_type to pass, got %v", err)
 	}
 }

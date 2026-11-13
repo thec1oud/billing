@@ -13,6 +13,13 @@ import (
 )
 
 const createPlan = `-- name: CreatePlan :one
+WITH locked AS (
+    SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
+), next_version AS (
+    SELECT COALESCE(MAX(version), 0) + 1 AS version
+    FROM plans, locked
+    WHERE plan_code = $1
+)
 INSERT INTO plans (
     plan_code,
     version,
@@ -22,15 +29,15 @@ INSERT INTO plans (
     migration_path,
     metadata
 )
-VALUES (
+SELECT
     $1,
+    next_version.version,
     $2,
     $3,
     $4,
     $5,
-    $6,
-    $7
-)
+    $6
+FROM next_version
 RETURNING
     plan_id,
     plan_code,
@@ -45,7 +52,6 @@ RETURNING
 
 type CreatePlanParams struct {
 	PlanCode              string             `json:"plan_code"`
-	Version               int32              `json:"version"`
 	EffectiveFrom         time.Time          `json:"effective_from"`
 	EffectiveUntil        pgtype.Timestamptz `json:"effective_until"`
 	LegacyPricePolicyCode string             `json:"legacy_price_policy_code"`
@@ -56,7 +62,6 @@ type CreatePlanParams struct {
 func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
 	row := q.db.QueryRow(ctx, createPlan,
 		arg.PlanCode,
-		arg.Version,
 		arg.EffectiveFrom,
 		arg.EffectiveUntil,
 		arg.LegacyPricePolicyCode,
@@ -259,6 +264,52 @@ func (q *Queries) GetPlanDurationByPlanAndDuration(ctx context.Context, arg GetP
 	return i, err
 }
 
+const listActivePlans = `-- name: ListActivePlans :many
+SELECT DISTINCT ON (plan_code)
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+WHERE effective_until IS NULL
+ORDER BY plan_code, version DESC
+`
+
+func (q *Queries) ListActivePlans(ctx context.Context) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, listActivePlans)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.PlanID,
+			&i.PlanCode,
+			&i.Version,
+			&i.EffectiveFrom,
+			&i.EffectiveUntil,
+			&i.LegacyPricePolicyCode,
+			&i.MigrationPath,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlanDurations = `-- name: ListPlanDurations :many
 SELECT
     plan_duration_id,
@@ -317,6 +368,51 @@ ORDER BY version DESC
 
 func (q *Queries) ListPlanVersions(ctx context.Context, planCode string) ([]Plan, error) {
 	rows, err := q.db.Query(ctx, listPlanVersions, planCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.PlanID,
+			&i.PlanCode,
+			&i.Version,
+			&i.EffectiveFrom,
+			&i.EffectiveUntil,
+			&i.LegacyPricePolicyCode,
+			&i.MigrationPath,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlans = `-- name: ListPlans :many
+SELECT
+    plan_id,
+    plan_code,
+    version,
+    effective_from,
+    effective_until,
+    legacy_price_policy_code,
+    migration_path,
+    metadata,
+    created_at
+FROM plans
+ORDER BY plan_id DESC
+`
+
+func (q *Queries) ListPlans(ctx context.Context) ([]Plan, error) {
+	rows, err := q.db.Query(ctx, listPlans)
 	if err != nil {
 		return nil, err
 	}

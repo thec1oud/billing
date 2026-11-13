@@ -13,3 +13,12 @@ repos:
       - id: golangci-lint
         pass_filenames: false
         args: ["./..."]
+
+  - repo: local
+    hooks:
+      - id: no-package-level-loggers
+        name: Ban package-level loggers
+        entry: '^var log = logger\.ForComponent'
+        language: pygrep
+        types: [go]
+        message: "Package-level loggers are banned. Initialize the logger inside constructors or functions."

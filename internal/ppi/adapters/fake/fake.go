@@ -98,6 +98,41 @@ func (a *FakeAdapter) ChargePaymentMethod(
 	}, nil
 }
 
+func (a *FakeAdapter) VerifyPayment(
+	ctx context.Context,
+	providerCode string,
+	internalTxID string,
+	providerTxID *string,
+) (ppi.ChargeResult, error) {
+	if strings.Contains(internalTxID, "error_verify") {
+		return ppi.ChargeResult{}, errors.New("simulated verification error")
+	}
+
+	status := ppi.ChargeStatusSuccess
+	if strings.Contains(internalTxID, "fail_verify") {
+		status = ppi.ChargeStatusFailed
+	} else if strings.Contains(internalTxID, "pending_verify") {
+		status = ppi.ChargeStatusPending
+	}
+
+	resBody, _ := json.Marshal(map[string]string{
+		"status": string(status),
+		"tx_ref": internalTxID,
+	})
+
+	var pRef string
+	if providerTxID != nil {
+		pRef = *providerTxID
+	}
+
+	return ppi.ChargeResult{
+		Status:            status,
+		IdempotencyKey:    internalTxID,
+		ProviderReference: pRef,
+		RawResponse:       resBody,
+	}, nil
+}
+
 func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload, error) {
 	if r == nil || r.Body == nil {
 		return ppi.ProviderWebhookPayload{}, errors.New("empty request body")
@@ -158,7 +193,9 @@ func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload,
 	return payload, nil
 }
 
-func (a *FakeAdapter) RespondWebhook(w http.ResponseWriter, r *http.Request, code ppi.WebhookResponseCode, payload ppi.ProviderWebhookPayload) {
+func (a *FakeAdapter) RespondWebhook(
+	w http.ResponseWriter, r *http.Request, code ppi.WebhookResponseCode, payload ppi.ProviderWebhookPayload,
+) {
 	w.Header().Set("Content-Type", "application/json")
 	switch code {
 	case ppi.WebhookResponseIgnored:
