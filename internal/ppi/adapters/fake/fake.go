@@ -104,9 +104,19 @@ func (a *FakeAdapter) VerifyPayment(
 	internalTxID string,
 	providerTxID *string,
 ) (ppi.ChargeResult, error) {
-	// For the fake adapter, we just assume any verification for a known internalTxID succeeds.
+	if strings.Contains(internalTxID, "error_verify") {
+		return ppi.ChargeResult{}, errors.New("simulated verification error")
+	}
+
+	status := ppi.ChargeStatusSuccess
+	if strings.Contains(internalTxID, "fail_verify") {
+		status = ppi.ChargeStatusFailed
+	} else if strings.Contains(internalTxID, "pending_verify") {
+		status = ppi.ChargeStatusPending
+	}
+
 	resBody, _ := json.Marshal(map[string]string{
-		"status": "SUCCESS",
+		"status": string(status),
 		"tx_ref": internalTxID,
 	})
 
@@ -116,7 +126,7 @@ func (a *FakeAdapter) VerifyPayment(
 	}
 
 	return ppi.ChargeResult{
-		Status:            ppi.ChargeStatusSuccess,
+		Status:            status,
 		IdempotencyKey:    internalTxID,
 		ProviderReference: pRef,
 		RawResponse:       resBody,
@@ -183,7 +193,9 @@ func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload,
 	return payload, nil
 }
 
-func (a *FakeAdapter) RespondWebhook(w http.ResponseWriter, r *http.Request, code ppi.WebhookResponseCode, payload ppi.ProviderWebhookPayload) {
+func (a *FakeAdapter) RespondWebhook(
+	w http.ResponseWriter, r *http.Request, code ppi.WebhookResponseCode, payload ppi.ProviderWebhookPayload,
+) {
 	w.Header().Set("Content-Type", "application/json")
 	switch code {
 	case ppi.WebhookResponseIgnored:

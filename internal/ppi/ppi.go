@@ -20,7 +20,7 @@ type DBTX interface {
 type WebhookRepository interface {
 	SaveWebhook(ctx context.Context, db DBTX, payload ProviderWebhookPayload) error
 	GetWebhookByID(ctx context.Context, db DBTX, webhookID string) (ProviderWebhookPayload, error)
-	CheckWebhookStatus(ctx context.Context, db DBTX, providerCode, providerTxID string) (isDuplicate bool, isPublished bool, err error)
+	GetWebhookPublishedStatus(ctx context.Context, db DBTX, providerCode, providerTxID string) (isPublished bool, err error)
 	MarkPublished(ctx context.Context, db DBTX, webhookID string) error
 }
 

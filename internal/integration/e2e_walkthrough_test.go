@@ -1,3 +1,5 @@
+//go:build integration
+
 package integration_test
 
 import (
@@ -36,7 +38,6 @@ import (
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
-	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	"github.com/thec1oud/billing/internal/shared/money"
 	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	sm_loader "github.com/thec1oud/billing/internal/shared/statemachine/loader"
@@ -49,6 +50,7 @@ import (
 	subscriptionmodel "github.com/thec1oud/billing/internal/subscription/model"
 	subscriptionrepo "github.com/thec1oud/billing/internal/subscription/repository"
 	subscriptionsvc "github.com/thec1oud/billing/internal/subscription/service"
+	subscriptionstatemachine "github.com/thec1oud/billing/internal/subscription/statemachine"
 	tariff "github.com/thec1oud/billing/internal/tariff/model"
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
 	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
@@ -86,7 +88,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	if err := broker.InitTopology(ctx); err != nil {
 		t.Fatalf("failed to init broker topology: %v", err)
 	}
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	// 2. Wire State Machine Engine
 	smRegistry := sm_registry.New()
@@ -146,12 +148,12 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	paymentAttemptSvc := attemptsvc.NewService(paymentAttemptRepo)
 
 	ppiRepo := ppirepo.NewPostgresRepository()
-	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc)
+	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
 	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, ppiService, invoiceRepository, smEngine)
 	invoiceSubscriber := invoicesub.NewInvoiceSubscriber(cluster.DBPool, invoiceSvc, paymentAttemptSvc)
-	webhookHandler := handler.NewWebhookHandler(ppiService, broker)
+	webhookHandler := handler.NewWebhookHandler(ppiService)
 
 	// 4. Register Webhook Subscriber to RabbitMQ
 	err = ppisub.RegisterModuleSubscriber(

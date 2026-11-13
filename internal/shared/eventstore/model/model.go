@@ -15,7 +15,10 @@ var (
 	ErrInvalidSequence  = errors.New("event sequence must be a positive integer greater than zero")
 )
 
-// Domain Event Enumerations
+// EventType names a domain event. Values are dot-separated and always carry
+// the "billing." prefix, e.g. "billing.invoice.paid". State machine definitions
+// reference these same strings in EmitEventType; the loader rejects any value
+// that is not listed in knownEventTypes.
 type EventType string
 
 const (
@@ -31,18 +34,63 @@ const (
 	InvoiceCreated       EventType = "billing.invoice.created"
 	InvoiceFinalized     EventType = "billing.invoice.finalized"
 	InvoicePaid          EventType = "billing.invoice.paid"
+	InvoiceVoided        EventType = "billing.invoice.voided"
 	PaymentAttempted     EventType = "billing.payment.attempted"
 	PaymentSucceeded     EventType = "billing.payment.succeeded"
 	PaymentFailed        EventType = "billing.payment.failed"
 )
 
+var knownEventTypes = map[EventType]struct{}{
+	AccountCreated:       {},
+	AccountActivated:     {},
+	AccountSuspended:     {},
+	AccountClosed:        {},
+	PaymentMethodAdded:   {},
+	SubscriptionCreated:  {},
+	SubscriptionPaused:   {},
+	SubscriptionResumed:  {},
+	SubscriptionCanceled: {},
+	InvoiceCreated:       {},
+	InvoiceFinalized:     {},
+	InvoicePaid:          {},
+	InvoiceVoided:        {},
+	PaymentAttempted:     {},
+	PaymentSucceeded:     {},
+	PaymentFailed:        {},
+}
+
+// Valid reports whether t is one of the declared domain event types.
+func (t EventType) Valid() bool {
+	_, ok := knownEventTypes[t]
+	return ok
+}
+
+// AggregateType identifies an event stream together with the aggregate ID.
+//
+// It is also the state machine SubjectType for the same entity: services must
+// pass string(AggregateX) to CreateInstance/GetInstanceBySubject so that the
+// engine, which emits AggregateType(instance.SubjectType), and the services
+// append to one stream per aggregate.
 type AggregateType string
 
 const (
-	AggregateAccount      AggregateType = "ACCOUNT"
-	AggregateSubscription AggregateType = "SUBSCRIPTION"
-	AggregateInvoice      AggregateType = "INVOICE"
+	AggregateAccount      AggregateType = "account"
+	AggregateSubscription AggregateType = "subscription"
+	AggregateInvoice      AggregateType = "invoice"
 )
+
+// Valid reports whether t is one of the declared aggregate types.
+func (t AggregateType) Valid() bool {
+	switch t {
+	case AggregateAccount, AggregateSubscription, AggregateInvoice:
+		return true
+	}
+	return false
+}
+
+// String returns the value as stored in event_log.aggregate_type and
+// sm_instances.subject_type.
+func (t AggregateType) String() string { return string(t) }
 
 // Event is the unalterable system envelope ledger item contract
 type Event struct {

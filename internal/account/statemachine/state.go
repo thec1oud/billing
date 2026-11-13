@@ -50,24 +50,22 @@ func (a *ActivateAction) Name() string { return "account.action.activate" }
 func (a *ActivateAction) Execute(
 	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
 ) error {
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse account ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse account ID: %w", err)
 	}
 
 	// In the state machine transition, from state is PENDING_VERIFICATION and to is ACTIVE
-	err := a.repo.UpdateStatus(ctx, db, intID, model.StatusPendingVerification, model.StatusActive)
+	err = a.repo.UpdateStatus(ctx, db, intID, model.StatusPendingVerification, model.StatusActive)
 	if err != nil {
 		return err
 	}
 
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"account_id": intID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }
 
@@ -82,23 +80,21 @@ func (a *ReactivateAction) Name() string { return "account.action.reactivate" }
 func (a *ReactivateAction) Execute(
 	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
 ) error {
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse account ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse account ID: %w", err)
 	}
 
-	err := a.repo.UpdateStatus(ctx, db, intID, model.StatusSuspended, model.StatusActive)
+	err = a.repo.UpdateStatus(ctx, db, intID, model.StatusSuspended, model.StatusActive)
 	if err != nil {
 		return err
 	}
 
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"account_id": intID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }
 
@@ -120,24 +116,22 @@ func (a *SuspendAction) Execute(
 		return fmt.Errorf("failed to parse suspend payload: %w", err)
 	}
 
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse account ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse account ID: %w", err)
 	}
 
-	err := a.repo.UpdateStatus(ctx, db, intID, model.StatusActive, model.StatusSuspended)
+	err = a.repo.UpdateStatus(ctx, db, intID, model.StatusActive, model.StatusSuspended)
 	if err != nil {
 		return err
 	}
 
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"account_id": intID,
 		"reason":     p.Reason,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }
 
@@ -159,9 +153,9 @@ func (a *CloseAction) Execute(
 		return fmt.Errorf("failed to parse close payload: %w", err)
 	}
 
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse account ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse account ID: %w", err)
 	}
 
 	// Close action can happen from ACTIVE or SUSPENDED. We can fetch the current state to call UpdateStatusTx.
@@ -176,13 +170,11 @@ func (a *CloseAction) Execute(
 		return err
 	}
 
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"account_id": intID,
 		"reason":     p.Reason,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }

@@ -3,6 +3,9 @@
 Welcome to the **Gebeta Billing System** documentation. 
 
 Gebeta Billing is a robust, self-hosted, and event-driven billing and subscription lifecycle management platform. It is designed to act as the financial backbone for SaaS applications, API providers, and digital services that need to manage accounts, track subscriptions, and process payments reliably.
+The documentation is published as a **Jekyll** site and directly reflects the production codebase. Mermaid diagrams use the `jekyll-mermaid` plugin.
+
+To preview the site locally, run `bundle install` and `bundle exec jekyll serve` from this directory.
 
 ## What is Gebeta Billing?
 
@@ -16,6 +19,23 @@ At its core, Gebeta Billing is a distributed ledger and subscription engine buil
 ## Key Concepts
 
 To effectively use the billing system, it's helpful to understand the domain language it uses:
+{% mermaid %}
+graph TD
+    Client[Web Client / External Consumer] -->|HTTP / REST| BFF[Platform BFF Node.js / Express :3000]
+    BFF -->|HTTP / JSON Envelope| Core[Billing Service Go :8080]
+    
+    subgraph Data & Storage Layer
+        Core -->|pgxpool SQLC| DB[(PostgreSQL 16)]
+        Core -->|go-redis| Redis[(Redis 7 Cache / Locks)]
+        Core -->|AMQP 0-9-1| RabbitMQ[(RabbitMQ 3 Event Broker)]
+    end
+
+    subgraph Core Internal Engines
+        Core --- FSM[Dynamic FSM Engine]
+        Core --- ES[Event Store Ledger]
+        Core --- PPI[Payment Provider Interface PPI]
+    end
+{% endmermaid %}
 
 *   **Account**: The central entity representing a customer or tenant in the billing system. All subscriptions and invoices belong to an account.
 *   **Tariff**: The pricing blueprint. A tariff defines the recurring charge, billing frequency (e.g., monthly, annually), and any usage-based metered limits.

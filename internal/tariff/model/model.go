@@ -255,8 +255,10 @@ func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 
 	case TariffTypeTieredUsage:
 		switch t.TierStrategy {
-		case TierStrategyGraduated, TierStrategyVolume:
+		case TierStrategyGraduated:
 			return t.calculateTieredUsageCharge(qty)
+		case TierStrategyVolume:
+			return t.calculateVolumeCharge(qty)
 		default:
 			return money.Money{}, fmt.Errorf(
 				"charge calculation for tier strategy %s is not implemented",
@@ -270,6 +272,47 @@ func (t Tariff) CalculateCharge(qty Quantity) (money.Money, error) {
 			t.TariffTypeCode,
 		)
 	}
+}
+
+// calculateVolumeCharge prices every unit at the rate of the single tier that
+// the total quantity reaches: qty × UnitPrice + FlatFee for that tier only.
+// A tier whose UpToQuantity equals the quantity still contains it.
+func (t Tariff) calculateVolumeCharge(
+	qty Quantity,
+) (money.Money, error) {
+	if len(t.Tiers) == 0 {
+		return money.Money{}, errors.New(
+			"tiered tariff has no tiers",
+		)
+	}
+
+	for _, tier := range t.Tiers {
+		if tier.UpToQuantity != nil && *tier.UpToQuantity < qty.Value {
+			continue
+		}
+
+		charge, err := tier.UnitPrice.MultiplyByScalar(qty.Value)
+		if err != nil {
+			return money.Money{}, fmt.Errorf(
+				"calculate volume usage charge: %w",
+				err,
+			)
+		}
+
+		charge, err = charge.Add(tier.FlatFee)
+		if err != nil {
+			return money.Money{}, fmt.Errorf(
+				"add volume flat fee: %w",
+				err,
+			)
+		}
+
+		return charge, nil
+	}
+
+	return money.Money{}, errors.New(
+		"tier configuration does not contain an unbounded final tier",
+	)
 }
 
 func (t Tariff) calculateTieredUsageCharge(

@@ -53,8 +53,8 @@ func TestDeliveryService_Deliver_Success(t *testing.T) {
 
 	// 3. Execute the delivery
 	payload := model.ReceiptPayload{
-		InvoiceID:  123,
-		AccountID:  456,
+		InvoiceID:   123,
+		AccountID:   456,
 		DownloadURL: "https://example.com/receipt.pdf",
 		GeneratedAt: time.Now(),
 	}

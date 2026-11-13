@@ -1,6 +1,6 @@
 {
   "MachineType": "invoice_lifecycle",
-  "Version": 1,
+  "Version": 2,
   "InitialState": "DRAFT",
   "Activate": true,
   "States": [
@@ -15,7 +15,7 @@
       "FromState": "DRAFT",
       "EventName": "finalize",
       "ToState": "OPEN",
-      "EmitEventType": "invoice.finalized",
+      "EmitEventType": "billing.invoice.finalized",
       "Actions": [
         {
           "Seq": 1,
@@ -30,7 +30,7 @@
       "FromState": "OPEN",
       "EventName": "pay",
       "ToState": "PAID",
-      "EmitEventType": "invoice.paid",
+      "EmitEventType": "billing.invoice.paid",
       "Actions": [
         {
           "Seq": 1,
@@ -45,7 +45,7 @@
       "FromState": "OPEN",
       "EventName": "void",
       "ToState": "VOID",
-      "EmitEventType": "invoice.voided",
+      "EmitEventType": "billing.invoice.voided",
       "Actions": [
         {
           "Seq": 1,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,7 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rabbitmq/amqp091-go"
 
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
@@ -21,6 +24,7 @@ import (
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/thec1oud/billing/internal/infra/storage"
 	invoiceRepo "github.com/thec1oud/billing/internal/invoice/repository"
 	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
 	"github.com/thec1oud/billing/internal/invoice/statemachine"
@@ -29,9 +33,11 @@ import (
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	planservice "github.com/thec1oud/billing/internal/plan/service"
+	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
+	"github.com/thec1oud/billing/internal/ppi/worker"
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
@@ -110,10 +116,21 @@ func run() error {
 	// Register invoice state machine actions & publish definition spec
 	invoiceRepository := invoiceRepo.NewPostgresRepository(deps.Pool)
 	statemachine.RegisterStateMachineActions(smRegistry, invoiceRepository)
-
-	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
-		return fmt.Errorf("failed to bootstrap invoice state machine: %w", err)
+	accountRepo := accountrepo.New(deps.Pool)
+	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
+	subscriptionRepo := subscriptionrepo.New(deps.Pool)
+	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
+	for _, definition := range []struct {
+		name string
+		spec loader.DefinitionSpec
+	}{
+		{name: "invoice", spec: statemachine.BuildInvoiceDefinitionSpec()},
+		{name: "account", spec: accountstatemachine.BuildAccountDefinitionSpec()},
+		{name: "subscription", spec: subscriptionstatemachine.BuildSubscriptionDefinitionSpec()},
+	} {
+		if _, err := loader.Publish(ctx, deps.Pool, smRepository, smRegistry, definition.spec); err != nil {
+			return fmt.Errorf("failed to bootstrap %s state machine: %w", definition.name, err)
+		}
 	}
 
 	smPublisher := outbox.NewPublisher(deps.Pool, smRepository, smRegistry, outbox.Config{})
@@ -125,14 +142,16 @@ func run() error {
 	defer smScheduler.Stop()
 
 	// 8. Initialize Messaging Broker Topology
-	rabbitBroker, err := messaging.NewRabbitBroker(deps.Rabbit)
+	rabbitBroker, err := messaging.NewRabbitBroker(deps.Rabbit, messaging.WithDialer(func() (*amqp091.Connection, error) {
+		return storage.DialRabbitMQ(cfg)
+	}))
 	if err != nil {
 		return fmt.Errorf("messaging broker: %w", err)
 	}
 	if err := rabbitBroker.InitTopology(ctx); err != nil {
 		return fmt.Errorf("broker topology init: %w", err)
 	}
-	defer rabbitBroker.Close()
+	defer func() { _ = rabbitBroker.Close() }()
 
 	//  Initialize Payment Attempt Repository & Service
 	paymentAttemptRepo := attemptRepo.NewPostgresRepository(deps.Pool)
@@ -140,20 +159,24 @@ func run() error {
 
 	//  Initialize PPI Webhook Repository & Service
 	ppiRepo := repository.NewPostgresRepository()
-	ppiService := service.NewService(deps.DB, ppiRepo, paymentAttemptSvc)
+	ppiService := service.NewService(
+		deps.Pool,
+		ppiRepo,
+		paymentAttemptSvc,
+		func(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error {
+			return smRepository.InsertOutboxRow(ctx, tx, uuid.New(), nil, nil, actionName, params)
+		},
+	)
 	ppiService.RegisterAdapter(fake.NewFakeAdapter())
 
-	// Initialize other domain services
-	accountRepo := accountrepo.New(deps.Pool)
+	publishWebhookAction := worker.NewPublishWebhookAction(rabbitBroker)
+	if err := smRegistry.RegisterAction(publishWebhookAction); err != nil {
+		return fmt.Errorf("register publish webhook action: %w", err)
+	}
 
+	// Initialize other domain services
 	eventRepo := eventrepo.NewPostgresEventStore(deps.Pool)
 	eventSvc := eventsvc.NewService(eventRepo)
-
-	accountstatemachine.RegisterStateMachineActions(smRegistry, accountRepo)
-	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, accountstatemachine.BuildAccountDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
-		return fmt.Errorf("failed to bootstrap account state machine: %w", err)
-	}
 
 	accountSvc := accountsvc.NewWithEvents(accountRepo, eventSvc, smEngine)
 
@@ -166,12 +189,6 @@ func run() error {
 	tariffRepo := tariffrepo.NewPostgresRepository(deps.Pool)
 	tariffSvc := tariffservice.NewService(tariffRepo)
 
-	subscriptionRepo := subscriptionrepo.New(deps.Pool)
-	subscriptionstatemachine.RegisterStateMachineActions(smRegistry, subscriptionRepo)
-	_, err = loader.Publish(ctx, deps.Pool, smRepository, smRegistry, subscriptionstatemachine.BuildSubscriptionDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
-		return fmt.Errorf("failed to bootstrap subscription state machine: %w", err)
-	}
 	subscriptionSvc := subscriptionsvc.New(subscriptionRepo, accountRepo, planRepo, tariffRepo, smEngine, eventSvc)
 
 	invoiceSvc := invoicesvc.NewService(deps.Pool, eventSvc, ppiService, invoiceRepository, smEngine)
@@ -220,7 +237,7 @@ func SeedCatalog(
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	amt, _ := money.New(1000, "ETB") // 10.00 ETB per unit
 

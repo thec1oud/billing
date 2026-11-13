@@ -253,27 +253,29 @@ type SmActionBinding struct {
 }
 
 type SmActionOutbox struct {
-	OutboxID   int64              `json:"outbox_id"`
-	InstanceID uuid.UUID          `json:"instance_id"`
-	HistoryID  pgtype.Int8        `json:"history_id"`
-	BindingID  *uuid.UUID         `json:"binding_id"`
-	ActionName string             `json:"action_name"`
-	Params     []byte             `json:"params"`
-	Status     string             `json:"status"`
-	Attempts   int32              `json:"attempts"`
-	ClaimedAt  pgtype.Timestamptz `json:"claimed_at"`
-	ClaimedBy  pgtype.Text        `json:"claimed_by"`
-	LastError  pgtype.Text        `json:"last_error"`
-	CreatedAt  time.Time          `json:"created_at"`
+	OutboxID         int64              `json:"outbox_id"`
+	InstanceID       uuid.UUID          `json:"instance_id"`
+	HistoryID        pgtype.Int8        `json:"history_id"`
+	BindingID        *uuid.UUID         `json:"binding_id"`
+	ActionName       string             `json:"action_name"`
+	Params           []byte             `json:"params"`
+	Status           string             `json:"status"`
+	Attempts         int32              `json:"attempts"`
+	ClaimedAt        pgtype.Timestamptz `json:"claimed_at"`
+	ClaimedBy        pgtype.Text        `json:"claimed_by"`
+	LastError        pgtype.Text        `json:"last_error"`
+	CreatedAt        time.Time          `json:"created_at"`
+	ExecutionContext []byte             `json:"execution_context"`
 }
 
 type SmDefinition struct {
-	DefinitionID uuid.UUID `json:"definition_id"`
-	MachineType  string    `json:"machine_type"`
-	Version      int32     `json:"version"`
-	InitialState string    `json:"initial_state"`
-	IsActive     bool      `json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
+	DefinitionID uuid.UUID   `json:"definition_id"`
+	MachineType  string      `json:"machine_type"`
+	Version      int32       `json:"version"`
+	InitialState string      `json:"initial_state"`
+	IsActive     bool        `json:"is_active"`
+	CreatedAt    time.Time   `json:"created_at"`
+	ContentHash  pgtype.Text `json:"content_hash"`
 }
 
 type SmGuardBinding struct {
@@ -364,6 +366,7 @@ type Subscription struct {
 	ResumesAt              pgtype.Timestamptz `json:"resumes_at"`
 	Metadata               []byte             `json:"metadata"`
 	CreatedAt              time.Time          `json:"created_at"`
+	ResumedAt              pgtype.Timestamptz `json:"resumed_at"`
 }
 
 type SubscriptionStatus struct {

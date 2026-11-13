@@ -71,7 +71,7 @@ func (s *Service) CreatePlan(
 	if err != nil {
 		return Plan{}, fmt.Errorf("begin create plan transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	created, err := s.repository.Create(ctx, tx, plan)
 	if err != nil {
@@ -136,7 +136,7 @@ func (s *Service) CreatePlanDuration(
 			err,
 		)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	created, err := s.repository.CreateDuration(
 		ctx,
@@ -359,7 +359,7 @@ func (s *Service) UpdateDurationTariff(
 			err,
 		)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	duration, err := s.repository.UpdateDurationTariff(
 		ctx,

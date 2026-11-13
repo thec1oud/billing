@@ -1,3 +1,5 @@
+//go:build integration
+
 package integration
 
 import (
@@ -111,7 +113,9 @@ func TestInvoiceStateMachine_E2E(t *testing.T) {
 	}
 
 	// Verify State Machine state is initialized to DRAFT
-	instance, err := smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", draft.InvoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err := smEngine.GetInstanceBySubject(
+		ctx, "invoice", fmt.Sprintf("%d", draft.InvoiceID), sm_model.MachineType(statemachine.InvoiceMachineType),
+	)
 	if err != nil {
 		t.Fatalf("failed to fetch state machine instance: %v", err)
 	}
@@ -144,7 +148,9 @@ func TestInvoiceStateMachine_E2E(t *testing.T) {
 	}
 
 	// Verify State Machine state transitioned to OPEN
-	instance, err = smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", draft.InvoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err = smEngine.GetInstanceBySubject(
+		ctx, "invoice", fmt.Sprintf("%d", draft.InvoiceID), sm_model.MachineType(statemachine.InvoiceMachineType),
+	)
 	if err != nil {
 		t.Fatalf("failed to fetch state machine instance: %v", err)
 	}
@@ -179,7 +185,9 @@ func TestInvoiceStateMachine_E2E(t *testing.T) {
 	}
 
 	// Verify State Machine state transitioned to PAID and marked COMPLETED
-	instance, err = smEngine.GetInstanceBySubject(ctx, "invoice", fmt.Sprintf("%d", draft.InvoiceID), sm_model.MachineType(statemachine.InvoiceMachineType))
+	instance, err = smEngine.GetInstanceBySubject(
+		ctx, "invoice", fmt.Sprintf("%d", draft.InvoiceID), sm_model.MachineType(statemachine.InvoiceMachineType),
+	)
 	if err != nil {
 		t.Fatalf("failed to fetch state machine instance: %v", err)
 	}

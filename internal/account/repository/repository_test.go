@@ -29,3 +29,11 @@ func TestResolvePaymentMethodDetails(t *testing.T) {
 		t.Fatal("resolvePaymentMethodDetails(missing-method) = nil, want error")
 	}
 }
+
+func TestLockAccountForUpdate_InvalidAccountID(t *testing.T) {
+	r := New(nil)
+	_, err := r.LockAccountForUpdate(t.Context(), nil, 0)
+	if err == nil {
+		t.Fatal("expected error for account ID <= 0, got nil")
+	}
+}

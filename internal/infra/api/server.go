@@ -28,10 +28,10 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte(`{"status":"ok"}`))
-})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
 
 	if deps.AccountService != nil {
 		accountHandler := accountHandlers.NewAccountHandler(deps.AccountService)
@@ -82,18 +82,12 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 
 	// PPI routes
 	if deps.PPIService != nil {
-		ppiHandler := ppiHandlers.NewPPIHandler(deps.PPIService, deps.Broker)
+		ppiHandler := ppiHandlers.NewPPIHandler(deps.PPIService)
 		mux.HandleFunc("POST /api/v1/payments/charge", ppiHandler.HandleAttemptPayment)
 		mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiHandler.HandleWebhook)
 	}
 
 	var handler http.Handler = mux
-	if deps.Pool != nil {
-		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), "db_pool", deps.Pool)
-			mux.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
 
 	return &Server{
 		srv: &http.Server{

@@ -90,6 +90,27 @@ func (r *Repository) UpdateStatus(
 	return nil
 }
 
+func (r *Repository) LockAccountForUpdate(
+	ctx context.Context,
+	db sqlcgen.DBTX,
+	accountID int64,
+) (model.Status, error) {
+	if accountID <= 0 {
+		return "", errors.New("account id must be greater than zero")
+	}
+
+	status, err := sqlcgen.New(db).LockAccountForUpdate(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", model.ErrNotFound
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("lock account: %w", err)
+	}
+
+	return model.Status(status), nil
+}
+
 func (r *Repository) AddPaymentMethod(
 	ctx context.Context,
 	db sqlcgen.DBTX,
@@ -102,13 +123,9 @@ func (r *Repository) AddPaymentMethod(
 		)
 	}
 
-	status, err := sqlcgen.New(db).LockAccountForUpdate(ctx, accountID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return model.ErrNotFound
-	}
-
+	status, err := r.LockAccountForUpdate(ctx, db, accountID)
 	if err != nil {
-		return fmt.Errorf("lock account: %w", err)
+		return err
 	}
 
 	if model.Status(status) == model.StatusClosed {

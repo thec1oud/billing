@@ -55,23 +55,21 @@ func (a *PauseAction) Name() string { return "subscription.action.pause" }
 func (a *PauseAction) Execute(
 	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
 ) error {
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse subscription ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse subscription ID: %w", err)
 	}
 
-	err := a.repo.Transition(ctx, db, intID, model.StatusActive, model.StatusPaused, ec.Now)
+	err = a.repo.Transition(ctx, db, intID, model.StatusActive, model.StatusPaused, ec.Now)
 	if err != nil {
 		return err
 	}
 
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"subscription_id": intID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }
 
@@ -86,23 +84,21 @@ func (a *ResumeAction) Name() string { return "subscription.action.resume" }
 func (a *ResumeAction) Execute(
 	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
 ) error {
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse subscription ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse subscription ID: %w", err)
 	}
 
-	err := a.repo.Transition(ctx, db, intID, model.StatusPaused, model.StatusActive, ec.Now)
+	err = a.repo.Transition(ctx, db, intID, model.StatusPaused, model.StatusActive, ec.Now)
 	if err != nil {
 		return err
 	}
 
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"subscription_id": intID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }
 
@@ -117,9 +113,9 @@ func (a *CancelAction) Name() string { return "subscription.action.cancel" }
 func (a *CancelAction) Execute(
 	ctx context.Context, db sqlcgen.DBTX, ec *sm_model.ExecutionContext, params json.RawMessage,
 ) error {
-	var intID int64
-	if _, err := fmt.Sscanf(ec.SubjectID, "%d", &intID); err != nil {
-		return fmt.Errorf("failed to parse subscription ID %q: %w", ec.SubjectID, err)
+	intID, err := ec.SubjectIDInt64()
+	if err != nil {
+		return fmt.Errorf("failed to parse subscription ID: %w", err)
 	}
 
 	// Default to immediate cancellation unless specified in payload
@@ -130,18 +126,16 @@ func (a *CancelAction) Execute(
 		_ = json.Unmarshal(ec.EventPayload, &p)
 	}
 
-	err := a.repo.Cancel(ctx, db, intID, p.AtPeriodEnd, ec.Now)
+	err = a.repo.Cancel(ctx, db, intID, p.AtPeriodEnd, ec.Now)
 	if err != nil {
 		return err
 	}
 
-	newCtx, err := json.Marshal(map[string]any{
+	if err := ec.MergeContext(map[string]any{
 		"subscription_id": intID,
 		"at_period_end":   p.AtPeriodEnd,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal new context: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to merge context: %w", err)
 	}
-	ec.Context = newCtx
 	return nil
 }

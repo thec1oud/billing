@@ -39,7 +39,7 @@ func (s *pdfGeneratorService) Generate(invoice *invoicemodel.Invoice) ([]byte, e
 	m := maroto.New(cfg)
 
 	// Paid At formatting
-	paidDateStr := "Unknown Date"
+	var paidDateStr string
 	if invoice.PaidAt != nil {
 		paidDateStr = invoice.PaidAt.Format("January 2, 2006")
 	} else if invoice.FinalizedAt != nil {

@@ -28,10 +28,10 @@ type mockRepository struct {
 	listErr   error
 	activeErr error
 
-	durations        []PlanDuration
-	getDurationErr   error
-	listDurationErr  error
-	getPlanErr       error
+	durations       []PlanDuration
+	getDurationErr  error
+	listDurationErr error
+	getPlanErr      error
 
 	createCalls         int
 	createDurationCalls int
