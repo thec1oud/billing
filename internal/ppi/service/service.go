@@ -82,7 +82,7 @@ func (s *Service) ChargePaymentMethod(
 		"idempotency_key": idempotencyKey,
 		"provider_code":   providerCode,
 	})
-	attempt, err := s.attemptSvc.CreatePaymentAttempt(ctx, tx, attemptmodel.CreatePaymentAttemptInput{
+	attempt, created, err := s.attemptSvc.CreatePaymentAttempt(ctx, tx, attemptmodel.CreatePaymentAttemptInput{
 		InvoiceID:    invoiceID,
 		ProviderCode: providerCode,
 		InternalTxID: idempotencyKey,
@@ -91,6 +91,22 @@ func (s *Service) ChargePaymentMethod(
 	})
 	if err != nil {
 		return ppi.ChargeResult{}, fmt.Errorf("failed to create payment attempt record in tx: %w", err)
+	}
+
+	if !created {
+		_ = tx.Rollback(ctx)
+
+		var provRef string
+		if attempt.ProviderTxID != nil {
+			provRef = *attempt.ProviderTxID
+		}
+
+		return ppi.ChargeResult{
+			Status:            ppi.ChargeStatus(attempt.Status),
+			IdempotencyKey:    attempt.InternalTxID,
+			ProviderReference: provRef,
+			RawResponse:       attempt.RawResponse,
+		}, nil
 	}
 
 	// 3. Commit DB Transaction so it's visible to any synchronous webhooks
@@ -106,7 +122,7 @@ func (s *Service) ChargePaymentMethod(
 	if err != nil {
 		return ppi.ChargeResult{}, fmt.Errorf("failed to begin update transaction: %w", err)
 	}
-	defer updateTx.Rollback(ctx)
+	defer updateTx.Rollback(ctx) //nolint:errcheck
 
 	// 6. Handle provider failure: mark attempt as FAILED and surface the error
 	if adapterErr != nil || result.Status == ppi.ChargeStatusFailed {
