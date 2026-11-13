@@ -9,15 +9,15 @@ INSERT INTO subscriptions (
     current_period_end_at,
     billing_cycle_anchor
 ) VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6, $7)
-RETURNING subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at;
+RETURNING subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at, resumed_at;
 
 -- name: GetSubscription :one
-SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at
+SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at, resumed_at
 FROM subscriptions
 WHERE subscription_id = $1;
 
 -- name: ListAccountSubscriptions :many
-SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at
+SELECT subscription_id, version, account_id, plan_id, plan_version, subscription_status_code, quantity, current_period_start_at, current_period_end_at, billing_cycle_anchor, cancel_at_period_end, canceled_at, ended_at, paused_at, resumes_at, resumed_at
 FROM subscriptions
 WHERE account_id = $1
 ORDER BY subscription_id;
@@ -29,7 +29,8 @@ SET subscription_status_code = $3,
     canceled_at = CASE WHEN $3 = 'CANCELED' THEN $4 ELSE canceled_at END,
     ended_at = CASE WHEN $3 = 'CANCELED' THEN $4 ELSE ended_at END,
     paused_at = CASE WHEN $3 = 'PAUSED' THEN $4 ELSE paused_at END,
-    resumes_at = CASE WHEN $3 = 'ACTIVE' THEN $4 ELSE resumes_at END
+    resumed_at = CASE WHEN $3 = 'ACTIVE' THEN $4 ELSE resumed_at END,
+    resumes_at = CASE WHEN $3 = 'ACTIVE' THEN NULL ELSE resumes_at END
 WHERE subscription_id = $1
   AND subscription_status_code = $2;
 

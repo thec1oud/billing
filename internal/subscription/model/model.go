@@ -38,6 +38,7 @@ type Subscription struct {
 	EndedAt            *time.Time `json:"ended_at,omitempty"`
 	PausedAt           *time.Time `json:"paused_at,omitempty"`
 	ResumesAt          *time.Time `json:"resumes_at,omitempty"`
+	ResumedAt          *time.Time `json:"resumed_at,omitempty"`
 }
 
 type CreateInput struct {

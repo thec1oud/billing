@@ -1,3 +1,5 @@
+//go:build integration
+
 package integration
 
 import (
@@ -38,17 +40,17 @@ func (m *mockInvoiceFetcher) Get(ctx context.Context, invoiceID int64) (invoicem
 		AccountID:     202,
 		InvoiceNumber: "INV-12345",
 		Status:        invoicemodel.StatusPaid,
-		Currency:      money.DefaultCurrency,
+		Currency:      "USD",
 		LineItems: []invoicemodel.LineItem{
 			{
 				Description:   "Integration Test Item",
 				QuantityValue: 1,
 				QuantityUnit:  "pkg",
-				UnitAmount:    money.MustNew(1000, money.DefaultCurrency),
-				TotalAmount:   money.MustNew(1000, money.DefaultCurrency),
+				UnitAmount:    money.MustNew(1000, "USD"),
+				TotalAmount:   money.MustNew(1000, "USD"),
 			},
 		},
-		AmountPaid: money.MustNew(1000, money.DefaultCurrency),
+		AmountPaid: money.MustNew(1000, "USD"),
 		PaidAt:     &now,
 	}, nil
 }

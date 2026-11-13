@@ -68,13 +68,13 @@ Depending on the provider adapter and instrument type, the response returns eith
 Every charge execution inserts an immutable tracking row into `payment_attempts`:
 - **Single Pending Rule**: A partial unique index `idx_payment_attempts_single_pending_per_invoice` prevents multiple concurrent `PENDING` attempts for the same invoice.
 - **State Progression**:
-  ```mermaid
+  {% mermaid %}
   stateDiagram-v2
       [*] --> PENDING : Initiated
       PENDING --> SUCCESS : Webhook confirmed / synchronous settlement
       PENDING --> FAILED : Webhook failure / expired session
       SUCCESS --> REFUNDED : Reversal
-  ```
+  {% endmermaid %}
 - **Audit Fields**: The row captures `raw_request` (outbound payload) and `raw_response` (inbound gateway response) as JSONB.
 
 ---

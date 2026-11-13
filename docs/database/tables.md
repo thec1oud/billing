@@ -296,7 +296,8 @@ These tables define static enums and valid reference sets. Foreign keys across t
   | `canceled_at` | `TIMESTAMPTZ` | YES | None | Timestamp when cancellation was requested |
   | `ended_at` | `TIMESTAMPTZ` | YES | None | Timestamp when subscription expired/terminated |
   | `paused_at` | `TIMESTAMPTZ` | YES | None | Timestamp when service was suspended/paused |
-  | `resumes_at` | `TIMESTAMPTZ` | YES | None | Scheduled resumption date |
+  | `resumes_at` | `TIMESTAMPTZ` | YES | None | Scheduled resumption date (cleared upon resume) |
+  | `resumed_at` | `TIMESTAMPTZ` | YES | None | Timestamp when service was resumed |
   | `metadata` | `JSONB` | NO | `'{}'::jsonb` | Arbitrary subscription metadata |
   | `created_at` | `TIMESTAMPTZ` | NO | `CURRENT_TIMESTAMP` | Insertion timestamp |
 - **Constraints & Indexes**:

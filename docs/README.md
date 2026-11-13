@@ -2,7 +2,9 @@
 
 This documentation repository provides a comprehensive technical reference for the **Gebeta Billing System**, including its PostgreSQL database schema, data integrity rules, finite state machine (FSM) engine, and the complete HTTP API layer (Core Go Billing Service and Platform Node.js Backend-For-Frontend).
 
-The documentation is structured for publication on **GitBook** and directly reflects the production codebase.
+The documentation is published as a **Jekyll** site and directly reflects the production codebase. Mermaid diagrams use the `jekyll-mermaid` plugin.
+
+To preview the site locally, run `bundle install` and `bundle exec jekyll serve` from this directory.
 
 ---
 
@@ -10,7 +12,7 @@ The documentation is structured for publication on **GitBook** and directly refl
 
 The billing infrastructure is designed as a distributed, event-driven ledger and subscription lifecycle platform composed of the following services:
 
-```mermaid
+{% mermaid %}
 graph TD
     Client[Web Client / External Consumer] -->|HTTP / REST| BFF[Platform BFF Node.js / Express :3000]
     BFF -->|HTTP / JSON Envelope| Core[Billing Service Go :8080]
@@ -26,7 +28,7 @@ graph TD
         Core --- ES[Event Store Ledger]
         Core --- PPI[Payment Provider Interface PPI]
     end
-```
+{% endmermaid %}
 
 ### Core Components
 
