@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	planmodel "github.com/thec1oud/billing/internal/plan/model"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
@@ -20,8 +21,8 @@ type PlanDuration = planmodel.PlanDuration
 type LegacyPricePolicy = planmodel.LegacyPricePolicy
 
 var (
-	ErrPlanNotFound         = errors.New("plan not found")
-	ErrPlanDurationNotFound = errors.New("plan duration not found")
+	ErrPlanNotFound         = apperr.NotFound("plan_not_found", "plan not found")
+	ErrPlanDurationNotFound = apperr.NotFound("plan_duration_not_found", "plan duration not found")
 )
 
 type DBTX interface {
@@ -388,9 +389,9 @@ func (r *PostgresRepository) GetDurationByPlanAndDuration(
 
 	if err != nil {
 		return PlanDuration{}, fmt.Errorf(
-		"get plan duration by plan and duration: %w",
-		err,
-	)
+			"get plan duration by plan and duration: %w",
+			err,
+		)
 	}
 
 	return toPlanDurationModel(row), nil

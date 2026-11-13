@@ -2,9 +2,10 @@ package model
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
+
+	"github.com/thec1oud/billing/internal/shared/apperr"
 )
 
 type LegacyPricePolicy string
@@ -52,27 +53,28 @@ type PlanDuration struct {
 
 func (p Plan) Validate() error {
 	if p.PlanCode == "" {
-		return errors.New("plan code is required")
+		return apperr.Validation("required_field", "plan code is required")
 	}
 
 	if p.Version < 1 {
-		return errors.New("plan version must be greater than zero")
+		return apperr.Validation("invalid_version", "plan version must be greater than zero")
 	}
 
 	if !p.LegacyPricePolicyCode.Valid() {
-		return fmt.Errorf(
-			"unsupported legacy price policy %q",
-			p.LegacyPricePolicyCode,
+		return apperr.Validation(
+			"invalid_legacy_policy",
+			fmt.Sprintf("unsupported legacy price policy %q", p.LegacyPricePolicyCode),
 		)
 	}
 
 	if p.EffectiveFrom.IsZero() {
-		return errors.New("effective from is required")
+		return apperr.Validation("required_field", "effective from is required")
 	}
 
 	if p.EffectiveUntil != nil &&
 		!p.EffectiveUntil.After(p.EffectiveFrom) {
-		return errors.New(
+		return apperr.Validation(
+			"invalid_effective_period",
 			"effective until must be after effective from",
 		)
 	}
@@ -81,15 +83,15 @@ func (p Plan) Validate() error {
 
 func (d PlanDuration) Validate() error {
 	if d.PlanID <= 0 {
-		return errors.New("plan id must be greater than zero")
+		return apperr.Validation("invalid_id", "plan id must be greater than zero")
 	}
 
 	if d.TariffID <= 0 {
-		return errors.New("tariff id must be greater than zero")
+		return apperr.Validation("invalid_id", "tariff id must be greater than zero")
 	}
 
 	if d.Duration <= 0 {
-		return errors.New("duration must be greater than zero")
+		return apperr.Validation("invalid_duration", "duration must be greater than zero")
 	}
 
 	return nil

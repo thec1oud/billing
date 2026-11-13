@@ -3,17 +3,18 @@ package money
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/thec1oud/billing/internal/shared/apperr"
 )
 
 var (
-	ErrInvalidCurrency  = errors.New("currency must be a three-letter ISO 4217 code")
-	ErrCurrencyMismatch = errors.New("cannot operate on money with different currencies")
-	ErrDivisionByZero   = errors.New("money multiplier denominator must not be zero")
-	ErrOverflow         = errors.New("money amount exceeds int64 range")
+	ErrInvalidCurrency  = apperr.Validation("invalid_currency", "currency must be a three-letter ISO 4217 code")
+	ErrCurrencyMismatch = apperr.Validation("currency_mismatch", "cannot operate on money with different currencies")
+	ErrDivisionByZero   = apperr.Validation("division_by_zero", "money multiplier denominator must not be zero")
+	ErrOverflow         = apperr.Validation("overflow", "money amount exceeds int64 range")
 )
 
 // enums will later be populated
