@@ -365,6 +365,7 @@ type Subscription struct {
 	ResumesAt              pgtype.Timestamptz `json:"resumes_at"`
 	Metadata               []byte             `json:"metadata"`
 	CreatedAt              time.Time          `json:"created_at"`
+	ResumedAt              pgtype.Timestamptz `json:"resumed_at"`
 }
 
 type SubscriptionStatus struct {
