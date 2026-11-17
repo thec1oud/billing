@@ -28,6 +28,7 @@ The Docker Compose file relies on an `.env` file for configuration. Create a new
 # App Configuration
 APP_ENV=development
 APP_PORT=8080
+ENABLE_DEV_ENDPOINTS=false
 LOG_TARGETS=stdout
 
 # Database (PostgreSQL)
@@ -52,6 +53,8 @@ RABBITMQ_DEFAULT_PASS=rabbit_password
 
 > [!NOTE] 
 > The `DB_HOST`, `REDIS_HOST`, and `RABBITMQ_HOST` values should match the service names defined in your `docker-compose.yaml` (as shown above).
+>
+> Development-only invoice generation and fake payment routes are disabled by default. To enable them for local testing, set `ENABLE_DEV_ENDPOINTS=true`; do not enable this setting in production.
 
 ### 4. Start the System
 Run the following command in the directory containing your `docker-compose.yaml` and `.env` files:

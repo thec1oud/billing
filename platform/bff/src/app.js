@@ -48,8 +48,8 @@ export function createApp({
   api.use(createTariffsRouter({ billing }));
   api.use(createPlansRouter({ billing }));
   api.use(createSubscriptionsRouter({ billing }));
-  api.use(createInvoicesRouter({ billing }));
-  api.use(createWebhooksRouter({ billing }));
+  api.use(createInvoicesRouter({ billing, enableDevEndpoints: config.enableDevEndpoints }));
+  api.use(createWebhooksRouter({ billing, enableDevEndpoints: config.enableDevEndpoints }));
   app.use('/api/v1', api);
 
   // Fallback
