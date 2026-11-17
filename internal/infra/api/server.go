@@ -62,7 +62,7 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 
 	if deps.InvoiceService != nil {
 		invoiceHandler := invoiceHandlers.NewInvoiceHandler(deps.InvoiceService, deps.PPIService, deps.PurchasableItemService)
-		if deps.PurchasableItemService != nil {
+		if cfg.EnableDevEndpoints && deps.PurchasableItemService != nil {
 			mux.HandleFunc("POST /api/v1/dev/invoices/generate", invoiceHandler.HandleGenerateDevInvoice)
 		}
 		if deps.PPIService != nil {

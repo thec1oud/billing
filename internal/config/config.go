@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -15,8 +17,9 @@ const (
 )
 
 type Config struct {
-	AppEnv  string
-	AppPort string
+	AppEnv             string
+	AppPort            string
+	EnableDevEndpoints bool
 
 	// Database
 	DBHost     string
@@ -76,6 +79,14 @@ func Load() (*Config, error) {
 
 	appPort, err := GetEnv("APP_PORT")
 	if err != nil {
+		return nil, err
+	}
+
+	enableDevEndpoints, err := parseEnableDevEndpoints(os.Getenv("ENABLE_DEV_ENDPOINTS"))
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDevEndpoints(appEnv, enableDevEndpoints); err != nil {
 		return nil, err
 	}
 
@@ -153,8 +164,9 @@ func Load() (*Config, error) {
 	receiptWebhookURL := os.Getenv("RECEIPT_WEBHOOK_URL")
 
 	return &Config{
-		AppEnv:  appEnv,
-		AppPort: appPort,
+		AppEnv:             appEnv,
+		AppPort:            appPort,
+		EnableDevEndpoints: enableDevEndpoints,
 
 		DBHost:     dbHost,
 		DBPort:     dbPort,
@@ -179,4 +191,22 @@ func Load() (*Config, error) {
 
 		ReceiptWebhookURL: receiptWebhookURL,
 	}, nil
+}
+
+func parseEnableDevEndpoints(raw string) (bool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
+	enabled, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return false, fmt.Errorf("ENABLE_DEV_ENDPOINTS must be a boolean: %w", err)
+	}
+	return enabled, nil
+}
+
+func validateDevEndpoints(appEnv string, enabled bool) error {
+	if enabled && strings.EqualFold(strings.TrimSpace(appEnv), "production") {
+		return fmt.Errorf("ENABLE_DEV_ENDPOINTS cannot be enabled when APP_ENV=production")
+	}
+	return nil
 }

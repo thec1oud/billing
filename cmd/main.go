@@ -167,7 +167,9 @@ func run() error {
 			return smRepository.InsertOutboxRow(ctx, tx, uuid.New(), nil, nil, actionName, params)
 		},
 	)
-	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+	if cfg.EnableDevEndpoints {
+		ppiService.RegisterAdapter(fake.NewFakeAdapter())
+	}
 
 	publishWebhookAction := worker.NewPublishWebhookAction(rabbitBroker)
 	if err := smRegistry.RegisterAction(publishWebhookAction); err != nil {

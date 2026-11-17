@@ -80,10 +80,10 @@ The BFF exposes a curated subset of endpoints designed for browser interaction:
 - `POST /api/v1/invoices/:invoiceId/pay`:
   - Calls `POST /api/v1/invoices/{invoiceID}/pay`.
   - **Data Scrubbing**: Strips raw provider payload (`raw_response`) and returns only browser-essential checkout fields: `{ status, internal_tx_id, provider_reference, checkout_url }`.
-- `POST /api/v1/dev/invoices/generate`: Relays `{ account_id, plan_id }` to `POST /api/v1/dev/invoices/generate`.
+- `POST /api/v1/dev/invoices/generate`: Relays `{ account_id, plan_id }` to `POST /api/v1/dev/invoices/generate`. Available only when `ENABLE_DEV_ENDPOINTS=true`.
 
 ### Webhook Simulation
-- `POST /api/v1/webhooks/fake`:
+- `POST /api/v1/webhooks/fake` (available only when `ENABLE_DEV_ENDPOINTS=true`):
   - Simulates the external fake payment provider calling the billing webhook endpoint from the frontend demo interface.
   - Relays to `POST /api/v1/webhooks/fake` on the billing service.
 
