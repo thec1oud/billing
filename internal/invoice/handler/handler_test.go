@@ -153,8 +153,18 @@ func TestHandlePayInvoice(t *testing.T) {
 			return model.Invoice{InvoiceID: invoiceID, Status: model.StatusDraft}, nil
 		},
 	}
+	var capturedAmount money.Money
+	var capturedKey string
 	ppiSvc := &mockPPIService{
-		charge: func(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+		charge: func(
+			ctx context.Context,
+			providerCode string,
+			invoiceID int64,
+			amount money.Money,
+			idempotencyKey string,
+		) (ppi.ChargeResult, error) {
+			capturedAmount = amount
+			capturedKey = idempotencyKey
 			return ppi.ChargeResult{Status: ppi.ChargeStatusPending, CheckoutURL: "http://checkout.local"}, nil
 		},
 	}
@@ -169,12 +179,22 @@ func TestHandlePayInvoice(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, int64(1000), capturedAmount.AmountMinor)
+	assert.Equal(t, money.Currency("ETB"), capturedAmount.Currency)
+	assert.Equal(t, "test-payment-1", capturedKey)
 
 	var envelope struct {
 		Data PayInvoiceResponse `json:"data"`
 	}
-	json.NewDecoder(rec.Body).Decode(&envelope)
+	_ = json.NewDecoder(rec.Body).Decode(&envelope)
 	assert.Equal(t, "http://checkout.local", envelope.Data.CheckoutURL)
+
+	// Test missing idempotency key
+	bodyMissingKey, _ := json.Marshal(PayInvoiceInput{ProviderCode: "fake", IdempotencyKey: ""})
+	reqMissingKey := httptest.NewRequest(http.MethodPost, "/api/v1/invoices/1/pay", bytes.NewReader(bodyMissingKey))
+	recMissingKey := httptest.NewRecorder()
+	mux.ServeHTTP(recMissingKey, reqMissingKey)
+	assert.Equal(t, http.StatusBadRequest, recMissingKey.Code)
 
 	// Test invalid status
 	reqInvalid := httptest.NewRequest(http.MethodPost, "/api/v1/invoices/2/pay", bytes.NewReader(body))
