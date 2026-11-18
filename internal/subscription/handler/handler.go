@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/thec1oud/billing/internal/auth"
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
@@ -175,14 +176,5 @@ func (h *SubscriptionHandler) HandleCancelSubscription(w http.ResponseWriter, r 
 }
 
 func actorFromRequest(r *http.Request) eventmodel.Actor {
-	// Attempt to extract from platform proxy headers
-	actorType := r.Header.Get("X-Actor-Type")
-	actorID := r.Header.Get("X-Actor-ID")
-
-	if actorType != "" && actorID != "" {
-		return eventmodel.Actor{Type: eventmodel.ActorType(actorType), ID: actorID}
-	}
-
-	// Fallback to system actor
-	return eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "subscription-handler"}
+	return auth.ActorFromContext(r.Context(), "subscription-handler")
 }

@@ -36,8 +36,8 @@ export function createBillingClient(options) {
     },
 
     webhooks: {
-      deliver: (provider, body, ctx) =>
-        http.post(`/webhooks/${encodeURIComponent(provider)}`, body, ctx),
+      deliver: (provider, body, ctx, extraHeaders) =>
+        http.post(`/webhooks/${encodeURIComponent(provider)}`, body, ctx, extraHeaders),
     },
   };
 }

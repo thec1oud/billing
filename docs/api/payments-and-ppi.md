@@ -1,6 +1,6 @@
 # Payments & Payment Provider Interface (PPI) API
 
-The Payments API and Payment Provider Interface (PPI) subsystem abstract external payment gateways (Chapa, Stripe, Telebirr, and the development Fake Provider), recording charge attempts, checkout redirections, and settlement states.
+The Payments API and Payment Provider Interface (PPI) define the boundary for payment gateways and record charge attempts, checkout redirections, and settlement states. The built-in adapter is a development fake; production gateway adapters must be implemented and must verify provider webhook signatures over the raw body before accepting events.
 
 ---
 
@@ -83,6 +83,8 @@ Every charge execution inserts an immutable tracking row into `payment_attempts`
 
 The codebase provides an integrated fake adapter (`internal/ppi/adapters/fake`) for local development and CI testing:
 - **Provider Code**: `"fake"`
+- It is registered only when `ENABLE_DEV_ENDPOINTS=true`, which is disabled by default and rejected in production.
+- Fake webhooks require `X-Fake-Signature: sha256=<HMAC-SHA256>` over the exact raw body using `FAKE_WEBHOOK_HMAC_SECRET`.
 - **Behavior**:
   - Validates `amount_minor > 0`.
   - When `provider` contains `"mobile"`, `"chapa"`, or equals `"fake"`, it generates a hosted checkout URL `https://checkout.fake-provider.com/pay/fake_ref_<uuid>` with status `PENDING`.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/thec1oud/billing/internal/auth"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/subscription/handler"
 	"github.com/thec1oud/billing/internal/subscription/model"
@@ -18,9 +19,11 @@ import (
 type mockSubscriptionService struct {
 	createErr error
 	getFn     func(ctx context.Context, subscriptionID int64) (model.Subscription, error)
+	createdBy eventmodel.Actor
 }
 
 func (m *mockSubscriptionService) Create(ctx context.Context, actor eventmodel.Actor, input model.CreateInput) (model.Subscription, error) {
+	m.createdBy = actor
 	if m.createErr != nil {
 		return model.Subscription{}, m.createErr
 	}
@@ -81,6 +84,22 @@ func TestHandleCreateSubscription(t *testing.T) {
 	h.HandleCreateSubscription(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestCreateSubscriptionIgnoresClientActorHeaders(t *testing.T) {
+	svc := &mockSubscriptionService{}
+	h := handler.NewSubscriptionHandler(svc)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions", bytes.NewBufferString(`{"account_id":1,"plan_id":10,"plan_version":1}`))
+	req.Header.Set("X-Actor-Type", "ADMIN")
+	req.Header.Set("X-Actor-ID", "spoofed-user")
+	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.Principal{Subject: "verified-user"}))
+	rec := httptest.NewRecorder()
+
+	h.HandleCreateSubscription(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.Equal(t, eventmodel.ActorTypeUser, svc.createdBy.Type)
+	require.Equal(t, "verified-user", svc.createdBy.ID)
 }
 
 func TestHandleGetSubscription(t *testing.T) {

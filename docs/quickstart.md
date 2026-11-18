@@ -4,6 +4,8 @@ This guide will walk you through the core "Happy Path" of the Gebeta Billing sys
 
 > [!NOTE]
 > All examples assume your Gebeta Billing instance is running locally on `http://localhost:8080`.
+>
+> Business API requests require an OIDC access token issued for the configured billing API audience. Set `ACCESS_TOKEN` to a valid token from your identity provider, then include `-H "Authorization: Bearer $ACCESS_TOKEN"` on each request below.
 
 ---
 
@@ -13,6 +15,7 @@ A **Tariff** defines *what* you are charging for and *how much* it costs. Let's 
 ```bash
 curl -X POST http://localhost:8080/api/v1/tariffs \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -d '{
     "code": "PRO_MONTHLY_FEE",
     "name": "Pro Plan Base Fee",
@@ -35,6 +38,7 @@ Let's create a plan referencing the Tariff ID (`1`) we just created. The duratio
 ```bash
 curl -X POST http://localhost:8080/api/v1/plans \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -d '{
     "plan_code": "PRO_SUBSCRIPTION",
     "legacy_price_policy_code": "KEEP_FOREVER",
@@ -55,6 +59,7 @@ An **Account** represents your customer.
 ```bash
 curl -X POST http://localhost:8080/api/v1/accounts \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -d '{
     "external_id": "tenant_12345",
     "currency": "USD",
@@ -66,7 +71,8 @@ By default, new accounts are created in a `PENDING_VERIFICATION` state. Before t
 
 ```bash
 # Activate the account we just created (Account ID 1)
-curl -X POST http://localhost:8080/api/v1/accounts/1/activate
+curl -X POST http://localhost:8080/api/v1/accounts/1/activate \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ---
@@ -77,6 +83,7 @@ Before creating a subscription, the account needs a payment method on file. For 
 ```bash
 curl -X POST http://localhost:8080/api/v1/accounts/1/payment-methods \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -d '{
     "payment_method_id": "pm_chapa_active"
   }'
@@ -90,6 +97,7 @@ Finally, we attach the activated Account (`account_id: 1`) to our Plan (`plan_id
 ```bash
 curl -X POST http://localhost:8080/api/v1/subscriptions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -d '{
     "account_id": 1,
     "plan_id": 1,

@@ -14,6 +14,7 @@ services:
     ports: !reset []   # internal only — reached by platform-bff via the compose network
     environment:
       - APP_ENV=production
+      - ENABLE_DEV_ENDPOINTS=false
     restart: always
     deploy:
       resources:
@@ -28,6 +29,7 @@ services:
     ports: !reset []   # internal only — reached by the `web` nginx container
     environment:
       - NODE_ENV=production
+      - ENABLE_DEV_ENDPOINTS=false
       - TRUST_PROXY=true
       # nginx serves the SPA and proxies /api same-origin, so the browser
       # never calls the BFF cross-origin in production. Lock CORS down;

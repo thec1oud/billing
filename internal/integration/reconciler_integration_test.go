@@ -67,7 +67,7 @@ func TestReconciler_Integration(t *testing.T) {
 
 	ppiRepo := repository.NewPostgresRepository()
 	ppiService := service.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
-	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+	ppiService.RegisterAdapter(fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes"))
 
 	// Reconciler with 15-minute stale threshold
 	cfg := worker.Config{

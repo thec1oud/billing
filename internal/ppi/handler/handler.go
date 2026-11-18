@@ -101,7 +101,7 @@ func (h *PPIHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Parse and verify webhook signature using provider adapter
+	// The adapter must verify the provider signature before mapping any fields.
 	payload, err := parser.ParseWebhook(r)
 	if err != nil {
 		h.log.Error("Failed to parse/verify webhook payload", slog.String("provider", providerCode), logger.Err(err))

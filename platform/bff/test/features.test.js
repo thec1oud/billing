@@ -1,5 +1,6 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { createBillingClient } from '../src/integrations/index.js';
 import { createAccountsHandler } from '../src/features/accounts/handler.js';
 import { createAccountsService } from '../src/features/accounts/service.js';
@@ -23,6 +24,7 @@ let plans;
 let subscriptions;
 let invoices;
 let webhooks;
+const fakeWebhookHmacSecret = 'test-webhook-secret-with-at-least-32-bytes';
 
 before(async () => {
   fake = await startFakeBilling();
@@ -32,7 +34,9 @@ before(async () => {
   plans = createPlansHandler({ service: createPlansService({ billing }) });
   subscriptions = createSubscriptionsHandler({ service: createSubscriptionsService({ billing }) });
   invoices = createInvoicesHandler({ service: createInvoicesService({ billing }) });
-  webhooks = createWebhooksHandler({ service: createWebhooksService({ billing }) });
+  webhooks = createWebhooksHandler({
+    service: createWebhooksService({ billing, fakeWebhookHmacSecret }),
+  });
 });
 after(() => fake.close());
 beforeEach(() => {
@@ -348,6 +352,10 @@ test('POST /webhooks/fake unpacks the callback and forwards it to the Go fake pr
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { success: true, data: { status: 'processed', webhook_id: 'wh_evt_1' } });
   assert.deepEqual(fake.calls[0].body, webhookBody);
+  const expectedSignature = `sha256=${createHmac('sha256', fakeWebhookHmacSecret)
+    .update(fake.calls[0].raw)
+    .digest('hex')}`;
+  assert.equal(fake.calls[0].headers['x-fake-signature'], expectedSignature);
 });
 
 test('duplicate webhook delivery surfaces as ignored, not as an error', async () => {

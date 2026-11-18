@@ -3,6 +3,9 @@ package fake
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,10 +32,14 @@ type fakeWebhookEvent struct {
 	Timestamp     int64  `json:"timestamp"`      // unix timestamp
 }
 
-type FakeAdapter struct{}
+type FakeAdapter struct {
+	webhookSecret []byte
+}
 
-func NewFakeAdapter() *FakeAdapter {
-	return &FakeAdapter{}
+const maxFakeWebhookBytes = 1 << 20
+
+func NewFakeAdapter(webhookSecret string) *FakeAdapter {
+	return &FakeAdapter{webhookSecret: []byte(webhookSecret)}
 }
 
 func (a *FakeAdapter) ProviderCode() string {
@@ -138,13 +145,19 @@ func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload,
 		return ppi.ProviderWebhookPayload{}, errors.New("empty request body")
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxFakeWebhookBytes+1))
 	if err != nil {
 		return ppi.ProviderWebhookPayload{}, fmt.Errorf("failed to read webhook body: %w", err)
+	}
+	if len(body) > maxFakeWebhookBytes {
+		return ppi.ProviderWebhookPayload{}, fmt.Errorf("fake webhook body exceeds %d bytes", maxFakeWebhookBytes)
 	}
 
 	// Restore request body for downstream readers
 	r.Body = io.NopCloser(bytes.NewBuffer(body))
+	if len(a.webhookSecret) == 0 || !VerifyWebhookSignature(body, r.Header.Get("X-Fake-Signature"), a.webhookSecret) {
+		return ppi.ProviderWebhookPayload{}, errors.New("invalid fake webhook signature")
+	}
 
 	// 1. Unmarshal provider-specific raw payload
 	var evt fakeWebhookEvent
@@ -191,6 +204,25 @@ func (a *FakeAdapter) ParseWebhook(r *http.Request) (ppi.ProviderWebhookPayload,
 	}
 
 	return payload, nil
+}
+
+func SignWebhook(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func VerifyWebhookSignature(body []byte, signature string, secret []byte) bool {
+	if len(secret) == 0 || !strings.HasPrefix(signature, "sha256=") {
+		return false
+	}
+	provided, err := hex.DecodeString(strings.TrimPrefix(signature, "sha256="))
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write(body)
+	return hmac.Equal(provided, mac.Sum(nil))
 }
 
 func (a *FakeAdapter) RespondWebhook(
