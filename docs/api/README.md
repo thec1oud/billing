@@ -10,7 +10,7 @@ The Gebeta Billing system exposes two distinct API tiers:
 
 > [!IMPORTANT]
 > **Authentication Status**: Neither the Go Core Billing Service nor the Node.js BFF Gateway currently enforces Bearer tokens, API keys, or JWT authentication middleware.
-> 
+>
 > The system assumes deployment in a secure private network / VPC perimeter where traffic to the Go service is internal-only and access to the BFF is controlled by upstream ingress / edge API gateways.
 
 - **CORS**: Platform BFF enables CORS support for cross-origin web browser traffic, permitting headers `Content-Type`, `Authorization`, and `X-Request-Id`.
@@ -100,7 +100,6 @@ Except for `GET /health` (which outputs raw `{"status":"ok"}`), all responses fr
 | `POST` | `/api/v1/subscriptions` | Create active subscription for account |
 | `GET` | `/api/v1/subscriptions/{subscriptionID}` | Retrieve subscription details |
 | `GET` | `/api/v1/accounts/{id}/subscriptions` | List active subscriptions for account |
-| `POST` | `/api/v1/payments/charge` | Direct gateway payment charge |
 | `POST` | `/api/v1/webhooks/{provider}` | Webhook delivery from external payment provider |
 
 ### Platform BFF Gateway (`http://platform-bff:3000`)
