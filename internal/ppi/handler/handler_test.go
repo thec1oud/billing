@@ -64,7 +64,7 @@ func (s *mockService) ChargePaymentMethod(
 
 func TestWebhookHandler_SuccessFlow(t *testing.T) {
 	svc := newMockService()
-	fakeAdapter := fake.NewFakeAdapter()
+	fakeAdapter := fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes")
 	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
 
 	h := handler.NewWebhookHandler(svc)
@@ -80,6 +80,7 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 	}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
+	req.Header.Set("X-Fake-Signature", fake.SignWebhook(body, "test-webhook-secret-with-at-least-32-bytes"))
 	req.SetPathValue("provider", "fake")
 	rec := httptest.NewRecorder()
 
@@ -101,7 +102,7 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 }
 func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 	svc := newMockService()
-	fakeAdapter := fake.NewFakeAdapter()
+	fakeAdapter := fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes")
 	svc.adapters[fakeAdapter.ProviderCode()] = fakeAdapter
 
 	h := handler.NewWebhookHandler(svc)
@@ -116,6 +117,7 @@ func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 
 	// 1. First call: Succeeds fully
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
+	req1.Header.Set("X-Fake-Signature", fake.SignWebhook(body, "test-webhook-secret-with-at-least-32-bytes"))
 	req1.SetPathValue("provider", "fake")
 	rec1 := httptest.NewRecorder()
 	h.HandleWebhook(rec1, req1)
@@ -128,6 +130,7 @@ func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 
 	// 2. Second call: Same payload after successful publish -> ignored as duplicate
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
+	req2.Header.Set("X-Fake-Signature", fake.SignWebhook(body, "test-webhook-secret-with-at-least-32-bytes"))
 	req2.SetPathValue("provider", "fake")
 	rec2 := httptest.NewRecorder()
 	h.HandleWebhook(rec2, req2)

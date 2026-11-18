@@ -13,7 +13,7 @@ import (
 )
 
 func newTestAdapter() *fake.FakeAdapter {
-	return fake.NewFakeAdapter()
+	return fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes")
 }
 
 func TestChargePaymentMethod_Success(t *testing.T) {
@@ -75,6 +75,7 @@ func TestParseWebhook_ProviderSpecificJSON(t *testing.T) {
 	}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(body))
+	req.Header.Set("X-Fake-Signature", fake.SignWebhook(body, "test-webhook-secret-with-at-least-32-bytes"))
 
 	payload, err := adapter.ParseWebhook(req)
 	if err != nil {
@@ -92,5 +93,28 @@ func TestParseWebhook_ProviderSpecificJSON(t *testing.T) {
 	}
 	if payload.Status != ppi.WebhookPaymentSucceeded {
 		t.Errorf("expected SUCCESS status, got %q", payload.Status)
+	}
+}
+
+func TestParseWebhook_RejectsMissingOrTamperedSignature(t *testing.T) {
+	const secret = "test-webhook-secret-with-at-least-32-bytes"
+	body := []byte(`{"event_id":"evt_1","status":"success","amount_minor":100,"currency":"ETB"}`)
+
+	for _, signature := range []string{"", fake.SignWebhook([]byte(`{"event_id":"evt_1","status":"failed","amount_minor":100,"currency":"ETB"}`), secret)} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewReader(body))
+		if signature != "" {
+			req.Header.Set("X-Fake-Signature", signature)
+		}
+		if _, err := newTestAdapter().ParseWebhook(req); err == nil {
+			t.Fatal("expected unsigned or tampered webhook to be rejected")
+		}
+	}
+}
+
+func TestParseWebhook_RejectsOversizedBody(t *testing.T) {
+	body := bytes.Repeat([]byte("x"), (1<<20)+1)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewReader(body))
+	if _, err := newTestAdapter().ParseWebhook(req); err == nil {
+		t.Fatal("expected oversized body to be rejected")
 	}
 }

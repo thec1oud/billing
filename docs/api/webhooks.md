@@ -1,6 +1,6 @@
 # Webhooks API
 
-The Webhooks API receives, verifies, deduplicates, and forwards asynchronous payment notifications sent by external payment gateways (e.g. Chapa, Stripe, or the development Fake Provider).
+The Webhooks API receives, verifies, deduplicates, and forwards asynchronous payment notifications sent by external payment gateways. Webhook routes do not use bearer authentication; each registered adapter must authenticate the provider signature before parsing or trusting event fields.
 
 ---
 
@@ -42,6 +42,13 @@ Ingests an asynchronous event delivered by a payment gateway.
 - `provider` (string, required): Registered provider code (e.g. `"fake"`, `"chapa"`, `"stripe"`).
 
 ### Request Payload (Example for Provider `"fake"`)
+The fake adapter is available only when `ENABLE_DEV_ENDPOINTS=true` (which must never be enabled in production). Its webhook accepts only requests with:
+
+- `X-Fake-Signature: sha256=<hex-digest>`, where the digest is HMAC-SHA256 over the **exact raw HTTP request body bytes**.
+- The same `FAKE_WEBHOOK_HMAC_SECRET` (at least 32 bytes) configured on the Go billing service and BFF. Keep this secret out of browser code. The BFF's `/api/v1/webhooks/fake` simulator requires a valid OIDC bearer token and signs the callback when relaying it to Go.
+
+Other payment-provider adapters must implement and test the provider's signature verification over the unmodified raw body (including HMAC for providers whose contract specifies HMAC), using secrets from deployment configuration, before mapping any fields into the common webhook payload. Invalid/missing signatures return HTTP 400.
+
 ```json
 {
   "event_id": "evt_9f3a1e28",
@@ -77,6 +84,7 @@ Ingests an asynchronous event delivered by a payment gateway.
     "message": "Invalid webhook payload or signature: ..."
   }
   ```
+- A webhook without `X-Fake-Signature`, or with a signature computed for different bytes, is rejected with HTTP 400.
 - **Unsupported Provider (`404 Not Found`)**:
   ```json
   {

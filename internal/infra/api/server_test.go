@@ -37,3 +37,17 @@ func TestDevelopmentRoutesUnavailableWhenDisabled(t *testing.T) {
 		t.Fatal("fake adapter should not be registered by default")
 	}
 }
+
+func TestProtectedRoutesRequireBearerAuthentication(t *testing.T) {
+	server := NewServer(&config.Config{AppPort: "0"}, Deps{
+		InvoiceService: &invoiceservice.Service{},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/invoices/1", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated request returned %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}

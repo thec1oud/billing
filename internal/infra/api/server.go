@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	accountHandlers "github.com/thec1oud/billing/internal/account/handler"
+	"github.com/thec1oud/billing/internal/auth"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	invoiceHandlers "github.com/thec1oud/billing/internal/invoice/handler"
@@ -87,7 +88,14 @@ func NewServer(cfg *config.Config, deps Deps) *Server {
 		mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiHandler.HandleWebhook)
 	}
 
-	var handler http.Handler = mux
+	protected := auth.Middleware(mux, deps.Authenticator)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, pattern := mux.Handler(r); pattern == "" {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	})
 
 	return &Server{
 		srv: &http.Server{

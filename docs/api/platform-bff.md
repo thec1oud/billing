@@ -2,6 +2,8 @@
 
 The **Platform BFF** (`platform/bff/`) is a Node.js Express service running on port `3000`. It serves as the secure edge gateway for browser web clients, sanitizing inputs, enforcing security headers and rate limits, and communicating with the Core Billing Service over private HTTP.
 
+All business routes require a valid OIDC bearer access token. The BFF verifies it and forwards it to Go, which verifies it independently. Public health probes are exempt. Configure `AUTH_JWKS_URL`, `AUTH_ISSUER`, and `AUTH_AUDIENCE`; the JWKS endpoint must use HTTPS except for local loopback development. Authentication does not yet enforce per-account/tenant permissions.
+
 ---
 
 ## 1. Gateway Middleware Pipeline
@@ -11,7 +13,7 @@ Every request passing through the BFF undergoes strict validation and enrichment
 1. **Security Headers**: Managed by `helmet` (Strict-Transport-Security, X-Content-Type-Options, DNS Prefetch Control, Frameguard).
 2. **CORS**: Configured to restrict origin access while allowing headers `Content-Type`, `Authorization`, and `X-Request-Id`.
 3. **Request Correlation (`X-Request-Id`)**: Injected into every request context and forwarded downstream to the Go service.
-4. **Rate Limiting**: Configured at **100 requests per minute** per client IP on `/api/*`. Returns `429 Too Many Requests` when exceeded.
+4. **Rate Limiting**: Defaults to **120 requests per minute** per client IP on `/api/*` (configurable with `RATE_LIMIT_WINDOW_MS` and `RATE_LIMIT_MAX`). Returns `429 Too Many Requests` when exceeded.
 5. **Payload Size Guard**: Body parser caps JSON input at **100kb** (`413 Payload Too Large` on violation).
 6. **Strict Field Parsing**: Uses custom validator builders (`shared/http/validate.js`) that reject unexpected keys or malformed datatypes before dispatching to the Go billing service.
 

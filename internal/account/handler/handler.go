@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/thec1oud/billing/internal/account/model"
+	"github.com/thec1oud/billing/internal/auth"
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
@@ -58,7 +59,7 @@ func (h *AccountHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	actor := accountActor(r)
 	created, err := h.svc.Create(r.Context(), actor, input)
 	if err != nil {
 		response.WriteError(w, h.log, "create account failed", err)
@@ -93,7 +94,7 @@ func (h *AccountHandler) HandleActivate(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	actor := accountActor(r)
 	account, err := h.svc.Activate(r.Context(), actor, id)
 	if err != nil {
 		response.WriteError(w, h.log, "activate account failed", err)
@@ -111,7 +112,7 @@ func (h *AccountHandler) HandleReactivate(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	actor := accountActor(r)
 	account, err := h.svc.Reactivate(r.Context(), actor, id)
 	if err != nil {
 		response.WriteError(w, h.log, "reactivate account failed", err)
@@ -136,7 +137,7 @@ func (h *AccountHandler) HandleSuspend(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	actor := accountActor(r)
 	account, err := h.svc.Suspend(r.Context(), actor, id, body.Reason)
 	if err != nil {
 		response.WriteError(w, h.log, "suspend account failed", err)
@@ -161,7 +162,7 @@ func (h *AccountHandler) HandleClose(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	actor := accountActor(r)
 	account, err := h.svc.Close(r.Context(), actor, id, body.Reason)
 	if err != nil {
 		response.WriteError(w, h.log, "close account failed", err)
@@ -186,13 +187,17 @@ func (h *AccountHandler) HandleAddPaymentMethod(w http.ResponseWriter, r *http.R
 		})
 		return
 	}
-	actor := eventmodel.Actor{Type: eventmodel.ActorTypeSystem, ID: "account-handler"}
+	actor := accountActor(r)
 	account, err := h.svc.AddPaymentMethod(r.Context(), actor, id, body.PaymentMethodID)
 	if err != nil {
 		response.WriteError(w, h.log, "add payment method failed", err)
 		return
 	}
 	response.Write(w, http.StatusOK, account)
+}
+
+func accountActor(r *http.Request) eventmodel.Actor {
+	return auth.ActorFromContext(r.Context(), "account-handler")
 }
 
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {

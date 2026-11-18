@@ -99,7 +99,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	ppiRepo := repository.NewPostgresRepository()
 	ppiService := service.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
 
-	fakeAdapter := fake.NewFakeAdapter()
+	fakeAdapter := fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes")
 	ppiService.RegisterAdapter(fakeAdapter)
 
 	webhookHandler := handler.NewWebhookHandler(ppiService)
@@ -175,6 +175,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(webhookBody))
+	req.Header.Set("X-Fake-Signature", fake.SignWebhook(webhookBody, "test-webhook-secret-with-at-least-32-bytes"))
 	req.SetPathValue("provider", "fake")
 	rec := httptest.NewRecorder()
 

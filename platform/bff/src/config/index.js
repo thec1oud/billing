@@ -1,4 +1,5 @@
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const APP_ENV = process.env.APP_ENV || 'development';
 const rawEnableDevEndpoints = process.env.ENABLE_DEV_ENDPOINTS;
 
 function parseEnableDevEndpoints(raw) {
@@ -23,7 +24,7 @@ function parseCorsOrigin(raw, isProd) {
   return raw;
 }
 
-const isProd = NODE_ENV === 'production';
+const isProd = NODE_ENV === 'production' || APP_ENV === 'production';
 const enableDevEndpoints = parseEnableDevEndpoints(rawEnableDevEndpoints);
 
 if (isProd && enableDevEndpoints) {
@@ -34,6 +35,12 @@ export const config = {
   env: NODE_ENV,
   isProd,
   enableDevEndpoints,
+  auth: {
+    jwksUrl: process.env.AUTH_JWKS_URL,
+    issuer: process.env.AUTH_ISSUER,
+    audience: process.env.AUTH_AUDIENCE,
+  },
+  fakeWebhookHmacSecret: process.env.FAKE_WEBHOOK_HMAC_SECRET,
   port: Number(process.env.PORT || 3000),
   billingServiceUrl:
     process.env.BILLING_SERVICE_URL || 'http://localhost:8080',

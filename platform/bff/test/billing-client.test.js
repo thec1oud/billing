@@ -24,12 +24,16 @@ const failure = async (promise) => {
 
 test('unwraps the { success, data } envelope and sends JSON + request id', async () => {
   fake.on('POST', '/api/v1/accounts', goOk({ id: 9 }, 201));
-  const data = await billing.accounts.create({ currency: 'ETB' }, { requestId: 'rid-1' });
+  const data = await billing.accounts.create(
+    { currency: 'ETB' },
+    { requestId: 'rid-1', authorization: 'Bearer test-access-token' }
+  );
 
   assert.deepEqual(data, { id: 9 });
   const call = fake.calls.at(-1);
   assert.equal(call.path, '/api/v1/accounts'); // trailing slash on baseUrl is tolerated
   assert.equal(call.headers['x-request-id'], 'rid-1');
+  assert.equal(call.headers.authorization, 'Bearer test-access-token');
   assert.equal(call.headers['content-type'], 'application/json');
   assert.deepEqual(call.body, { currency: 'ETB' });
 });

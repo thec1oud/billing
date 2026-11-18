@@ -34,3 +34,27 @@ func TestProductionRejectsDevEndpoints(t *testing.T) {
 		t.Fatalf("development environment should allow the opt-in: %v", err)
 	}
 }
+
+func TestLoadAuthConfigRequiresCompleteOIDCSettings(t *testing.T) {
+	t.Setenv("AUTH_JWKS_URL", "https://identity.example/keys")
+	t.Setenv("AUTH_ISSUER", "https://identity.example/")
+	t.Setenv("AUTH_AUDIENCE", "billing-api")
+	jwksURL, issuer, audience, err := loadAuthConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jwksURL == "" || issuer == "" || audience == "" {
+		t.Fatal("expected OIDC settings to be returned")
+	}
+
+	t.Setenv("AUTH_AUDIENCE", "")
+	if _, _, _, err := loadAuthConfig(); err == nil {
+		t.Fatal("expected incomplete OIDC settings to be rejected")
+	}
+
+	t.Setenv("AUTH_AUDIENCE", "billing-api")
+	t.Setenv("AUTH_JWKS_URL", "http://identity.example/keys")
+	if _, _, _, err := loadAuthConfig(); err == nil {
+		t.Fatal("expected non-loopback HTTP JWKS URL to be rejected")
+	}
+}

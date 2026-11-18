@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +22,10 @@ type Config struct {
 	AppEnv             string
 	AppPort            string
 	EnableDevEndpoints bool
+	AuthJWKSURL        string
+	AuthIssuer         string
+	AuthAudience       string
+	FakeWebhookSecret  string
 
 	// Database
 	DBHost     string
@@ -88,6 +94,14 @@ func Load() (*Config, error) {
 	}
 	if err := validateDevEndpoints(appEnv, enableDevEndpoints); err != nil {
 		return nil, err
+	}
+	authJWKSURL, authIssuer, authAudience, err := loadAuthConfig()
+	if err != nil {
+		return nil, err
+	}
+	fakeWebhookSecret := os.Getenv("FAKE_WEBHOOK_HMAC_SECRET")
+	if enableDevEndpoints && len(fakeWebhookSecret) < 32 {
+		return nil, fmt.Errorf("FAKE_WEBHOOK_HMAC_SECRET must contain at least 32 bytes when ENABLE_DEV_ENDPOINTS=true")
 	}
 
 	// Database
@@ -167,6 +181,10 @@ func Load() (*Config, error) {
 		AppEnv:             appEnv,
 		AppPort:            appPort,
 		EnableDevEndpoints: enableDevEndpoints,
+		AuthJWKSURL:        authJWKSURL,
+		AuthIssuer:         authIssuer,
+		AuthAudience:       authAudience,
+		FakeWebhookSecret:  fakeWebhookSecret,
 
 		DBHost:     dbHost,
 		DBPort:     dbPort,
@@ -191,6 +209,29 @@ func Load() (*Config, error) {
 
 		ReceiptWebhookURL: receiptWebhookURL,
 	}, nil
+}
+
+func loadAuthConfig() (string, string, string, error) {
+	jwksURL := strings.TrimSpace(os.Getenv("AUTH_JWKS_URL"))
+	issuer := strings.TrimSpace(os.Getenv("AUTH_ISSUER"))
+	audience := strings.TrimSpace(os.Getenv("AUTH_AUDIENCE"))
+	if jwksURL == "" || issuer == "" || audience == "" {
+		return "", "", "", fmt.Errorf("AUTH_JWKS_URL, AUTH_ISSUER, and AUTH_AUDIENCE are required")
+	}
+	parsed, err := url.ParseRequestURI(jwksURL)
+	if err != nil || parsed.Host == "" ||
+		(parsed.Scheme != "https" && !(parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()))) {
+		return "", "", "", fmt.Errorf("AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost)")
+	}
+	return jwksURL, issuer, audience, nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func parseEnableDevEndpoints(raw string) (bool, error) {

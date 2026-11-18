@@ -29,6 +29,9 @@ The Docker Compose file relies on an `.env` file for configuration. Create a new
 APP_ENV=development
 APP_PORT=8080
 ENABLE_DEV_ENDPOINTS=false
+AUTH_JWKS_URL=https://your-identity-provider.example/.well-known/jwks.json
+AUTH_ISSUER=https://your-identity-provider.example/
+AUTH_AUDIENCE=billing-api
 LOG_TARGETS=stdout
 
 # Database (PostgreSQL)
@@ -55,6 +58,8 @@ RABBITMQ_DEFAULT_PASS=rabbit_password
 > The `DB_HOST`, `REDIS_HOST`, and `RABBITMQ_HOST` values should match the service names defined in your `docker-compose.yaml` (as shown above).
 >
 > Development-only invoice generation and fake payment routes are disabled by default. To enable them for local testing, set `ENABLE_DEV_ENDPOINTS=true`; do not enable this setting in production.
+>
+> Business API calls require an OIDC access token. Configure the JWKS URL, issuer, and audience above in both the root `.env` and `platform/bff/.env` (or in the Compose environment), then send `Authorization: Bearer <access-token>` with each request. When using the fake simulator locally, also set the same high-entropy `FAKE_WEBHOOK_HMAC_SECRET` (at least 32 bytes) for both services.
 
 ### 4. Start the System
 Run the following command in the directory containing your `docker-compose.yaml` and `.env` files:

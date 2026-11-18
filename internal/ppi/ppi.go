@@ -48,6 +48,10 @@ type ChargeProvider interface {
 
 type WebhookParser interface {
 	ProviderCode() string
+	// ParseWebhook must authenticate the provider's signature over the exact
+	// raw request body before accepting fields. For HMAC-based providers, verify
+	// the HMAC over those unmodified bytes. Implementations should also enforce
+	// provider timestamp/replay protections.
 	ParseWebhook(r *http.Request) (ProviderWebhookPayload, error)
 	RespondWebhook(w http.ResponseWriter, r *http.Request, code WebhookResponseCode, payload ProviderWebhookPayload)
 }

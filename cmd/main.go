@@ -18,6 +18,7 @@ import (
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
 	accountstatemachine "github.com/thec1oud/billing/internal/account/statemachine"
+	"github.com/thec1oud/billing/internal/auth"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
@@ -71,6 +72,12 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
+	}
+	authCtx, stopAuth := context.WithCancel(ctx)
+	defer stopAuth()
+	authenticator, err := auth.NewOIDCVerifier(authCtx, cfg.AuthJWKSURL, cfg.AuthIssuer, cfg.AuthAudience)
+	if err != nil {
+		return fmt.Errorf("authentication: %w", err)
 	}
 	logClosers, err := logger.InitGlobalLogger(cfg)
 	if err != nil {
@@ -168,7 +175,7 @@ func run() error {
 		},
 	)
 	if cfg.EnableDevEndpoints {
-		ppiService.RegisterAdapter(fake.NewFakeAdapter())
+		ppiService.RegisterAdapter(fake.NewFakeAdapter(cfg.FakeWebhookSecret))
 	}
 
 	publishWebhookAction := worker.NewPublishWebhookAction(rabbitBroker)
@@ -197,6 +204,7 @@ func run() error {
 
 	// Configure & Start HTTP Server
 	srv := api.NewServer(cfg, api.Deps{
+		Authenticator:          authenticator,
 		Pool:                   deps.Pool,
 		AccountService:         accountSvc,
 		PlanService:            planSvc,

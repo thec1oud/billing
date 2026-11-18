@@ -8,13 +8,16 @@ The Gebeta Billing system exposes two distinct API tiers:
 
 ## 1. Authentication & Security Status
 
-> [!IMPORTANT]
-> **Authentication Status**: Neither the Go Core Billing Service nor the Node.js BFF Gateway currently enforces Bearer tokens, API keys, or JWT authentication middleware.
-> 
-> The system assumes deployment in a secure private network / VPC perimeter where traffic to the Go service is internal-only and access to the BFF is controlled by upstream ingress / edge API gateways.
+All business API routes on both the BFF and the Go service require an externally issued OIDC access token in the `Authorization: Bearer <token>` header. Both services verify the JWT signature against the configured JWKS URL and validate its issuer, audience, expiry, and subject. Configure `AUTH_JWKS_URL`, `AUTH_ISSUER`, and `AUTH_AUDIENCE` in both services. The same access token is forwarded by the BFF to Go, so direct access to the Go service is also authenticated.
+
+The event-log actor for HTTP actions is derived from the verified token's `sub` claim. Client-provided `X-Actor-Type` and `X-Actor-ID` headers are ignored. Health checks (`/health`, `/api/health`, `/api/ready`) remain public for deployment probes.
+
+Authentication confirms the caller's identity; account/tenant-level authorization policies are not yet implemented. Every identity accepted by the configured issuer can reach the same business routes.
+
+Provider webhook routes are exempt from bearer authentication because payment providers call them directly; each adapter must verify the provider's signature over the exact raw request body before accepting the event. The fake provider is development-only and requires an HMAC signature; see the [webhook contract](webhooks.md).
 
 - **CORS**: Platform BFF enables CORS support for cross-origin web browser traffic, permitting headers `Content-Type`, `Authorization`, and `X-Request-Id`.
-- **Rate Limiting**: Platform BFF applies rate limiting of **100 requests per 60 seconds** per IP on `/api/*` routes.
+- **Rate Limiting**: Platform BFF defaults to **120 requests per 60 seconds** per IP on `/api/*` routes. Configure with `RATE_LIMIT_WINDOW_MS` and `RATE_LIMIT_MAX`.
 - **Request ID Tracking**: The BFF injects or forwards an `X-Request-Id` (UUID) across all incoming and proxied requests for distributed tracing.
 
 ---
@@ -50,6 +53,7 @@ Except for `GET /health` (which outputs raw `{"status":"ok"}`), all responses fr
 - `not_found`: Referenced entity (`account_id`, `invoice_id`, `plan_id`) does not exist.
 - `conflict`: Duplicate external ID, invalid state machine transition, or sequence conflict.
 - `internal_error`: Unexpected database or system fault.
+- `UNAUTHENTICATED`: Missing or invalid OIDC bearer token (HTTP 401).
 
 ---
 
@@ -66,7 +70,7 @@ Except for `GET /health` (which outputs raw `{"status":"ok"}`), all responses fr
 #### Error Response
 ```json
 {
-  "code": "INVALID_INPUT | NOT_FOUND | UPSTREAM_ERROR | BAD_GATEWAY | GATEWAY_TIMEOUT",
+  "code": "VALIDATION_ERROR | UNAUTHENTICATED | NOT_FOUND | UPSTREAM_ERROR | BAD_GATEWAY | GATEWAY_TIMEOUT",
   "message": "Description of the error",
   "request_id": "c1f7a08e-128a-4952-b88a-36b334199c15",
   "details": [ ... ]
@@ -93,7 +97,7 @@ Except for `GET /health` (which outputs raw `{"status":"ok"}`), all responses fr
 | `POST` | `/api/v1/plans` | Create immutable plan version & duration bindings |
 | `GET` | `/api/v1/plans` | List active plans (latest versions) |
 | `GET` | `/api/v1/purchasable-items` | List purchasable items catalog |
-| `POST` | `/api/v1/dev/invoices/generate` | Development invoice generator |
+| `POST` | `/api/v1/dev/invoices/generate` | Development invoice generator (requires `ENABLE_DEV_ENDPOINTS=true`; disabled by default) |
 | `POST` | `/api/v1/invoices/{invoiceID}/pay` | Trigger PPI payment charge for open invoice |
 | `GET` | `/api/v1/invoices/{invoiceID}` | Retrieve invoice and line items |
 | `GET` | `/api/v1/accounts/{id}/invoices` | List invoices for account |
@@ -117,5 +121,5 @@ Except for `GET /health` (which outputs raw `{"status":"ok"}`), all responses fr
 | `POST` | `/api/v1/subscriptions` | `POST /api/v1/subscriptions` |
 | `GET` | `/api/v1/accounts/:accountId/subscriptions` | `GET /api/v1/accounts/{id}/subscriptions` |
 | `POST` | `/api/v1/invoices/:invoiceId/pay` | `POST /api/v1/invoices/{invoiceID}/pay` |
-| `POST` | `/api/v1/dev/invoices/generate` | `POST /api/v1/dev/invoices/generate` |
-| `POST` | `/api/v1/webhooks/fake` | `POST /api/v1/webhooks/fake` |
+| `POST` | `/api/v1/dev/invoices/generate` | Development invoice generator (requires `ENABLE_DEV_ENDPOINTS=true` and bearer authentication) |
+| `POST` | `/api/v1/webhooks/fake` | Signed fake callback simulator (requires dev endpoints and bearer authentication) |
