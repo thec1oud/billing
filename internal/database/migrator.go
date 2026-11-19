@@ -9,19 +9,18 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	migratorPgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/thec1oud/billing/internal/infra/logger"
 )
 
-
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-func RunMigrations(conn *pgx.Conn) error {
+func RunMigrations(pool *pgxpool.Pool) error {
 	log := logger.ForComponent("database_migrator")
-	sqlDB := stdlib.OpenDB(*conn.Config())
+	sqlDB := stdlib.OpenDBFromPool(pool)
 	defer func() {
 		if err := sqlDB.Close(); err != nil {
 			log.Error("failed to close sql.DB", logger.Err(err))

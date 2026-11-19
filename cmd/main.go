@@ -94,11 +94,8 @@ func run() error {
 		if deps.Pool != nil {
 			deps.Pool.Close()
 		}
-		if deps.DB != nil {
-			_ = deps.DB.Close(ctx)
-		}
 	}()
-	if err := database.RunMigrations(deps.DB); err != nil {
+	if err := database.RunMigrations(deps.Pool); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
