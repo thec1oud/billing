@@ -100,7 +100,9 @@ func TestParseWebhook_RejectsMissingOrTamperedSignature(t *testing.T) {
 	const secret = "test-webhook-secret-with-at-least-32-bytes"
 	body := []byte(`{"event_id":"evt_1","status":"success","amount_minor":100,"currency":"ETB"}`)
 
-	for _, signature := range []string{"", fake.SignWebhook([]byte(`{"event_id":"evt_1","status":"failed","amount_minor":100,"currency":"ETB"}`), secret)} {
+	tamperedBody := []byte(`{"event_id":"evt_1","status":"failed","amount_minor":100,"currency":"ETB"}`)
+	signatures := []string{"", fake.SignWebhook(tamperedBody, secret)}
+	for _, signature := range signatures {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewReader(body))
 		if signature != "" {
 			req.Header.Set("X-Fake-Signature", signature)

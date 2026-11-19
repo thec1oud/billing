@@ -89,7 +89,8 @@ func TestHandleCreateSubscription(t *testing.T) {
 func TestCreateSubscriptionIgnoresClientActorHeaders(t *testing.T) {
 	svc := &mockSubscriptionService{}
 	h := handler.NewSubscriptionHandler(svc)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions", bytes.NewBufferString(`{"account_id":1,"plan_id":10,"plan_version":1}`))
+	body := bytes.NewBufferString(`{"account_id":1,"plan_id":10,"plan_version":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions", body)
 	req.Header.Set("X-Actor-Type", "ADMIN")
 	req.Header.Set("X-Actor-ID", "spoofed-user")
 	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.Principal{Subject: "verified-user"}))

@@ -219,8 +219,10 @@ func loadAuthConfig() (string, string, string, error) {
 		return "", "", "", fmt.Errorf("AUTH_JWKS_URL, AUTH_ISSUER, and AUTH_AUDIENCE are required")
 	}
 	parsed, err := url.ParseRequestURI(jwksURL)
-	if err != nil || parsed.Host == "" ||
-		(parsed.Scheme != "https" && !(parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()))) {
+	if err != nil || parsed.Host == "" {
+		return "", "", "", fmt.Errorf("AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost)")
+	}
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !isLoopbackHost(parsed.Hostname())) {
 		return "", "", "", fmt.Errorf("AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost)")
 	}
 	return jwksURL, issuer, audience, nil

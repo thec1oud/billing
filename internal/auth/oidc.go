@@ -8,6 +8,7 @@ import (
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
+
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 )
 
