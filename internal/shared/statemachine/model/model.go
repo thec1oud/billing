@@ -14,14 +14,15 @@ import (
 )
 
 var (
-	ErrDefinitionNotFound    = errors.New("state machine definition not found")
-	ErrInstanceNotFound      = errors.New("state machine instance not found")
-	ErrInstanceAlreadyExists = errors.New("state machine instance already exists for subject")
-	ErrInstanceTerminal      = errors.New("state machine instance is already terminal")
-	ErrNoValidTransition     = errors.New("no valid transition for current state and event")
-	ErrUnregisteredGuard     = errors.New("guard is not registered")
-	ErrUnregisteredAction    = errors.New("action is not registered")
-	ErrOptimisticConflict    = errors.New("state machine instance optimistic concurrency conflict")
+	ErrDefinitionNotFound        = errors.New("state machine definition not found")
+	ErrDefinitionVersionConflict = errors.New("state machine definition version content conflict")
+	ErrInstanceNotFound          = errors.New("state machine instance not found")
+	ErrInstanceAlreadyExists     = errors.New("state machine instance already exists for subject")
+	ErrInstanceTerminal          = errors.New("state machine instance is already terminal")
+	ErrNoValidTransition         = errors.New("no valid transition for current state and event")
+	ErrUnregisteredGuard         = errors.New("guard is not registered")
+	ErrUnregisteredAction        = errors.New("action is not registered")
+	ErrOptimisticConflict        = errors.New("state machine instance optimistic concurrency conflict")
 )
 
 type MachineType string
