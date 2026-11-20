@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/thec1oud/billing/internal/auth"
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/invoice/model"
@@ -281,7 +282,7 @@ func (h *InvoiceHandler) HandleGenerateDevInvoice(w http.ResponseWriter, r *http
 		},
 	}
 
-	actor := eventmodel.Actor{Type: "system", ID: "web_dev_endpoint"}
+	actor := auth.ActorFromContext(r.Context(), "web_dev_endpoint")
 	draftInv, err := h.svc.CreateDraftInvoice(r.Context(), actor, in.AccountID, "ETB", lineItems)
 	if err != nil {
 		response.WriteError(w, h.log, "create dev invoice draft failed", fmt.Errorf("create dev invoice: %w", err))

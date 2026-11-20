@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { accountService } from '../api/services';
+import { accountService, mockIdentityService } from '../api/services';
 import { useAppState } from '../context/AppState';
 import type { CreateAccountInput } from '../api/types';
 
 export const Login: React.FC = () => {
-  const { savedAccounts, setAccountId, addSavedAccount } = useAppState();
+  const { savedAccounts, setAccessToken, setAccountId, addSavedAccount } = useAppState();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
@@ -25,8 +25,10 @@ export const Login: React.FC = () => {
     setError(null);
 
     try {
+      const subject = externalId.trim();
+      setAccessToken(await mockIdentityService.login(subject));
       const createInput: CreateAccountInput = {
-        external_id: externalId.trim(),
+        external_id: subject,
         currency,
         timezone: "UTC",
         net_terms: 0,
@@ -52,17 +54,39 @@ export const Login: React.FC = () => {
     }
   };
 
-  const handleLogin = (accountId: number) => {
-    setAccountId(accountId);
-    navigate('/plans');
+  const handleLogin = async (accountId: number, subject: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      setAccessToken(await mockIdentityService.login(subject));
+      setAccountId(accountId);
+      navigate('/plans');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Development sign-in failed');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (!__ENABLE_MOCK_AUTH__) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div className="card-header">
+            <h2>Sign in</h2>
+          </div>
+          <p>Connect an OIDC sign-in provider to use this application.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container">
       <div className="card">
         <div className="card-header">
           <h2>Login / Create Account</h2>
-          <p>Select a saved account or create a new one.</p>
+          <p>Development-only mock sign-in. No password is required.</p>
         </div>
         
         {error && <div className="alert-error">{error}</div>}
@@ -80,7 +104,8 @@ export const Login: React.FC = () => {
                   </div>
                   <button 
                     className="btn btn-secondary"
-                    onClick={() => handleLogin(acc.accountId)}
+                    disabled={loading}
+                    onClick={() => handleLogin(acc.accountId, acc.externalId)}
                   >
                     Login
                   </button>
@@ -114,7 +139,7 @@ export const Login: React.FC = () => {
               <option value="USD">USD</option>
             </select>
           </div>
-          <button 
+          <button
             type="submit"
             className="btn btn-primary"
             disabled={loading}

@@ -11,6 +11,9 @@ servers:
   - url: http://localhost:3000
     description: Platform BFF Gateway (Node.js)
 
+security:
+  - BearerAuth: []
+
 tags:
   - name: Health
     description: Service health and readiness probes
@@ -38,6 +41,7 @@ paths:
       summary: Core service health check
       operationId: getHealth
       description: Returns liveness status of the Core Go Billing Service.
+      security: []
       responses:
         '200':
           description: Service is healthy
@@ -56,6 +60,7 @@ paths:
       summary: BFF liveness check
       operationId: getBffHealth
       description: Returns liveness status of the Platform BFF Node.js process.
+      security: []
       responses:
         '200':
           description: BFF is healthy
@@ -80,6 +85,7 @@ paths:
       summary: BFF readiness probe
       operationId: getBffReady
       description: Validates BFF and upstream Core Billing Service availability.
+      security: []
       responses:
         '200':
           description: All dependencies ready
@@ -455,7 +461,7 @@ paths:
       tags: [Invoices]
       summary: Generate development invoice
       operationId: generateDevInvoice
-      description: Development endpoint to issue an OPEN invoice against an account and plan.
+      description: Development-only; requires ENABLE_DEV_ENDPOINTS=true and a valid bearer token. Disabled by default and forbidden in production.
       requestBody:
         required: true
         content:
@@ -574,6 +580,8 @@ paths:
       tags: [Webhooks]
       summary: Ingest payment gateway webhook
       operationId: handleWebhook
+      security: []
+      description: Provider callbacks do not use bearer tokens; the registered provider adapter must verify its signature over the exact raw body.
       parameters:
         - name: provider
           in: path
@@ -600,6 +608,7 @@ paths:
       tags: [Webhooks]
       summary: Simulate fake provider webhook (BFF)
       operationId: simulateFakeWebhook
+      description: Development-only simulator; requires ENABLE_DEV_ENDPOINTS=true and a valid bearer token. The BFF signs its callback to Go using the configured fake-provider HMAC secret.
       requestBody:
         required: true
         content:
@@ -615,6 +624,11 @@ paths:
                 $ref: '#/components/schemas/WebhookReceiptResponse'
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     Money:
       type: object

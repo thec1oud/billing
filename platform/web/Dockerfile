@@ -2,6 +2,8 @@
 
 FROM node:20-alpine AS build
 WORKDIR /app
+ARG VITE_ENABLE_MOCK_AUTH=false
+ENV VITE_ENABLE_MOCK_AUTH=${VITE_ENABLE_MOCK_AUTH}
 
 COPY package.json package-lock.json ./
 RUN npm ci

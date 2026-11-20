@@ -3,7 +3,11 @@ package loader_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sync"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
@@ -151,5 +155,122 @@ func TestPublish_SecondActiveVersion_DeactivatesFirst(t *testing.T) {
 	}
 	if active.DefinitionID != definitionIDv2 || active.Version != 2 {
 		t.Fatalf("expected v2 to be the sole active definition, got version=%d", active.Version)
+	}
+}
+
+func TestPublish_ExistingVersionRequiresMatchingContent(t *testing.T) {
+	pool := testutil.NewPostgresContainer(t)
+	ctx := context.Background()
+	repo := repository.NewPostgresRepository(pool)
+	reg := registry.New()
+	spec := loader.DefinitionSpec{
+		MachineType:  "loader_content_hash_machine",
+		Version:      1,
+		InitialState: "DRAFT",
+		Activate:     true,
+		States:       []loader.StateSpec{{Name: "DRAFT"}},
+	}
+
+	firstID, err := loader.Publish(ctx, pool, repo, reg, spec)
+	if err != nil {
+		t.Fatalf("publish initial definition: %v", err)
+	}
+	repeatedID, err := loader.Publish(ctx, pool, repo, reg, spec)
+	if err != nil {
+		t.Fatalf("republish unchanged definition: %v", err)
+	}
+	if repeatedID != firstID {
+		t.Fatalf("republish returned definition %s, want existing definition %s", repeatedID, firstID)
+	}
+
+	changed := spec
+	changed.States = []loader.StateSpec{{Name: "DRAFT", IsFinal: true}}
+	if _, err := loader.Publish(ctx, pool, repo, reg, changed); !errors.Is(err, model.ErrDefinitionVersionConflict) {
+		t.Fatalf("changed content at same version returned %v, want version conflict", err)
+	}
+
+	active, err := repo.GetActiveDefinition(ctx, nil, spec.MachineType)
+	if err != nil {
+		t.Fatalf("get active definition after rejected change: %v", err)
+	}
+	if active.DefinitionID != firstID || active.Version != spec.Version {
+		t.Fatalf("rejected change altered active definition: %+v", active)
+	}
+
+	changed.Version++
+	if _, err := loader.Publish(ctx, pool, repo, reg, changed); err != nil {
+		t.Fatalf("publish changed definition with bumped version: %v", err)
+	}
+}
+
+func TestPublish_RejectsExistingDefinitionWithoutContentHash(t *testing.T) {
+	pool := testutil.NewPostgresContainer(t)
+	ctx := context.Background()
+	repo := repository.NewPostgresRepository(pool)
+	reg := registry.New()
+	spec := loader.DefinitionSpec{
+		MachineType:  "loader_legacy_hash_machine",
+		Version:      1,
+		InitialState: "DRAFT",
+		States:       []loader.StateSpec{{Name: "DRAFT"}},
+	}
+	if _, err := repo.InsertDefinition(ctx, nil, spec.MachineType, spec.Version, spec.InitialState, false); err != nil {
+		t.Fatalf("insert legacy definition without hash: %v", err)
+	}
+
+	if _, err := loader.Publish(ctx, pool, repo, reg, spec); !errors.Is(err, model.ErrDefinitionVersionConflict) {
+		t.Fatalf("publish over legacy definition returned %v, want version conflict", err)
+	}
+}
+
+func TestPublish_ConcurrentIdenticalVersionIsIdempotent(t *testing.T) {
+	pool := testutil.NewPostgresContainer(t)
+	ctx := context.Background()
+	repo := repository.NewPostgresRepository(pool)
+	reg := registry.New()
+	spec := loader.DefinitionSpec{
+		MachineType:  "loader_concurrent_publish_machine",
+		Version:      1,
+		InitialState: "DRAFT",
+		Activate:     true,
+		States:       []loader.StateSpec{{Name: "DRAFT"}},
+	}
+
+	const publishers = 4
+	start := make(chan struct{})
+	ids := make(chan uuid.UUID, publishers)
+	errs := make(chan error, publishers)
+	var wg sync.WaitGroup
+	for range publishers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			id, err := loader.Publish(ctx, pool, repo, reg, spec)
+			if err != nil {
+				errs <- err
+				return
+			}
+			ids <- id
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(ids)
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent publish failed: %v", err)
+	}
+	var expectedID uuid.UUID
+	for id := range ids {
+		if expectedID == uuid.Nil {
+			expectedID = id
+		} else if id != expectedID {
+			t.Errorf("concurrent publish returned definition %s, want %s", id, expectedID)
+		}
+	}
+	if expectedID == uuid.Nil {
+		t.Fatal("concurrent publishes returned no definition ID")
 	}
 }

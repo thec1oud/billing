@@ -9,6 +9,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/shared/statemachine/model"
@@ -19,7 +21,8 @@ import (
 // Publish validates spec and, if valid, compiles it into a new immutable
 // sm_definitions version in one transaction: (optionally) deactivate the previous
 // active version for this MachineType, then insert the definition, states,
-// transitions, and guard/action bindings. Returns the new definition's ID.
+// transitions, and guard/action bindings. Returns the definition's ID, reusing
+// the existing ID when the same version and content have already been published.
 func Publish(
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -34,24 +37,10 @@ func Publish(
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("hash definition: %w", err)
 	}
-	if id, existingHash, err := repo.GetDefinitionByMachineTypeVersion(ctx, nil, spec.MachineType, spec.Version); err == nil {
-		if existingHash == "" {
-			return uuid.Nil, fmt.Errorf(
-				"definition %s version %d exists without a content hash; bump its version to publish verifiable content",
-				spec.MachineType,
-				spec.Version,
-			)
-		}
-		if existingHash != hash {
-			return uuid.Nil, fmt.Errorf(
-				"definition %s version %d has changed content; bump the version before publishing",
-				spec.MachineType,
-				spec.Version,
-			)
-		}
+	if id, exists, err := existingDefinition(ctx, repo, spec, hash); err != nil {
+		return uuid.Nil, err
+	} else if exists {
 		return id, nil
-	} else if !errors.Is(err, model.ErrDefinitionNotFound) {
-		return uuid.Nil, fmt.Errorf("check existing definition: %w", err)
 	}
 
 	tx, err := pool.Begin(ctx)
@@ -68,6 +57,16 @@ func Publish(
 
 	def, err := repo.InsertDefinitionWithContentHash(ctx, tx, spec.MachineType, spec.Version, hash, spec.InitialState, spec.Activate)
 	if err != nil {
+		if isDefinitionPublishUniqueViolation(err) {
+			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+				return uuid.Nil, fmt.Errorf("rollback conflicting definition publish: %w", rollbackErr)
+			}
+			if id, exists, existingErr := existingDefinition(ctx, repo, spec, hash); existingErr != nil {
+				return uuid.Nil, existingErr
+			} else if exists {
+				return id, nil
+			}
+		}
 		return uuid.Nil, fmt.Errorf("insert definition: %w", err)
 	}
 
@@ -129,6 +128,51 @@ func Publish(
 	}
 
 	return def.DefinitionID, nil
+}
+
+func existingDefinition(
+	ctx context.Context,
+	repo *repository.PostgresRepository,
+	spec DefinitionSpec,
+	hash string,
+) (uuid.UUID, bool, error) {
+	id, existingHash, err := repo.GetDefinitionByMachineTypeVersion(ctx, nil, spec.MachineType, spec.Version)
+	if errors.Is(err, model.ErrDefinitionNotFound) {
+		return uuid.Nil, false, nil
+	}
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("check existing definition: %w", err)
+	}
+	if existingHash == "" {
+		return uuid.Nil, true, fmt.Errorf(
+			"%w: definition %s version %d exists without a content hash; bump its version to publish verifiable content",
+			model.ErrDefinitionVersionConflict,
+			spec.MachineType,
+			spec.Version,
+		)
+	}
+	if existingHash != hash {
+		return uuid.Nil, true, fmt.Errorf(
+			"%w: definition %s version %d has changed content; bump the version before publishing",
+			model.ErrDefinitionVersionConflict,
+			spec.MachineType,
+			spec.Version,
+		)
+	}
+	return id, true, nil
+}
+
+func isDefinitionPublishUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return false
+	}
+	switch pgErr.ConstraintName {
+	case "sm_definitions_machine_type_version_key", "idx_sm_definitions_active_per_type":
+		return true
+	default:
+		return false
+	}
 }
 
 func definitionHash(spec DefinitionSpec) (string, error) {

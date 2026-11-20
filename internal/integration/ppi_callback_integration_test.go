@@ -6,14 +6,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/infra/messaging"
+	"github.com/thec1oud/billing/internal/invoice/statemachine"
 	attemptRepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptSvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi"
@@ -22,7 +25,13 @@ import (
 	"github.com/thec1oud/billing/internal/ppi/repository"
 	"github.com/thec1oud/billing/internal/ppi/service"
 	"github.com/thec1oud/billing/internal/ppi/subscriber"
+	"github.com/thec1oud/billing/internal/ppi/worker"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	"github.com/thec1oud/billing/internal/shared/money"
+	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
+	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
+	sm_registry "github.com/thec1oud/billing/internal/shared/statemachine/registry"
+	sm_repo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
 	"github.com/thec1oud/billing/internal/shared/testutil"
 )
 
@@ -76,6 +85,38 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 		t.Fatalf("failed to seed invoice in test db: %v", err)
 	}
 
+	smRepository := sm_repo.NewPostgresRepository(cluster.DBPool)
+	definition, err := smRepository.InsertDefinitionWithContentHash(
+		ctx,
+		cluster.DBPool,
+		sm_model.MachineType(statemachine.InvoiceMachineType),
+		1,
+		strings.Repeat("a", 64),
+		sm_model.StateName("DRAFT"),
+		true,
+	)
+	if err != nil {
+		t.Fatalf("failed to seed invoice state machine definition: %v", err)
+	}
+	if err := smRepository.InsertState(ctx, cluster.DBPool, definition.DefinitionID, sm_model.State{
+		Name: sm_model.StateName("DRAFT"),
+	}); err != nil {
+		t.Fatalf("failed to seed invoice state: %v", err)
+	}
+	_, err = smRepository.CreateInstance(
+		ctx,
+		cluster.DBPool,
+		definition.DefinitionID,
+		sm_model.MachineType(statemachine.InvoiceMachineType),
+		eventmodel.AggregateInvoice.String(),
+		fmt.Sprint(invoiceID),
+		sm_model.StateName("DRAFT"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("failed to seed invoice state machine instance: %v", err)
+	}
+
 	log.Info("🌱 [2/5] Database seeded successfully",
 		slog.Int64("account_id", accountID),
 		slog.Int64("invoice_id", invoiceID),
@@ -97,9 +138,35 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	paymentAttemptSvc := attemptSvc.NewService(paymentAttemptRepo)
 
 	ppiRepo := repository.NewPostgresRepository()
-	ppiService := service.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
+	smRegistry := sm_registry.New()
+	if err := smRegistry.RegisterAction(worker.NewPublishWebhookAction(broker)); err != nil {
+		t.Fatalf("failed to register webhook publish action: %v", err)
+	}
+	ppiService := service.NewService(
+		cluster.DBPool,
+		ppiRepo,
+		paymentAttemptSvc,
+		func(ctx context.Context, tx ppi.DBTX, invoiceID int64, actionName string, params json.RawMessage) error {
+			instance, err := smRepository.GetInstanceBySubject(
+				ctx,
+				tx,
+				eventmodel.AggregateInvoice.String(),
+				fmt.Sprint(invoiceID),
+				sm_model.MachineType(statemachine.InvoiceMachineType),
+			)
+			if err != nil {
+				return err
+			}
+			return smRepository.InsertOutboxRow(ctx, tx, instance.InstanceID, nil, nil, actionName, params)
+		},
+	)
+	publisher := outbox.NewPublisher(cluster.DBPool, smRepository, smRegistry, outbox.Config{
+		Interval: time.Millisecond * 100,
+	})
+	publisher.Start(ctx)
+	defer publisher.Stop()
 
-	fakeAdapter := fake.NewFakeAdapter()
+	fakeAdapter := fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes")
 	ppiService.RegisterAdapter(fakeAdapter)
 
 	webhookHandler := handler.NewWebhookHandler(ppiService)
@@ -175,6 +242,7 @@ func TestPPI_PaymentAttemptAndWebhookFlow_Integration(t *testing.T) {
 	}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(webhookBody))
+	req.Header.Set("X-Fake-Signature", fake.SignWebhook(webhookBody, "test-webhook-secret-with-at-least-32-bytes"))
 	req.SetPathValue("provider", "fake")
 	rec := httptest.NewRecorder()
 

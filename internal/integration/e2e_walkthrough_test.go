@@ -149,7 +149,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 
 	ppiRepo := ppirepo.NewPostgresRepository()
 	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
-	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+	ppiService.RegisterAdapter(fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes"))
 
 	invoiceSvc := invoicesvc.NewService(cluster.DBPool, eventSvc, ppiService, invoiceRepository, smEngine)
 	invoiceSubscriber := invoicesub.NewInvoiceSubscriber(cluster.DBPool, invoiceSvc, paymentAttemptSvc)
@@ -327,6 +327,7 @@ func TestE2E_BillingWalkthrough(t *testing.T) {
 	}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/fake", bytes.NewBuffer(webhookBody))
+	req.Header.Set("X-Fake-Signature", fake.SignWebhook(webhookBody, "test-webhook-secret-with-at-least-32-bytes"))
 	req.SetPathValue("provider", "fake")
 	rec := httptest.NewRecorder()
 	webhookHandler.HandleWebhook(rec, req)

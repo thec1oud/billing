@@ -19,6 +19,7 @@ import (
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
 	accountstatemachine "github.com/thec1oud/billing/internal/account/statemachine"
+	"github.com/thec1oud/billing/internal/auth"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/infra/api"
 	"github.com/thec1oud/billing/internal/infra/messaging"
@@ -57,6 +58,15 @@ import (
 	tariffrepo "github.com/thec1oud/billing/internal/tariff/repository"
 	tariffservice "github.com/thec1oud/billing/internal/tariff/service"
 )
+
+type integrationAuthenticator struct{}
+
+func (integrationAuthenticator) Authenticate(token string) (auth.Principal, error) {
+	if token != "integration-test-token" {
+		return auth.Principal{}, fmt.Errorf("invalid integration test token")
+	}
+	return auth.Principal{Subject: "integration-test-user"}, nil
+}
 
 func TestAPI_E2E_Walkthrough(t *testing.T) {
 	if testing.Short() {
@@ -115,7 +125,7 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 
 	ppiRepo := ppirepo.NewPostgresRepository()
 	ppiService := ppisvc.NewService(cluster.DBPool, ppiRepo, paymentAttemptSvc, nil)
-	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+	ppiService.RegisterAdapter(fake.NewFakeAdapter("test-webhook-secret-with-at-least-32-bytes"))
 
 	invoiceRepository := invoicerepo.NewPostgresRepository(cluster.DBPool)
 
@@ -137,8 +147,9 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Setup Server
-	cfg := &config.Config{AppPort: "8080"}
+	cfg := &config.Config{AppPort: "8080", EnableDevEndpoints: true}
 	deps := api.Deps{
+		Authenticator:          integrationAuthenticator{},
 		Pool:                   cluster.DBPool,
 		AccountService:         accountSvc,
 		PlanService:            planSvc,
@@ -168,6 +179,11 @@ func TestAPI_E2E_Walkthrough(t *testing.T) {
 		}
 		req, _ := http.NewRequest(method, ts.URL+path, bytes.NewReader(reqBody))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer integration-test-token")
+		if path == "/api/v1/webhooks/fake" {
+			req.Header.Set("X-Fake-Signature", fake.SignWebhook(reqBody, "test-webhook-secret-with-at-least-32-bytes"))
+		}
+		req.Header.Set("Authorization", "Bearer integration-test-token")
 		resp, err := client.Do(req)
 		require.NoError(t, err)
 		if out != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {

@@ -10,10 +10,26 @@
 #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up --build -d
 
 services:
+  mock-identity:
+    profiles: ["disabled"]
+    ports: !reset []
+
   billing-service:
     ports: !reset []   # internal only — reached by platform-bff via the compose network
     environment:
-      - APP_ENV=production
+      APP_ENV: production
+      ENABLE_DEV_ENDPOINTS: "false"
+      FAKE_WEBHOOK_HMAC_SECRET: ${FAKE_WEBHOOK_HMAC_SECRET:-}
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:?Set AUTH_JWKS_URL to your production identity provider JWKS endpoint}
+      AUTH_ISSUER: ${AUTH_ISSUER:?Set AUTH_ISSUER to your production identity provider}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:?Set AUTH_AUDIENCE to your API audience}
+    depends_on: !override
+      app-db:
+        condition: service_healthy
+      app-redis:
+        condition: service_healthy
+      app-rabbitmq:
+        condition: service_healthy
     restart: always
     deploy:
       resources:
@@ -27,11 +43,17 @@ services:
   platform-bff:
     ports: !reset []   # internal only — reached by the `web` nginx container
     environment:
-      - NODE_ENV=production
-      - TRUST_PROXY=true
+      NODE_ENV: production
+      APP_ENV: production
+      ENABLE_DEV_ENDPOINTS: "false"
+      FAKE_WEBHOOK_HMAC_SECRET: ${FAKE_WEBHOOK_HMAC_SECRET:-}
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL:?Set AUTH_JWKS_URL to your production identity provider JWKS endpoint}
+      AUTH_ISSUER: ${AUTH_ISSUER:?Set AUTH_ISSUER to your production identity provider}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:?Set AUTH_AUDIENCE to your API audience}
+      TRUST_PROXY: "true"
       # nginx serves the SPA and proxies /api same-origin, so the browser
       # never calls the BFF cross-origin in production. Lock CORS down;
-      - CORS_ORIGIN=false
+      CORS_ORIGIN: "false"
     restart: always
     deploy:
       resources:
@@ -43,6 +65,9 @@ services:
           memory: 64M
 
   web:
+    build:
+      args:
+        VITE_ENABLE_MOCK_AUTH: "false"
     restart: always
     deploy:
       resources:

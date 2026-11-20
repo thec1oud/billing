@@ -19,7 +19,7 @@ router.get('/ready', async (_req, res) => {
 
   try {
     const upstream = await fetch(
-      `${config.billingServiceUrl}/api/v1/plans`,
+      `${config.billingServiceUrl}/health`,
       {
         method: 'GET',
         signal: controller.signal,

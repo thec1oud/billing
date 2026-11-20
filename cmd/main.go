@@ -11,13 +11,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rabbitmq/amqp091-go"
 
 	accountrepo "github.com/thec1oud/billing/internal/account/repository"
 	accountsvc "github.com/thec1oud/billing/internal/account/service"
 	accountstatemachine "github.com/thec1oud/billing/internal/account/statemachine"
+	"github.com/thec1oud/billing/internal/auth"
 	"github.com/thec1oud/billing/internal/config"
 	"github.com/thec1oud/billing/internal/database"
 	"github.com/thec1oud/billing/internal/infra"
@@ -41,11 +41,13 @@ import (
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
+	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
 	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
 	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
 	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
@@ -71,6 +73,12 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
+	}
+	authCtx, stopAuth := context.WithCancel(ctx)
+	defer stopAuth()
+	authenticator, err := auth.NewOIDCVerifier(authCtx, cfg.AuthJWKSURL, cfg.AuthIssuer, cfg.AuthAudience)
+	if err != nil {
+		return fmt.Errorf("authentication: %w", err)
 	}
 	logClosers, err := logger.InitGlobalLogger(cfg)
 	if err != nil {
@@ -163,11 +171,23 @@ func run() error {
 		deps.Pool,
 		ppiRepo,
 		paymentAttemptSvc,
-		func(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error {
-			return smRepository.InsertOutboxRow(ctx, tx, uuid.New(), nil, nil, actionName, params)
+		func(ctx context.Context, tx ppi.DBTX, invoiceID int64, actionName string, params json.RawMessage) error {
+			invoiceInstance, err := smRepository.GetInstanceBySubject(
+				ctx,
+				tx,
+				string(eventmodel.AggregateInvoice),
+				fmt.Sprintf("%d", invoiceID),
+				sm_model.MachineType(statemachine.InvoiceMachineType),
+			)
+			if err != nil {
+				return fmt.Errorf("resolve invoice state machine instance: %w", err)
+			}
+			return smRepository.InsertOutboxRow(ctx, tx, invoiceInstance.InstanceID, nil, nil, actionName, params)
 		},
 	)
-	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+	if cfg.EnableDevEndpoints {
+		ppiService.RegisterAdapter(fake.NewFakeAdapter(cfg.FakeWebhookSecret))
+	}
 
 	publishWebhookAction := worker.NewPublishWebhookAction(rabbitBroker)
 	if err := smRegistry.RegisterAction(publishWebhookAction); err != nil {
@@ -195,6 +215,7 @@ func run() error {
 
 	// Configure & Start HTTP Server
 	srv := api.NewServer(cfg, api.Deps{
+		Authenticator:          authenticator,
 		Pool:                   deps.Pool,
 		AccountService:         accountSvc,
 		PlanService:            planSvc,

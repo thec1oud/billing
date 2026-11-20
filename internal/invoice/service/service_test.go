@@ -39,7 +39,7 @@ func TestService_CreateDraftInvoice_Validation(t *testing.T) {
 
 	statemachine.RegisterStateMachineActions(smRegistry, repo)
 	_, err = loader.Publish(ctx, pool, smRepo, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
+	if err != nil {
 		t.Fatalf("failed to publish spec: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestService_DraftAndFinalize_Lifecycle(t *testing.T) {
 
 	statemachine.RegisterStateMachineActions(smRegistry, repo)
 	_, err = loader.Publish(ctx, pool, smRepo, smRegistry, statemachine.BuildInvoiceDefinitionSpec())
-	if err != nil && !strings.Contains(err.Error(), "23505") {
+	if err != nil {
 		t.Fatalf("failed to publish spec: %v", err)
 	}
 

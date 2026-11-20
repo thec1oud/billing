@@ -30,7 +30,7 @@ stateDiagram-v2
 
 `POST /api/v1/dev/invoices/generate`
 
-Development and test endpoint that generates an `OPEN` invoice for an account and plan. Resolves the purchasable item for the plan, creates a draft invoice, appends an event to the ledger, and transitions the invoice through the state machine to `OPEN`.
+Development and test endpoint that generates an `OPEN` invoice for an account and plan. Resolves the purchasable item for the plan, creates a draft invoice, appends an event to the ledger, and transitions the invoice through the state machine to `OPEN`. It is available only when `ENABLE_DEV_ENDPOINTS=true`; it is disabled by default, and the service refuses to start if enabled with `APP_ENV=production`.
 
 ### Request Body Schema
 | Field | Type | Required | Description |

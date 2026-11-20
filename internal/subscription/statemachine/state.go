@@ -25,7 +25,8 @@ const (
 //go:embed state_machine.json
 var subscriptionStateMachineJSON []byte
 
-// BuildSubscriptionDefinitionSpec returns the Version 1 blueprint parsed from embedded JSON
+// BuildSubscriptionDefinitionSpec returns the Version 2 blueprint parsed from embedded JSON.
+// Version 2 avoids reusing pre-hash Version 1 definitions that cannot be verified.
 func BuildSubscriptionDefinitionSpec() loader.DefinitionSpec {
 	var spec loader.DefinitionSpec
 	if err := json.Unmarshal(subscriptionStateMachineJSON, &spec); err != nil {

@@ -4,6 +4,7 @@ import { securityMiddleware } from './shared/middleware/security.js';
 import { loggerMiddleware } from './shared/middleware/logger.js';
 import { requestIdMiddleware } from './shared/middleware/requestId.js';
 import { apiRateLimitMiddleware } from './shared/middleware/rateLimit.js';
+import { createAuthMiddleware } from './shared/middleware/auth.js';
 import {
   notFoundHandler,
   errorHandler,
@@ -26,6 +27,13 @@ export function createApp({
   }),
 } = {}) {
   const app = express();
+  if (
+    config.enableDevEndpoints &&
+    (!config.fakeWebhookHmacSecret || Buffer.byteLength(config.fakeWebhookHmacSecret) < 32)
+  ) {
+    throw new Error('FAKE_WEBHOOK_HMAC_SECRET must contain at least 32 bytes when ENABLE_DEV_ENDPOINTS=true');
+  }
+  const authenticate = createAuthMiddleware(config.auth);
 
   if (config.trustProxy) {
     app.set('trust proxy', 1);
@@ -43,13 +51,23 @@ export function createApp({
   // billing service through the billing client, and returns a shaped response.
   // Only the routes registered here are reachable from the browser.
   const api = express.Router();
+  api.use((req, res, next) => {
+    if (!config.enableDevEndpoints && (req.path.startsWith('/dev/') || req.path === '/webhooks/fake')) {
+      return next();
+    }
+    return authenticate(req, res, next);
+  });
   api.use(express.json({ limit: '100kb' }));
   api.use(createAccountsRouter({ billing }));
   api.use(createTariffsRouter({ billing }));
   api.use(createPlansRouter({ billing }));
   api.use(createSubscriptionsRouter({ billing }));
-  api.use(createInvoicesRouter({ billing }));
-  api.use(createWebhooksRouter({ billing }));
+  api.use(createInvoicesRouter({ billing, enableDevEndpoints: config.enableDevEndpoints }));
+  api.use(createWebhooksRouter({
+    billing,
+    enableDevEndpoints: config.enableDevEndpoints,
+    fakeWebhookHmacSecret: config.fakeWebhookHmacSecret,
+  }));
   app.use('/api/v1', api);
 
   // Fallback

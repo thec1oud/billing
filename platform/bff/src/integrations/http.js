@@ -14,9 +14,11 @@ const API_PREFIX = '/api/v1';
 export function createHttpClient({ baseUrl, timeoutMs, fetchImpl = globalThis.fetch }) {
   const root = `${baseUrl.replace(/\/+$/, '')}${API_PREFIX}`;
 
-  async function request(method, path, { body, ctx } = {}) {
+  async function request(method, path, { body, ctx, extraHeaders } = {}) {
     const headers = { Accept: 'application/json', 'X-Forwarded-By': 'platform-bff' };
     if (ctx?.requestId) headers['X-Request-ID'] = ctx.requestId;
+    if (ctx?.authorization) headers.Authorization = ctx.authorization;
+    if (extraHeaders) Object.assign(headers, extraHeaders);
 
     let payload;
     if (body !== undefined) {
@@ -89,6 +91,6 @@ export function createHttpClient({ baseUrl, timeoutMs, fetchImpl = globalThis.fe
 
   return {
     get: (path, ctx) => request('GET', path, { ctx }),
-    post: (path, body, ctx) => request('POST', path, { body, ctx }),
+    post: (path, body, ctx, extraHeaders) => request('POST', path, { body, ctx, extraHeaders }),
   };
 }
