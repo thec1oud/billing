@@ -95,7 +95,7 @@ func Load() (*Config, error) {
 	if err := validateDevEndpoints(appEnv, enableDevEndpoints); err != nil {
 		return nil, err
 	}
-	authJWKSURL, authIssuer, authAudience, err := loadAuthConfig()
+	authJWKSURL, authIssuer, authAudience, err := loadAuthConfig(appEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func Load() (*Config, error) {
 	}, nil
 }
 
-func loadAuthConfig() (string, string, string, error) {
+func loadAuthConfig(appEnv string) (string, string, string, error) {
 	jwksURL := strings.TrimSpace(os.Getenv("AUTH_JWKS_URL"))
 	issuer := strings.TrimSpace(os.Getenv("AUTH_ISSUER"))
 	audience := strings.TrimSpace(os.Getenv("AUTH_AUDIENCE"))
@@ -220,10 +220,12 @@ func loadAuthConfig() (string, string, string, error) {
 	}
 	parsed, err := url.ParseRequestURI(jwksURL)
 	if err != nil || parsed.Host == "" {
-		return "", "", "", fmt.Errorf("AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost)")
+		return "", "", "", fmt.Errorf("AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost or mock identity in development)")
 	}
-	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !isLoopbackHost(parsed.Hostname())) {
-		return "", "", "", fmt.Errorf("AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost)")
+	allowLocalHTTP := isLoopbackHost(parsed.Hostname()) ||
+		(strings.EqualFold(strings.TrimSpace(appEnv), "development") && parsed.Hostname() == "mock-identity")
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !allowLocalHTTP) {
+		return "", "", "", fmt.Errorf("AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost or mock identity in development)")
 	}
 	return jwksURL, issuer, audience, nil
 }

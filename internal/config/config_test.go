@@ -39,7 +39,7 @@ func TestLoadAuthConfigRequiresCompleteOIDCSettings(t *testing.T) {
 	t.Setenv("AUTH_JWKS_URL", "https://identity.example/keys")
 	t.Setenv("AUTH_ISSUER", "https://identity.example/")
 	t.Setenv("AUTH_AUDIENCE", "billing-api")
-	jwksURL, issuer, audience, err := loadAuthConfig()
+	jwksURL, issuer, audience, err := loadAuthConfig("development")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,13 +48,26 @@ func TestLoadAuthConfigRequiresCompleteOIDCSettings(t *testing.T) {
 	}
 
 	t.Setenv("AUTH_AUDIENCE", "")
-	if _, _, _, err := loadAuthConfig(); err == nil {
+	if _, _, _, err := loadAuthConfig("development"); err == nil {
 		t.Fatal("expected incomplete OIDC settings to be rejected")
 	}
 
 	t.Setenv("AUTH_AUDIENCE", "billing-api")
 	t.Setenv("AUTH_JWKS_URL", "http://identity.example/keys")
-	if _, _, _, err := loadAuthConfig(); err == nil {
+	if _, _, _, err := loadAuthConfig("development"); err == nil {
 		t.Fatal("expected non-loopback HTTP JWKS URL to be rejected")
+	}
+}
+
+func TestLoadAuthConfigAllowsMockIdentityOnlyInDevelopment(t *testing.T) {
+	t.Setenv("AUTH_JWKS_URL", "http://mock-identity:8090/.well-known/jwks.json")
+	t.Setenv("AUTH_ISSUER", "http://mock-identity:8090")
+	t.Setenv("AUTH_AUDIENCE", "billing-api")
+
+	if _, _, _, err := loadAuthConfig("development"); err != nil {
+		t.Fatalf("development should allow mock identity HTTP: %v", err)
+	}
+	if _, _, _, err := loadAuthConfig("production"); err == nil {
+		t.Fatal("production must reject mock identity over HTTP")
 	}
 }

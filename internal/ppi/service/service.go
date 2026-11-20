@@ -22,7 +22,13 @@ var (
 	ErrProviderAdapterFailed = errors.New("provider adapter failed")
 )
 
-type OutboxEnqueuerFunc func(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error
+type OutboxEnqueuerFunc func(
+	ctx context.Context,
+	tx ppi.DBTX,
+	invoiceID int64,
+	actionName string,
+	params json.RawMessage,
+) error
 
 type Service struct {
 	db             ppi.DBTX
@@ -199,6 +205,11 @@ func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhoo
 
 	// 2. Enqueue Outbox row for RabbitMQ publisher
 	if s.outboxEnqueuer != nil {
+		attempt, err := s.attemptSvc.GetAttemptByInternalTxID(ctx, tx, payload.InternalTxID)
+		if err != nil {
+			return false, fmt.Errorf("resolve webhook payment attempt: %w", err)
+		}
+
 		routingKey := DetermineRoutingKey(payload)
 		msgBytes, err := json.Marshal(payload)
 		if err != nil {
@@ -216,7 +227,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhoo
 			return false, fmt.Errorf("failed to marshal outbox payload: %w", err)
 		}
 
-		if err := s.outboxEnqueuer(ctx, tx, "PublishWebhook", params); err != nil {
+		if err := s.outboxEnqueuer(ctx, tx, attempt.InvoiceID, "PublishWebhook", params); err != nil {
 			return false, fmt.Errorf("failed to enqueue outbox row: %w", err)
 		}
 	}

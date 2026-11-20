@@ -75,7 +75,9 @@ type TransitionSpec struct {
 
 // DefinitionSpec is the full, JSON-friendly description of one state machine
 // definition version. Publish validates it and compiles it into a new immutable
-// sm_definitions row.
+// sm_definitions row. Its complete JSON representation is used as the content
+// hash (except Activate), so adding or changing fields changes hashes for
+// existing versions and is a compatibility change.
 type DefinitionSpec struct {
 	MachineType  model.MachineType
 	Version      int

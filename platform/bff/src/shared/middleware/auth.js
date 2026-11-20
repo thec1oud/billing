@@ -1,14 +1,24 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-export function createAuthMiddleware({ jwksUrl, issuer, audience }) {
+export function createAuthMiddleware({
+  jwksUrl,
+  issuer,
+  audience,
+  allowInsecureMockIdentity = false,
+}) {
   if (!jwksUrl || !issuer || !audience) {
     throw new Error('AUTH_JWKS_URL, AUTH_ISSUER, and AUTH_AUDIENCE are required');
   }
 
   const parsedJwksUrl = new URL(jwksUrl);
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(parsedJwksUrl.hostname);
-  if (parsedJwksUrl.protocol !== 'https:' && !(parsedJwksUrl.protocol === 'http:' && loopback)) {
-    throw new Error('AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost)');
+  const mockIdentity =
+    allowInsecureMockIdentity && parsedJwksUrl.hostname === 'mock-identity';
+  if (
+    parsedJwksUrl.protocol !== 'https:' &&
+    !(parsedJwksUrl.protocol === 'http:' && (loopback || mockIdentity))
+  ) {
+    throw new Error('AUTH_JWKS_URL must use HTTPS (HTTP is allowed only for localhost or mock identity in development)');
   }
   const jwks = createRemoteJWKSet(parsedJwksUrl);
   return async function authenticate(req, res, next) {

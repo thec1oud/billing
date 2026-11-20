@@ -14,11 +14,13 @@ export interface SavedAccount {
 }
 
 interface AppState {
+  accessToken: string | null;
   accountId: number | null;
   subscriptionId: number | null;
   invoiceId: number | null;
   pendingWebhooks: PendingWebhook[];
   savedAccounts: SavedAccount[];
+  setAccessToken: (token: string | null) => void;
   setAccountId: (id: number | null) => void;
   setSubscriptionId: (id: number | null) => void;
   setInvoiceId: (id: number | null) => void;
@@ -31,6 +33,9 @@ interface AppState {
 const AppStateContext = createContext<AppState | undefined>(undefined);
 
 export const AppStateProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [accessToken, setAccessTokenState] = useState<string | null>(() =>
+    sessionStorage.getItem('accessToken')
+  );
   const [accountId, setAccountIdState] = useState<number | null>(() => {
     const saved = localStorage.getItem('activeAccountId');
     return saved ? parseInt(saved, 10) : null;
@@ -54,6 +59,15 @@ export const AppStateProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
+  const setAccessToken = (token: string | null) => {
+    setAccessTokenState(token);
+    if (token) {
+      sessionStorage.setItem('accessToken', token);
+    } else {
+      sessionStorage.removeItem('accessToken');
+    }
+  };
+
   const addSavedAccount = (account: SavedAccount) => {
     setSavedAccountsState(prev => {
       const exists = prev.some(a => a.accountId === account.accountId);
@@ -65,6 +79,7 @@ export const AppStateProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   const logout = () => {
+    setAccessToken(null);
     setAccountId(null);
     setSubscriptionId(null);
     setInvoiceId(null);
@@ -82,6 +97,8 @@ export const AppStateProvider: React.FC<{ children: ReactNode }> = ({ children }
   return (
     <AppStateContext.Provider
       value={{
+        accessToken,
+        setAccessToken,
         accountId,
         setAccountId,
         subscriptionId,

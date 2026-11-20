@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { AppStateProvider, useAppState } from './context/AppState';
 import { Login } from './pages/Login';
 import { Plans } from './pages/Plans';
@@ -7,13 +8,13 @@ import { Checkout } from './pages/Checkout';
 import { WebhookSimulator } from './pages/WebhookSimulator';
 
 const MainNav = () => {
-  const { accountId, logout } = useAppState();
+  const { accessToken, accountId, logout } = useAppState();
 
   return (
     <nav className="navbar">
       <div className="nav-brand">SaaS Billing</div>
       <div className="nav-links">
-        {accountId ? (
+        {accessToken && accountId ? (
           <>
             <Link to="/plans">Plans</Link>
             <Link to="/webhook-simulator">Webhooks</Link>
@@ -27,6 +28,11 @@ const MainNav = () => {
   );
 };
 
+const RequireAccount = ({ children }: { children: ReactNode }) => {
+  const { accessToken, accountId } = useAppState();
+  return accessToken && accountId ? <>{children}</> : <Navigate to="/" replace />;
+};
+
 function App() {
   return (
     <AppStateProvider>
@@ -37,10 +43,11 @@ function App() {
           <main className="main-content">
             <Routes>
               <Route path="/" element={<Login />} />
-              <Route path="/plans" element={<Plans />} />
-              <Route path="/invoice" element={<DevInvoice />} />
-              <Route path="/checkout" element={<Checkout />} />
-              <Route path="/webhook-simulator" element={<WebhookSimulator />} />
+              <Route path="/plans" element={<RequireAccount><Plans /></RequireAccount>} />
+              <Route path="/invoice" element={<RequireAccount><DevInvoice /></RequireAccount>} />
+              <Route path="/checkout" element={<RequireAccount><Checkout /></RequireAccount>} />
+              <Route path="/webhook-simulator" element={<RequireAccount><WebhookSimulator /></RequireAccount>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
         </div>

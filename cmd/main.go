@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rabbitmq/amqp091-go"
 
@@ -42,11 +41,13 @@ import (
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
 	itemservice "github.com/thec1oud/billing/internal/purchasable_item/service"
+	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
 	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/statemachine/engine"
 	"github.com/thec1oud/billing/internal/shared/statemachine/loader"
+	sm_model "github.com/thec1oud/billing/internal/shared/statemachine/model"
 	"github.com/thec1oud/billing/internal/shared/statemachine/outbox"
 	"github.com/thec1oud/billing/internal/shared/statemachine/registry"
 	smRepo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
@@ -170,8 +171,18 @@ func run() error {
 		deps.Pool,
 		ppiRepo,
 		paymentAttemptSvc,
-		func(ctx context.Context, tx ppi.DBTX, actionName string, params json.RawMessage) error {
-			return smRepository.InsertOutboxRow(ctx, tx, uuid.New(), nil, nil, actionName, params)
+		func(ctx context.Context, tx ppi.DBTX, invoiceID int64, actionName string, params json.RawMessage) error {
+			invoiceInstance, err := smRepository.GetInstanceBySubject(
+				ctx,
+				tx,
+				string(eventmodel.AggregateInvoice),
+				fmt.Sprintf("%d", invoiceID),
+				sm_model.MachineType(statemachine.InvoiceMachineType),
+			)
+			if err != nil {
+				return fmt.Errorf("resolve invoice state machine instance: %w", err)
+			}
+			return smRepository.InsertOutboxRow(ctx, tx, invoiceInstance.InstanceID, nil, nil, actionName, params)
 		},
 	)
 	if cfg.EnableDevEndpoints {

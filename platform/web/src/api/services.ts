@@ -75,10 +75,12 @@ export class APIError extends Error {
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const accessToken = sessionStorage.getItem('accessToken');
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...options?.headers,
     },
   });
@@ -105,6 +107,24 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // Fallback just in case some endpoints don't wrap (though the test assumes all 2xx do)
   return jsonResponse as T;
 }
+
+export const mockIdentityService = {
+  login: async (subject: string): Promise<string> => {
+    const response = await fetch('/auth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject, name: subject }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || 'Development sign-in failed');
+    }
+    if (typeof result.access_token !== 'string') {
+      throw new Error('Mock identity did not return an access token');
+    }
+    return result.access_token;
+  },
+};
 
 export const accountService = {
   create: (input: CreateAccountInput): Promise<Account> => {

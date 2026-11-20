@@ -39,6 +39,7 @@ export const config = {
     jwksUrl: process.env.AUTH_JWKS_URL,
     issuer: process.env.AUTH_ISSUER,
     audience: process.env.AUTH_AUDIENCE,
+    allowInsecureMockIdentity: !isProd && APP_ENV === 'development',
   },
   fakeWebhookHmacSecret: process.env.FAKE_WEBHOOK_HMAC_SECRET,
   port: Number(process.env.PORT || 3000),

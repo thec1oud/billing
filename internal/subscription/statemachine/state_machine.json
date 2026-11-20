@@ -1,6 +1,6 @@
 {
   "MachineType": "subscription_lifecycle",
-  "Version": 1,
+  "Version": 2,
   "InitialState": "ACTIVE",
   "Activate": true,
   "States": [
