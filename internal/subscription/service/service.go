@@ -12,6 +12,7 @@ import (
 	accountmodel "github.com/thec1oud/billing/internal/account/model"
 	accountrepository "github.com/thec1oud/billing/internal/account/repository"
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
@@ -121,11 +122,9 @@ func (s *Service) Create(
 		return model.Subscription{}, fmt.Errorf("get plan: %w", err)
 	}
 	if p.Version != input.PlanVersion {
-		return model.Subscription{}, fmt.Errorf(
-			"plan %d version mismatch: requested=%d actual=%d",
-			input.PlanID,
-			input.PlanVersion,
-			p.Version,
+		return model.Subscription{}, apperr.Validation(
+			"plan_version_mismatch",
+			fmt.Sprintf("plan %d version mismatch: requested=%d actual=%d", input.PlanID, input.PlanVersion, p.Version),
 		)
 	}
 
@@ -134,9 +133,9 @@ func (s *Service) Create(
 		return model.Subscription{}, err
 	}
 	if status != accountmodel.StatusActive {
-		return model.Subscription{}, fmt.Errorf(
-			"account %d is not active",
-			input.AccountID,
+		return model.Subscription{}, apperr.Validation(
+			"account_not_active",
+			fmt.Sprintf("account %d is not active", input.AccountID),
 		)
 	}
 

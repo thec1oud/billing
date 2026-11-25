@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/thec1oud/billing/internal/account/repository"
 	"github.com/thec1oud/billing/internal/account/statemachine"
 	"github.com/thec1oud/billing/internal/ppi/adapters"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
 	eventservice "github.com/thec1oud/billing/internal/shared/eventstore/service"
 	"github.com/thec1oud/billing/internal/shared/money"
@@ -58,15 +58,17 @@ func (s *Service) Create(
 	}
 
 	if _, err := time.LoadLocation(in.Timezone); err != nil {
-		return model.Account{}, fmt.Errorf(
-			"invalid timezone %q: %w",
-			in.Timezone,
+		return model.Account{}, apperr.Wrap(
 			err,
+			apperr.KindValidation,
+			"invalid_timezone",
+			fmt.Sprintf("invalid timezone %q", in.Timezone),
 		)
 	}
 
 	if in.NetTerms < 0 {
-		return model.Account{}, errors.New(
+		return model.Account{}, apperr.Validation(
+			"invalid_net_terms",
 			"net terms must not be negative",
 		)
 	}
@@ -186,7 +188,8 @@ func (s *Service) Suspend(
 	reason string,
 ) (model.Account, error) {
 	if strings.TrimSpace(reason) == "" {
-		return model.Account{}, errors.New(
+		return model.Account{}, apperr.Validation(
+			"required_field",
 			"suspension reason is required",
 		)
 	}
@@ -220,7 +223,8 @@ func (s *Service) Close(
 	reason string,
 ) (model.Account, error) {
 	if strings.TrimSpace(reason) == "" {
-		return model.Account{}, errors.New(
+		return model.Account{}, apperr.Validation(
+			"required_field",
 			"closure reason is required",
 		)
 	}
@@ -303,6 +307,7 @@ func (s *Service) AddPaymentMethod(
 	return result, nil
 }
 
-var ErrPaymentMethodNotFound = errors.New(
+var ErrPaymentMethodNotFound = apperr.NotFound(
+	"payment_method_not_found",
 	"payment method not found",
 )

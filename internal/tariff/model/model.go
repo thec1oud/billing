@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
@@ -67,11 +68,11 @@ type Quantity struct {
 
 func (q Quantity) Validate() error {
 	if q.Value < 0 {
-		return errors.New("quantity cannot be negative")
+		return apperr.Validation("invalid_quantity", "quantity cannot be negative")
 	}
 
 	if !q.Unit.Valid() {
-		return fmt.Errorf("invalid quantity unit %q", q.Unit)
+		return apperr.Validation("invalid_quantity_unit", fmt.Sprintf("invalid quantity unit %q", q.Unit))
 	}
 
 	return nil
@@ -122,44 +123,44 @@ func (t Tariff) Validate() error {
 	t.Name = strings.TrimSpace(t.Name)
 
 	if t.TariffCode == "" {
-		return errors.New("tariff code is required")
+		return apperr.Validation("required_field", "tariff code is required")
 	}
 
 	if t.Version < 0 {
-		return errors.New("tariff version cannot be negative")
+		return apperr.Validation("invalid_version", "tariff version cannot be negative")
 	}
 
 	if t.Name == "" {
-		return errors.New("tariff name is required")
+		return apperr.Validation("required_field", "tariff name is required")
 	}
 
 	if !t.TariffTypeCode.Valid() {
-		return fmt.Errorf("invalid tariff type %q", t.TariffTypeCode)
+		return apperr.Validation("invalid_tariff_type", fmt.Sprintf("invalid tariff type %q", t.TariffTypeCode))
 	}
 
 	// Money always carries its currency.
 	if t.Amount.Currency == "" {
-		return errors.New("tariff amount currency is required")
+		return apperr.Validation("required_field", "tariff amount currency is required")
 	}
 
 	switch t.TariffTypeCode {
 	case TariffTypePerUnit:
 		if t.QuantityUnit != "" && !t.QuantityUnit.Valid() {
-			return fmt.Errorf(
-				"invalid quantity unit %q for per-unit tariff",
-				t.QuantityUnit,
+			return apperr.Validation(
+				"invalid_quantity_unit",
+				fmt.Sprintf("invalid quantity unit %q for per-unit tariff", t.QuantityUnit),
 			)
 		}
 
 	case TariffTypeTieredUsage:
 		if len(t.Tiers) == 0 {
-			return errors.New("tiered usage tariff requires tiers")
+			return apperr.Validation("required_field", "tiered usage tariff requires tiers")
 		}
 
 		if !t.TierStrategy.Valid() {
-			return fmt.Errorf(
-				"invalid tier strategy %q",
-				t.TierStrategy,
+			return apperr.Validation(
+				"invalid_tier_strategy",
+				fmt.Sprintf("invalid tier strategy %q", t.TierStrategy),
 			)
 		}
 
@@ -181,29 +182,25 @@ func validateTiers(
 		// Every monetary value must carry the same currency
 		// as the tariff.
 		if tier.UnitPrice.Currency != currency {
-			return fmt.Errorf(
-				"tier %d unit price currency %s does not match tariff currency %s",
-				i,
-				tier.UnitPrice.Currency,
-				currency,
+			return apperr.Validation(
+				"currency_mismatch",
+				fmt.Sprintf("tier %d unit price currency %s does not match tariff currency %s", i, tier.UnitPrice.Currency, currency),
 			)
 		}
 
 		if tier.FlatFee.Currency != currency {
-			return fmt.Errorf(
-				"tier %d flat fee currency %s does not match tariff currency %s",
-				i,
-				tier.FlatFee.Currency,
-				currency,
+			return apperr.Validation(
+				"currency_mismatch",
+				fmt.Sprintf("tier %d flat fee currency %s does not match tariff currency %s", i, tier.FlatFee.Currency, currency),
 			)
 		}
 
 		if tier.UpToQuantity == nil {
 			// Only the final tier may be unbounded.
 			if i != len(tiers)-1 {
-				return fmt.Errorf(
-					"tier %d is unbounded but is not the final tier",
-					i,
+				return apperr.Validation(
+					"invalid_tier_boundary",
+					fmt.Sprintf("tier %d is unbounded but is not the final tier", i),
 				)
 			}
 
@@ -211,9 +208,9 @@ func validateTiers(
 		}
 
 		if *tier.UpToQuantity <= previous {
-			return fmt.Errorf(
-				"tier %d upper bound must be greater than previous tier",
-				i,
+			return apperr.Validation(
+				"invalid_tier_boundary",
+				fmt.Sprintf("tier %d upper bound must be greater than previous tier", i),
 			)
 		}
 
@@ -222,7 +219,8 @@ func validateTiers(
 
 	// Graduated pricing needs an unbounded final tier.
 	if tiers[len(tiers)-1].UpToQuantity != nil {
-		return errors.New(
+		return apperr.Validation(
+			"invalid_tier_boundary",
 			"final tier must be unbounded",
 		)
 	}

@@ -11,12 +11,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
 type PurchasableItem = itemmodel.PurchasableItem
 
-var ErrPurchasableItemNotFound = errors.New("purchasable item not found")
+var ErrPurchasableItemNotFound = apperr.NotFound("purchasable_item_not_found", "purchasable item not found")
 
 type DBTX interface {
 	sqlcgen.DBTX

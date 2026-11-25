@@ -1,8 +1,9 @@
 package model
 
 import (
-	"errors"
 	"time"
+
+	"github.com/thec1oud/billing/internal/shared/apperr"
 )
 
 type Status string
@@ -17,8 +18,8 @@ const (
 )
 
 var (
-	ErrNotFound               = errors.New("subscription not found")
-	ErrInvalidStateTransition = errors.New("invalid subscription state transition")
+	ErrNotFound               = apperr.NotFound("subscription_not_found", "subscription not found")
+	ErrInvalidStateTransition = apperr.Conflict("invalid_state_transition", "invalid subscription state transition")
 )
 
 // Subscription is the database-backed billing agreement and its current period.

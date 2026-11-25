@@ -14,14 +14,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thec1oud/billing/internal/payment_attempt/model"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 	"github.com/thec1oud/billing/internal/shared/money"
 	"github.com/thec1oud/billing/internal/shared/sqlcgen"
 )
 
 var (
-	ErrPaymentAttemptNotFound = errors.New("payment attempt not found")
-	ErrPendingAttemptExists   = errors.New("a pending payment attempt already exists for this invoice")
-	ErrDuplicateInternalTxID  = errors.New("internal transaction id already exists")
+	ErrPaymentAttemptNotFound = apperr.NotFound("payment_attempt_not_found", "payment attempt not found")
+	ErrPendingAttemptExists   = apperr.Conflict("pending_attempt_exists", "a pending payment attempt already exists for this invoice")
+	ErrDuplicateInternalTxID  = apperr.Conflict("duplicate_internal_tx_id", "internal transaction id already exists")
 )
 
 type DBTX interface {

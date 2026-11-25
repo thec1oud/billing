@@ -2,8 +2,9 @@ package model
 
 import (
 	"encoding/json"
-	"errors"
 	"time"
+
+	"github.com/thec1oud/billing/internal/shared/apperr"
 )
 
 type Status string
@@ -16,10 +17,10 @@ const (
 )
 
 var (
-	ErrNotFound               = errors.New("account not found")
-	ErrInvalidStateTransition = errors.New("invalid account state transition")
-	ErrClosed                 = errors.New("account is closed")
-	ErrDuplicateExternalID    = errors.New("account external id already exists")
+	ErrNotFound               = apperr.NotFound("account_not_found", "account not found")
+	ErrInvalidStateTransition = apperr.Conflict("invalid_state_transition", "invalid account state transition")
+	ErrClosed                 = apperr.Conflict("account_closed", "account is closed")
+	ErrDuplicateExternalID    = apperr.Conflict("duplicate_external_id", "account external id already exists")
 )
 
 // Account is a database-backed account. AccountID is a PostgreSQL BIGINT identity.
