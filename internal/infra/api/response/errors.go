@@ -18,14 +18,24 @@ func WriteError(w http.ResponseWriter, log *slog.Logger, context string, err err
 		return
 	}
 
+	reqID := w.Header().Get("X-Request-Id")
+	if reqID == "" {
+		reqID = w.Header().Get("X-Request-ID")
+	}
+
 	appErr, ok := apperr.AsAppError(err)
 	if !ok {
 		if log != nil {
-			log.Error(context, slog.String("error", err.Error()))
+			attrs := []any{slog.String("error", err.Error())}
+			if reqID != "" {
+				attrs = append(attrs, slog.String("request_id", reqID))
+			}
+			log.Error(context, attrs...)
 		}
 		Write(w, http.StatusInternalServerError, &ErrorResponse{
-			Code:    "internal_error",
-			Message: "An internal error occurred",
+			Code:      "internal_error",
+			Message:   "An internal error occurred",
+			RequestID: reqID,
 		})
 		return
 	}
@@ -48,11 +58,16 @@ func WriteError(w http.ResponseWriter, log *slog.Logger, context string, err err
 
 	if status >= 500 {
 		if log != nil {
-			log.Error(context, slog.String("error", err.Error()))
+			attrs := []any{slog.String("error", err.Error())}
+			if reqID != "" {
+				attrs = append(attrs, slog.String("request_id", reqID))
+			}
+			log.Error(context, attrs...)
 		}
 		Write(w, status, &ErrorResponse{
-			Code:    appErr.Code(),
-			Message: "An internal error occurred",
+			Code:      appErr.Code(),
+			Message:   "An internal error occurred",
+			RequestID: reqID,
 		})
 	} else {
 		if log != nil {

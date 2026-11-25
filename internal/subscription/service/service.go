@@ -67,13 +67,15 @@ func (s *Service) Create(
 	input model.CreateInput,
 ) (model.Subscription, error) {
 	if input.AccountID <= 0 || input.PlanID <= 0 {
-		return model.Subscription{}, errors.New(
+		return model.Subscription{}, apperr.Validation(
+			"invalid_request",
 			"account id and plan id must be greater than zero",
 		)
 	}
 
 	if input.PlanVersion <= 0 {
-		return model.Subscription{}, errors.New(
+		return model.Subscription{}, apperr.Validation(
+			"invalid_request",
 			"plan version must be greater than zero",
 		)
 	}

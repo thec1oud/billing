@@ -13,8 +13,8 @@ import (
 var (
 	ErrInvalidCurrency  = apperr.Validation("invalid_currency", "currency must be a three-letter ISO 4217 code")
 	ErrCurrencyMismatch = apperr.Validation("currency_mismatch", "cannot operate on money with different currencies")
-	ErrDivisionByZero   = apperr.Validation("division_by_zero", "money multiplier denominator must not be zero")
-	ErrOverflow         = apperr.Validation("overflow", "money amount exceeds int64 range")
+	ErrDivisionByZero   = apperr.Internal(nil, "money multiplier denominator must not be zero")
+	ErrOverflow         = apperr.Internal(nil, "money amount exceeds int64 range")
 )
 
 // enums will later be populated

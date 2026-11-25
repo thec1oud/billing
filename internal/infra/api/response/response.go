@@ -21,8 +21,9 @@ type PaginatedPayload struct {
 
 // ErrorResponse holds standard machine-readable error details.
 type ErrorResponse struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // Write is a unified and robust response writer that automatically determines

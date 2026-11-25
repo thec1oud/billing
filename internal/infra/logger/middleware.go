@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type responseWriterInterceptor struct {
@@ -23,6 +25,15 @@ func RequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
+		reqID := r.Header.Get("X-Request-Id")
+		if reqID == "" {
+			reqID = r.Header.Get("X-Request-ID")
+		}
+		if reqID == "" {
+			reqID = uuid.NewString()
+		}
+		w.Header().Set("X-Request-Id", reqID)
+
 		// Prepare response interceptor to capture status code
 		interceptor := &responseWriterInterceptor{
 			ResponseWriter: w,
@@ -36,6 +47,7 @@ func RequestLogger(next http.Handler) http.Handler {
 
 		// Log request details (omitting bodies for security and performance)
 		log.Info("API Request Processed",
+			slog.String("request_id", reqID),
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
 			slog.Int("status", interceptor.statusCode),

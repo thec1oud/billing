@@ -78,21 +78,6 @@ func (e *Error) SafeMessage() string {
 	return e.message
 }
 
-// Is supports comparison with target errors.
-func (e *Error) Is(target error) bool {
-	t, ok := target.(*Error)
-	if !ok {
-		return false
-	}
-	if e == t {
-		return true
-	}
-	if e.code != "" && t.code != "" {
-		return e.kind == t.kind && e.code == t.code
-	}
-	return e.kind == t.kind
-}
-
 // New creates a new application error.
 func New(kind Kind, code, message string) *Error {
 	return &Error{

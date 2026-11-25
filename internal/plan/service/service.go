@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	planrepo "github.com/thec1oud/billing/internal/plan/repository"
 	itemmodel "github.com/thec1oud/billing/internal/purchasable_item/model"
 	itemrepo "github.com/thec1oud/billing/internal/purchasable_item/repository"
+	"github.com/thec1oud/billing/internal/shared/apperr"
 )
 
 type Plan = planmodel.Plan
@@ -60,10 +60,12 @@ func (s *Service) CreatePlan(
 
 	for i, duration := range plan.Durations {
 		if duration.TariffID <= 0 {
-			return Plan{}, fmt.Errorf("invalid duration at index %d: %w", i, errors.New("tariff id must be greater than zero"))
+			msg := fmt.Sprintf("invalid duration at index %d: tariff id must be greater than zero", i)
+			return Plan{}, apperr.Validation("invalid_request", msg)
 		}
 		if duration.Duration <= 0 {
-			return Plan{}, fmt.Errorf("invalid duration at index %d: %w", i, errors.New("duration must be greater than zero"))
+			msg := fmt.Sprintf("invalid duration at index %d: duration must be greater than zero", i)
+			return Plan{}, apperr.Validation("invalid_request", msg)
 		}
 	}
 
@@ -166,13 +168,15 @@ func (s *Service) GetPlanVersion(
 	version int,
 ) (Plan, error) {
 	if code == "" {
-		return Plan{}, errors.New(
+		return Plan{}, apperr.Validation(
+			"invalid_request",
 			"plan code is required",
 		)
 	}
 
 	if version < 1 {
-		return Plan{}, errors.New(
+		return Plan{}, apperr.Validation(
+			"invalid_request",
 			"plan version must be greater than zero",
 		)
 	}
@@ -197,7 +201,8 @@ func (s *Service) LatestVersion(
 	code string,
 ) (int, error) {
 	if code == "" {
-		return 0, errors.New(
+		return 0, apperr.Validation(
+			"invalid_request",
 			"plan code is required",
 		)
 	}
@@ -221,7 +226,8 @@ func (s *Service) ListVersions(
 	code string,
 ) ([]Plan, error) {
 	if code == "" {
-		return nil, errors.New(
+		return nil, apperr.Validation(
+			"invalid_request",
 			"plan code is required",
 		)
 	}
@@ -259,7 +265,8 @@ func (s *Service) GetDuration(
 	id int64,
 ) (PlanDuration, error) {
 	if id <= 0 {
-		return PlanDuration{}, errors.New(
+		return PlanDuration{}, apperr.Validation(
+			"invalid_request",
 			"plan duration id must be greater than zero",
 		)
 	}
@@ -284,13 +291,15 @@ func (s *Service) GetDurationByPlanAndDuration(
 	duration time.Duration,
 ) (PlanDuration, error) {
 	if planID <= 0 {
-		return PlanDuration{}, errors.New(
+		return PlanDuration{}, apperr.Validation(
+			"invalid_request",
 			"plan id must be greater than zero",
 		)
 	}
 
 	if duration <= 0 {
-		return PlanDuration{}, errors.New(
+		return PlanDuration{}, apperr.Validation(
+			"invalid_request",
 			"duration must be greater than zero",
 		)
 	}
@@ -315,7 +324,8 @@ func (s *Service) ListDurations(
 	planID int64,
 ) ([]PlanDuration, error) {
 	if planID <= 0 {
-		return nil, errors.New(
+		return nil, apperr.Validation(
+			"invalid_request",
 			"plan id must be greater than zero",
 		)
 	}
@@ -341,13 +351,15 @@ func (s *Service) UpdateDurationTariff(
 	isActive bool,
 ) (PlanDuration, error) {
 	if durationID <= 0 {
-		return PlanDuration{}, errors.New(
+		return PlanDuration{}, apperr.Validation(
+			"invalid_request",
 			"plan duration id must be greater than zero",
 		)
 	}
 
 	if tariffID <= 0 {
-		return PlanDuration{}, errors.New(
+		return PlanDuration{}, apperr.Validation(
+			"invalid_request",
 			"tariff id must be greater than zero",
 		)
 	}

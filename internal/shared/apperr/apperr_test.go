@@ -91,10 +91,12 @@ func TestAppErrorUnwrapAndIs(t *testing.T) {
 	sentinel := apperr.NotFound("account_not_found", "account not found")
 	wrapped := fmt.Errorf("service failed: %w", sentinel)
 
+	// Pointer identity matches for sentinels
 	require.True(t, errors.Is(wrapped, sentinel))
 
+	// Separate error instances with same code do NOT match via errors.Is (no accidental collisions)
 	sameKindSameCode := apperr.NotFound("account_not_found", "different message")
-	require.True(t, errors.Is(wrapped, sameKindSameCode))
+	require.False(t, errors.Is(wrapped, sameKindSameCode))
 
 	differentCode := apperr.NotFound("invoice_not_found", "invoice not found")
 	require.False(t, errors.Is(wrapped, differentCode))

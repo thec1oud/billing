@@ -50,6 +50,7 @@ func (s *mockService) ProcessWebhook(ctx context.Context, payload ppi.ProviderWe
 		}
 	}
 	s.processed = append(s.processed, payload)
+	s.published[payload.WebhookID] = true
 	return false, nil
 }
 
@@ -58,7 +59,13 @@ func (s *mockService) MarkWebhookPublished(ctx context.Context, webhookID string
 	return nil
 }
 
-func (s *mockService) ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+func (s *mockService) ChargePaymentMethod(
+	ctx context.Context,
+	providerCode string,
+	invoiceID int64,
+	amount money.Money,
+	idempotencyKey string,
+) (ppi.ChargeResult, error) {
 	return ppi.ChargeResult{}, nil
 }
 

@@ -9,17 +9,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/thec1oud/billing/internal/shared/apperr"
 )
 
 var (
 	ErrDefinitionNotFound    = errors.New("state machine definition not found")
 	ErrInstanceNotFound      = errors.New("state machine instance not found")
 	ErrInstanceAlreadyExists = errors.New("state machine instance already exists for subject")
-	ErrInstanceTerminal      = errors.New("state machine instance is already terminal")
-	ErrNoValidTransition     = errors.New("no valid transition for current state and event")
+	ErrInstanceTerminal      = apperr.Conflict("instance_terminal", "state machine instance is already terminal")
+	ErrNoValidTransition     = apperr.Conflict("invalid_transition", "no valid transition for current state and event")
 	ErrUnregisteredGuard     = errors.New("guard is not registered")
 	ErrUnregisteredAction    = errors.New("action is not registered")
-	ErrOptimisticConflict    = errors.New("state machine instance optimistic concurrency conflict")
+	ErrOptimisticConflict    = apperr.Conflict("optimistic_conflict", "state machine instance optimistic concurrency conflict")
 )
 
 type MachineType string

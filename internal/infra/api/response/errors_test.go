@@ -122,3 +122,25 @@ func TestWriteErrorNilError(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Empty(t, rec.Body.String())
 }
+
+func TestWriteErrorIncludesRequestID(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	rec := httptest.NewRecorder()
+	rec.Header().Set("X-Request-Id", "req-test-1234")
+
+	response.WriteError(rec, logger, "test_context", errors.New("database connection refused"))
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	var envelope response.Response
+	err := json.Unmarshal(rec.Body.Bytes(), &envelope)
+	require.NoError(t, err)
+	require.False(t, envelope.Success)
+	require.NotNil(t, envelope.Error)
+	require.Equal(t, "internal_error", envelope.Error.Code)
+	require.Equal(t, "An internal error occurred", envelope.Error.Message)
+	require.Equal(t, "req-test-1234", envelope.Error.RequestID)
+	require.Contains(t, logBuf.String(), "req-test-1234")
+}
