@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -67,16 +66,6 @@ func NewPostgresContainer(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("get postgres container connection string: %v", err)
 	}
 
-	migrateConn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatalf("connect to test container for migrations: %v", err)
-	}
-	defer func() { _ = migrateConn.Close(ctx) }()
-
-	if err := database.RunMigrations(migrateConn); err != nil {
-		t.Fatalf("run migrations against test container: %v", err)
-	}
-
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Fatalf("open test pool: %v", err)
@@ -85,6 +74,10 @@ func NewPostgresContainer(t *testing.T) *pgxpool.Pool {
 
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("ping test pool: %v", err)
+	}
+
+	if err := database.RunMigrations(pool); err != nil {
+		t.Fatalf("run migrations against test container: %v", err)
 	}
 
 	return pool
