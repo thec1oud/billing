@@ -49,6 +49,7 @@ type mockPaymentRepo struct {
 	attemptsByTxID   map[string]attemptmodel.PaymentAttempt
 	pendingByInvoice map[int64]attemptmodel.PaymentAttempt
 	createdAttempts  []attemptmodel.PaymentAttempt
+	createErr        error
 	updateCalls      int
 }
 
@@ -64,6 +65,9 @@ func (m *mockPaymentRepo) Create(
 	db attemptrepo.DBTX,
 	attempt attemptmodel.PaymentAttempt,
 ) (attemptmodel.PaymentAttempt, error) {
+	if m.createErr != nil {
+		return attemptmodel.PaymentAttempt{}, m.createErr
+	}
 	attempt.AttemptID = int64(len(m.createdAttempts) + 1)
 	attempt.CreatedAt = time.Now()
 	attempt.UpdatedAt = time.Now()
@@ -126,6 +130,9 @@ func (m *mockPaymentRepo) UpdateResult(
 	m.updateCalls++
 	for k, att := range m.attemptsByTxID {
 		if att.AttemptID == attemptID {
+			if att.Status != attemptmodel.StatusPending {
+				return attemptrepo.ErrAttemptAlreadyFinalized
+			}
 			att.Status = status
 			att.ProviderTxID = providerTxID
 			att.RawResponse = rawResponse
@@ -133,10 +140,10 @@ func (m *mockPaymentRepo) UpdateResult(
 			if status != attemptmodel.StatusPending {
 				delete(m.pendingByInvoice, att.InvoiceID)
 			}
-			break
+			return nil
 		}
 	}
-	return nil
+	return attemptrepo.ErrAttemptAlreadyFinalized
 }
 
 func (m *mockPaymentRepo) ListByInvoiceID(
@@ -160,6 +167,7 @@ type mockProvider struct {
 	chargeCalls  int
 	chargeResult ppi.ChargeResult
 	chargeErr    error
+	onCharge     func()
 }
 
 func (m *mockProvider) ProviderCode() string {
@@ -172,6 +180,9 @@ func (m *mockProvider) ChargePaymentMethod(
 	providerCode, idempotencyKey string,
 ) (ppi.ChargeResult, error) {
 	m.chargeCalls++
+	if m.onCharge != nil {
+		m.onCharge()
+	}
 	return m.chargeResult, m.chargeErr
 }
 
@@ -323,5 +334,197 @@ func TestChargePaymentMethod_ConcurrentPaysOnOneInvoiceProduceExactlyOneProvider
 	// Verify provider was NEVER called for the second concurrent request
 	if provider.chargeCalls != 0 {
 		t.Fatalf("expected 0 provider calls for concurrent charge, got %d", provider.chargeCalls)
+	}
+}
+
+func TestChargePaymentMethod_IdempotencyKeyMismatchRejected(t *testing.T) {
+	db := &mockDB{}
+	paymentRepo := newMockPaymentRepo()
+	attemptService := attemptsrv.NewService(paymentRepo)
+	provider := &mockProvider{code: "mock_pay"}
+
+	svc := service.NewService(db, nil, attemptService, nil)
+	svc.RegisterAdapter(provider)
+
+	amt, _ := money.New(5000, "USD")
+	paymentRepo.attemptsByTxID["tx_invoice_1"] = attemptmodel.PaymentAttempt{
+		AttemptID:    1,
+		InvoiceID:    100,
+		ProviderCode: "mock_pay",
+		InternalTxID: "tx_invoice_1",
+		Status:       attemptmodel.StatusSuccess,
+		Amount:       amt,
+	}
+
+	_, err := svc.ChargePaymentMethod(context.Background(), "mock_pay", 999, amt, "tx_invoice_1")
+	if !errors.Is(err, attemptrepo.ErrIdempotencyKeyMismatch) {
+		t.Fatalf("expected ErrIdempotencyKeyMismatch, got %v", err)
+	}
+	if provider.chargeCalls != 0 {
+		t.Fatalf("expected 0 provider calls on key mismatch, got %d", provider.chargeCalls)
+	}
+}
+
+func TestChargePaymentMethod_ConcurrentDuplicateKeyReplaysStoredResult(t *testing.T) {
+	db := &mockDB{}
+	paymentRepo := newMockPaymentRepo()
+	attemptService := attemptsrv.NewService(paymentRepo)
+	provider := &mockProvider{code: "mock_pay"}
+
+	svc := service.NewService(db, nil, attemptService, nil)
+	svc.RegisterAdapter(provider)
+
+	amt, _ := money.New(5000, "USD")
+	provRef := "prov_concurrent_ok"
+	// Simulate Create failing due to a concurrent winner inserting the same key first.
+	paymentRepo.createErr = attemptrepo.ErrDuplicateInternalTxID
+
+	// Inject a custom repo wrapper or seed after GetByInternalTxID misses by checking fallback:
+	// Use a repo that fails Create with ErrDuplicateInternalTxID and exposes the winner on subsequent GetByInternalTxID.
+	raceRepo := &raceCreateDuplicateRepo{
+		mockPaymentRepo: paymentRepo,
+		winner: attemptmodel.PaymentAttempt{
+			AttemptID:    42,
+			InvoiceID:    100,
+			ProviderCode: "mock_pay",
+			InternalTxID: "tx_race_same_key",
+			ProviderTxID: &provRef,
+			Status:       attemptmodel.StatusSuccess,
+			Amount:       amt,
+		},
+	}
+	raceSvc := service.NewService(db, nil, attemptsrv.NewService(raceRepo), nil)
+	raceSvc.RegisterAdapter(provider)
+
+	res, err := raceSvc.ChargePaymentMethod(context.Background(), "mock_pay", 100, amt, "tx_race_same_key")
+	if err != nil {
+		t.Fatalf("unexpected error on concurrent same-key replay: %v", err)
+	}
+	if res.Status != ppi.ChargeStatusSuccess || res.ProviderReference != provRef {
+		t.Fatalf("unexpected replay result: %+v", res)
+	}
+	if provider.chargeCalls != 0 {
+		t.Fatalf("expected 0 provider calls on concurrent duplicate replay, got %d", provider.chargeCalls)
+	}
+}
+
+type raceCreateDuplicateRepo struct {
+	*mockPaymentRepo
+	winner attemptmodel.PaymentAttempt
+	calls  int
+}
+
+func (r *raceCreateDuplicateRepo) GetByInternalTxID(
+	ctx context.Context,
+	db attemptrepo.DBTX,
+	internalTxID string,
+) (attemptmodel.PaymentAttempt, error) {
+	r.calls++
+	if r.calls == 1 {
+		return attemptmodel.PaymentAttempt{}, attemptrepo.ErrPaymentAttemptNotFound
+	}
+	return r.winner, nil
+}
+
+func TestChargePaymentMethod_FinalizedConcurrentlyReturnsAuthoritativeDBResult(t *testing.T) {
+	amt, _ := money.New(5000, "USD")
+
+	t.Run("webhook marks SUCCESS while adapter returns error", func(t *testing.T) {
+		db := &mockDB{}
+		paymentRepo := newMockPaymentRepo()
+		attemptService := attemptsrv.NewService(paymentRepo)
+
+		webhookRef := "prov_from_webhook"
+		provider := &mockProvider{
+			code:      "mock_pay",
+			chargeErr: errors.New("http timeout reading provider response"),
+			onCharge: func() {
+				att := paymentRepo.attemptsByTxID["tx_race_finalize"]
+				att.Status = attemptmodel.StatusSuccess
+				att.ProviderTxID = &webhookRef
+				paymentRepo.attemptsByTxID["tx_race_finalize"] = att
+			},
+		}
+
+		svc := service.NewService(db, nil, attemptService, nil)
+		svc.RegisterAdapter(provider)
+
+		res, err := svc.ChargePaymentMethod(context.Background(), "mock_pay", 100, amt, "tx_race_finalize")
+		if err != nil {
+			t.Fatalf("expected authoritative DB result with nil error, got %v", err)
+		}
+		if res.Status != ppi.ChargeStatusSuccess {
+			t.Fatalf("expected SUCCESS from DB, got %s", res.Status)
+		}
+		if res.ProviderReference != webhookRef {
+			t.Fatalf("expected provider ref %q, got %q", webhookRef, res.ProviderReference)
+		}
+	})
+
+	t.Run("reconciler marks FAILED while adapter succeeds locally", func(t *testing.T) {
+		db := &mockDB{}
+		paymentRepo := newMockPaymentRepo()
+		attemptService := attemptsrv.NewService(paymentRepo)
+
+		provider := &mockProvider{
+			code: "mock_pay",
+			chargeResult: ppi.ChargeResult{
+				Status:            ppi.ChargeStatusSuccess,
+				ProviderReference: "stale_ref",
+			},
+			onCharge: func() {
+				att := paymentRepo.attemptsByTxID["tx_race_reconciler"]
+				att.Status = attemptmodel.StatusFailed
+				paymentRepo.attemptsByTxID["tx_race_reconciler"] = att
+			},
+		}
+
+		svc := service.NewService(db, nil, attemptService, nil)
+		svc.RegisterAdapter(provider)
+
+		res, err := svc.ChargePaymentMethod(context.Background(), "mock_pay", 101, amt, "tx_race_reconciler")
+		if err != nil {
+			t.Fatalf("expected authoritative DB result with nil error, got %v", err)
+		}
+		if res.Status != ppi.ChargeStatusFailed {
+			t.Fatalf("expected FAILED from DB, got %s", res.Status)
+		}
+	})
+}
+
+func TestLookupCharge(t *testing.T) {
+	db := &mockDB{}
+	paymentRepo := newMockPaymentRepo()
+	attemptService := attemptsrv.NewService(paymentRepo)
+	svc := service.NewService(db, nil, attemptService, nil)
+
+	amt, _ := money.New(5000, "USD")
+	provRef := "prov_lookup_1"
+	paymentRepo.attemptsByTxID["tx_lookup"] = attemptmodel.PaymentAttempt{
+		AttemptID:    7,
+		InvoiceID:    300,
+		ProviderCode: "mock_pay",
+		InternalTxID: "tx_lookup",
+		ProviderTxID: &provRef,
+		Status:       attemptmodel.StatusSuccess,
+		Amount:       amt,
+	}
+
+	res, found, err := svc.LookupCharge(context.Background(), "mock_pay", 300, "tx_lookup")
+	if err != nil || !found {
+		t.Fatalf("expected found=true, err=nil; got found=%v err=%v", found, err)
+	}
+	if res.Status != ppi.ChargeStatusSuccess || res.ProviderReference != provRef {
+		t.Fatalf("unexpected lookup result: %+v", res)
+	}
+
+	_, foundMissing, err := svc.LookupCharge(context.Background(), "mock_pay", 300, "tx_missing")
+	if err != nil || foundMissing {
+		t.Fatalf("expected found=false, err=nil; got found=%v err=%v", foundMissing, err)
+	}
+
+	_, foundMismatch, err := svc.LookupCharge(context.Background(), "mock_pay", 999, "tx_lookup")
+	if !errors.Is(err, attemptrepo.ErrIdempotencyKeyMismatch) || foundMismatch {
+		t.Fatalf("expected ErrIdempotencyKeyMismatch, got found=%v err=%v", foundMismatch, err)
 	}
 }

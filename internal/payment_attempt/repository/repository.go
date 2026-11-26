@@ -23,6 +23,11 @@ var (
 	ErrPaymentAttemptNotFound = apperr.NotFound("payment_attempt_not_found", "payment attempt not found")
 	ErrPendingAttemptExists   = apperr.Conflict("pending_attempt_exists", "a pending payment attempt already exists for this invoice")
 	ErrDuplicateInternalTxID  = apperr.Conflict("duplicate_internal_tx_id", "internal transaction id already exists")
+	ErrIdempotencyKeyMismatch = apperr.Conflict(
+		"idempotency_key_mismatch",
+		"idempotency key is already used with different payment parameters",
+	)
+	ErrAttemptAlreadyFinalized = apperr.Conflict("attempt_already_finalized", "payment attempt is no longer pending")
 )
 
 type DBTX interface {
@@ -179,7 +184,7 @@ func (r *PostgresRepository) UpdateResult(
 		rawResp = rawResponse
 	}
 
-	err := q.UpdatePaymentAttemptResult(ctx, sqlcgen.UpdatePaymentAttemptResultParams{
+	rowsAffected, err := q.UpdatePaymentAttemptResult(ctx, sqlcgen.UpdatePaymentAttemptResultParams{
 		AttemptID:    attemptID,
 		Status:       string(status),
 		ProviderTxID: pTxID,
@@ -187,6 +192,9 @@ func (r *PostgresRepository) UpdateResult(
 	})
 	if err != nil {
 		return r.handleError(err, "update payment attempt result")
+	}
+	if rowsAffected == 0 {
+		return ErrAttemptAlreadyFinalized
 	}
 
 	return nil

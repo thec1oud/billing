@@ -104,7 +104,19 @@ func (m *mockPaymentRepo) UpdateResult(
 	rawResponse json.RawMessage,
 ) error {
 	m.updateResultCalls++
-	return nil
+	for k, att := range m.attemptsByTxID {
+		if att.AttemptID == attemptID {
+			if att.Status != model.StatusPending {
+				return repository.ErrAttemptAlreadyFinalized
+			}
+			att.Status = status
+			att.ProviderTxID = providerTxID
+			att.RawResponse = rawResponse
+			m.attemptsByTxID[k] = att
+			return nil
+		}
+	}
+	return repository.ErrAttemptAlreadyFinalized
 }
 
 func (m *mockPaymentRepo) ListByInvoiceID(
@@ -234,5 +246,98 @@ func TestCreatePaymentAttempt_UniqueConstraintConflictFromRepo(t *testing.T) {
 	}
 	if created {
 		t.Fatalf("expected created to be false")
+	}
+}
+
+func TestCreatePaymentAttempt_ReplayMismatchRejected(t *testing.T) {
+	amt1000, _ := money.New(1000, "USD")
+	amt2000, _ := money.New(2000, "USD")
+	amt1000ETB, _ := money.New(1000, "ETB")
+
+	tests := []struct {
+		name  string
+		input model.CreatePaymentAttemptInput
+	}{
+		{
+			name: "different invoice id",
+			input: model.CreatePaymentAttemptInput{
+				InvoiceID:    2,
+				ProviderCode: "fake",
+				InternalTxID: "tx_existing",
+				Amount:       amt1000,
+			},
+		},
+		{
+			name: "different amount",
+			input: model.CreatePaymentAttemptInput{
+				InvoiceID:    1,
+				ProviderCode: "fake",
+				InternalTxID: "tx_existing",
+				Amount:       amt2000,
+			},
+		},
+		{
+			name: "different currency",
+			input: model.CreatePaymentAttemptInput{
+				InvoiceID:    1,
+				ProviderCode: "fake",
+				InternalTxID: "tx_existing",
+				Amount:       amt1000ETB,
+			},
+		},
+		{
+			name: "different provider",
+			input: model.CreatePaymentAttemptInput{
+				InvoiceID:    1,
+				ProviderCode: "stripe",
+				InternalTxID: "tx_existing",
+				Amount:       amt1000,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newMockPaymentRepo()
+			repo.attemptsByTxID["tx_existing"] = model.PaymentAttempt{
+				AttemptID:    1,
+				InvoiceID:    1,
+				ProviderCode: "fake",
+				InternalTxID: "tx_existing",
+				Amount:       amt1000,
+				Status:       model.StatusSuccess,
+			}
+			svc := service.NewService(repo)
+
+			_, created, err := svc.CreatePaymentAttempt(context.Background(), nil, tt.input)
+			if !errors.Is(err, repository.ErrIdempotencyKeyMismatch) {
+				t.Fatalf("expected ErrIdempotencyKeyMismatch, got %v", err)
+			}
+			if created {
+				t.Fatalf("expected created to be false")
+			}
+		})
+	}
+}
+
+func TestUpdatePaymentAttemptResult_AlreadyFinalizedReturnsError(t *testing.T) {
+	repo := newMockPaymentRepo()
+	amt, _ := money.New(1000, "USD")
+	repo.attemptsByTxID["tx_done"] = model.PaymentAttempt{
+		AttemptID:    5,
+		InvoiceID:    1,
+		ProviderCode: "fake",
+		InternalTxID: "tx_done",
+		Amount:       amt,
+		Status:       model.StatusSuccess,
+	}
+
+	svc := service.NewService(repo)
+	err := svc.UpdatePaymentAttemptResult(context.Background(), nil, model.UpdatePaymentAttemptResultInput{
+		AttemptID: 5,
+		Status:    model.StatusFailed,
+	})
+	if !errors.Is(err, repository.ErrAttemptAlreadyFinalized) {
+		t.Fatalf("expected ErrAttemptAlreadyFinalized, got %v", err)
 	}
 }

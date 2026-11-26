@@ -40,7 +40,7 @@ SELECT
 FROM payment_attempts
 WHERE invoice_id = $1 AND status = 'PENDING';
 
--- name: UpdatePaymentAttemptResult :exec
+-- name: UpdatePaymentAttemptResult :execrows
 UPDATE payment_attempts
 SET
     status = $2,

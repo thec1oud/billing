@@ -37,6 +37,12 @@ type PPIService interface {
 		amount money.Money,
 		idempotencyKey string,
 	) (ppi.ChargeResult, error)
+	LookupCharge(
+		ctx context.Context,
+		providerCode string,
+		invoiceID int64,
+		idempotencyKey string,
+	) (ppi.ChargeResult, bool, error)
 }
 
 type PurchasableItemService interface {
@@ -194,6 +200,15 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 	}
 
 	if inv.Status != model.StatusOpen {
+		result, found, lookupErr := h.ppi.LookupCharge(r.Context(), in.ProviderCode, invoiceID, in.IdempotencyKey)
+		if lookupErr != nil {
+			response.WriteError(w, h.log, "lookup payment charge failed", lookupErr)
+			return
+		}
+		if found {
+			writeChargeResult(w, result)
+			return
+		}
 		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
 			Code:    "INVALID_STATUS",
 			Message: "Invoice must be in OPEN status to be paid",
@@ -207,6 +222,10 @@ func (h *InvoiceHandler) HandlePayInvoice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	writeChargeResult(w, result)
+}
+
+func writeChargeResult(w http.ResponseWriter, result ppi.ChargeResult) {
 	if result.Status == ppi.ChargeStatusFailed {
 		response.Write(w, http.StatusBadRequest, &response.ErrorResponse{
 			Code:    "PAYMENT_FAILED",

@@ -274,7 +274,7 @@ func (q *Queries) ListPaymentAttemptsByInvoiceID(ctx context.Context, invoiceID 
 	return items, nil
 }
 
-const updatePaymentAttemptResult = `-- name: UpdatePaymentAttemptResult :exec
+const updatePaymentAttemptResult = `-- name: UpdatePaymentAttemptResult :execrows
 UPDATE payment_attempts
 SET
     status = $2,
@@ -291,12 +291,15 @@ type UpdatePaymentAttemptResultParams struct {
 	RawResponse  []byte      `json:"raw_response"`
 }
 
-func (q *Queries) UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error {
-	_, err := q.db.Exec(ctx, updatePaymentAttemptResult,
+func (q *Queries) UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePaymentAttemptResult,
 		arg.AttemptID,
 		arg.Status,
 		arg.ProviderTxID,
 		arg.RawResponse,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
