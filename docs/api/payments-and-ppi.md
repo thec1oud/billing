@@ -13,13 +13,13 @@ Initiates an immediate charge or checkout session with a payment gateway for an 
 ### Request Body Schema
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `provider` | string | **Yes** | Gateway code (e.g. `"fake"`, `"chapa"`, `"stripe"`). |
+| `provider_code` | string | **Yes** | Gateway code (e.g. `"fake"`, `"chapa"`, `"stripe"`). |
 | `idempotency_key` | string | **Yes** | Client-supplied unique key for transaction deduplication. |
 
 ### Example Request
 ```json
 {
-  "provider": "fake",
+  "provider_code": "fake",
   "idempotency_key": "pay_inv_1_9f8e7d6c"
 }
 ```
