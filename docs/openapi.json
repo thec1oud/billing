@@ -675,31 +675,6 @@
         }
       }
     },
-    "/api/v1/payments/charge": {
-      "post": {
-        "tags": ["Payments"],
-        "summary": "Direct gateway charge",
-        "operationId": "directCharge",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/DirectChargeInput" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Charge executed",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ChargeResult" }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/webhooks/{provider}": {
       "post": {
         "tags": ["Webhooks"],
@@ -1079,16 +1054,6 @@
           "internal_tx_id": { "type": "string", "example": "tx_inv1_1727865600" },
           "provider_reference": { "type": "string", "example": "fake_ref_6b1e5a28-3e4e-4f7d-8f2c-e5d0a68c92a1" },
           "checkout_url": { "type": "string", "example": "https://checkout.fake-provider.com/pay/fake_ref_6b1e5a28-3e4e-4f7d-8f2c-e5d0a68c92a1" }
-        }
-      },
-      "DirectChargeInput": {
-        "type": "object",
-        "required": ["provider", "invoice_id", "amount_minor", "currency"],
-        "properties": {
-          "provider": { "type": "string", "example": "fake" },
-          "invoice_id": { "type": "integer", "example": 1 },
-          "amount_minor": { "type": "integer", "example": 1000 },
-          "currency": { "type": "string", "example": "ETB" }
         }
       },
       "ChargeResult": {

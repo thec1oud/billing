@@ -4,27 +4,23 @@ The Payments API and Payment Provider Interface (PPI) subsystem abstract externa
 
 ---
 
-## 1. Direct Payment Charge
+## 1. Invoice Payment Charge
 
-`POST /api/v1/payments/charge`
+`POST /api/v1/invoices/{invoiceID}/pay`
 
-Initiates an immediate charge or checkout session with a payment gateway for an invoice.
+Initiates an immediate charge or checkout session with a payment gateway for an open invoice. The charge amount is derived directly from the invoice's `amount_due`.
 
 ### Request Body Schema
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `provider` | string | **Yes** | Gateway code (e.g. `"fake"`, `"chapa"`, `"stripe"`). |
-| `invoice_id` | integer | **Yes** | ID of the target invoice (> 0). |
-| `amount_minor` | integer | **Yes** | Charge amount in minor currency units (> 0). |
-| `currency` | string | **Yes** | 3-letter ISO 4217 currency code. |
+| `provider_code` | string | **Yes** | Gateway code (e.g. `"fake"`, `"chapa"`, `"stripe"`). |
+| `idempotency_key` | string | **Yes** | Client-supplied unique key for transaction deduplication. |
 
 ### Example Request
 ```json
 {
-  "provider": "fake",
-  "invoice_id": 1,
-  "amount_minor": 1000,
-  "currency": "ETB"
+  "provider_code": "fake",
+  "idempotency_key": "pay_inv_1_9f8e7d6c"
 }
 ```
 

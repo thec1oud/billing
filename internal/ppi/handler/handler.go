@@ -2,32 +2,27 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/thec1oud/billing/internal/infra/api/response"
 	"github.com/thec1oud/billing/internal/infra/logger"
 	"github.com/thec1oud/billing/internal/ppi"
-	"github.com/thec1oud/billing/internal/shared/money"
 )
-
 
 type PPIService interface {
 	GetAdapter(providerCode string) (ppi.Provider, bool)
 	ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) (bool, error)
 	MarkWebhookPublished(ctx context.Context, webhookID string) error
-	ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error)
 }
 
 type WebhookService = PPIService
 
 type PPIHandler struct {
-	svc    PPIService
-	log    *slog.Logger
+	svc PPIService
+	log *slog.Logger
 }
 
 type WebhookHandler = PPIHandler
@@ -36,8 +31,8 @@ func NewPPIHandler(
 	svc PPIService,
 ) *PPIHandler {
 	return &PPIHandler{
-		svc:    svc,
-		log:    logger.ForComponent("ppi_handler"),
+		svc: svc,
+		log: logger.ForComponent("ppi_handler"),
 	}
 }
 
@@ -45,40 +40,6 @@ func NewWebhookHandler(
 	svc PPIService,
 ) *PPIHandler {
 	return NewPPIHandler(svc)
-}
-
-type AttemptPaymentRequest struct {
-	ProviderCode string `json:"provider"`
-	InvoiceID    int64  `json:"invoice_id"`
-	AmountMinor  int64  `json:"amount_minor"`
-	Currency     string `json:"currency"`
-}
-
-func (h *PPIHandler) HandleAttemptPayment(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	var req AttemptPaymentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.log.Warn("Failed to decode checkout payload", logger.Err(err))
-		response.Write(w, http.StatusBadRequest, "Invalid JSON payload")
-		return
-	}
-
-	amt := money.Money{
-		AmountMinor: req.AmountMinor,
-		Currency:    money.Currency(req.Currency),
-	}
-
-	idempotencyKey := fmt.Sprintf("tx_%d_%d", req.InvoiceID, time.Now().UnixNano())
-
-	result, err := h.svc.ChargePaymentMethod(ctx, req.ProviderCode, req.InvoiceID, amt, idempotencyKey)
-	if err != nil {
-		h.log.Error("Failed to charge payment method", logger.Err(err))
-		response.Write(w, http.StatusInternalServerError, "Failed to initiate checkout")
-		return
-	}
-
-	response.Write(w, http.StatusOK, result)
 }
 
 func (h *PPIHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
