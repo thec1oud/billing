@@ -66,4 +66,10 @@ type PPI interface {
 		amount money.Money,
 		idempotencyKey string,
 	) (ChargeResult, error)
+	LookupCharge(
+		ctx context.Context,
+		providerCode string,
+		invoiceID int64,
+		idempotencyKey string,
+	) (ChargeResult, bool, error)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	attemptmodel "github.com/thec1oud/billing/internal/payment_attempt/model"
+	attemptrepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
 	attemptsrv "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi"
 	"github.com/thec1oud/billing/internal/ppi/repository"
@@ -82,7 +83,7 @@ func (s *Service) ChargePaymentMethod(
 		"idempotency_key": idempotencyKey,
 		"provider_code":   providerCode,
 	})
-	attempt, err := s.attemptSvc.CreatePaymentAttempt(ctx, tx, attemptmodel.CreatePaymentAttemptInput{
+	attempt, created, err := s.attemptSvc.CreatePaymentAttempt(ctx, tx, attemptmodel.CreatePaymentAttemptInput{
 		InvoiceID:    invoiceID,
 		ProviderCode: providerCode,
 		InternalTxID: idempotencyKey,
@@ -90,7 +91,24 @@ func (s *Service) ChargePaymentMethod(
 		RawRequest:   rawReq,
 	})
 	if err != nil {
+		if errors.Is(err, attemptrepo.ErrDuplicateInternalTxID) || errors.Is(err, attemptrepo.ErrPendingAttemptExists) {
+			_ = tx.Rollback(ctx)
+			existing, lookupErr := s.attemptSvc.GetMatchingAttemptByInternalTxID(
+				ctx, s.db, invoiceID, providerCode, amount, idempotencyKey,
+			)
+			if lookupErr == nil {
+				return chargeResultFromAttempt(existing), nil
+			}
+			if !errors.Is(lookupErr, attemptrepo.ErrPaymentAttemptNotFound) {
+				return ppi.ChargeResult{}, lookupErr
+			}
+		}
 		return ppi.ChargeResult{}, fmt.Errorf("failed to create payment attempt record in tx: %w", err)
+	}
+
+	if !created {
+		_ = tx.Rollback(ctx)
+		return chargeResultFromAttempt(attempt), nil
 	}
 
 	// 3. Commit DB Transaction so it's visible to any synchronous webhooks
@@ -106,7 +124,7 @@ func (s *Service) ChargePaymentMethod(
 	if err != nil {
 		return ppi.ChargeResult{}, fmt.Errorf("failed to begin update transaction: %w", err)
 	}
-	defer updateTx.Rollback(ctx)
+	defer updateTx.Rollback(ctx) //nolint:errcheck
 
 	// 6. Handle provider failure: mark attempt as FAILED and surface the error
 	if adapterErr != nil || result.Status == ppi.ChargeStatusFailed {
@@ -115,6 +133,9 @@ func (s *Service) ChargePaymentMethod(
 			Status:      attemptmodel.StatusFailed,
 			RawResponse: result.RawResponse,
 		})
+		if errors.Is(updateErr, attemptrepo.ErrAttemptAlreadyFinalized) {
+			return s.resolveConcurrentFinalize(ctx, updateTx, idempotencyKey)
+		}
 
 		var commitErr error
 		if updateErr == nil {
@@ -159,6 +180,9 @@ func (s *Service) ChargePaymentMethod(
 		ProviderTxID: provRef,
 		RawResponse:  result.RawResponse,
 	})
+	if errors.Is(err, attemptrepo.ErrAttemptAlreadyFinalized) {
+		return s.resolveConcurrentFinalize(ctx, updateTx, idempotencyKey)
+	}
 	if err != nil {
 		return result, fmt.Errorf("provider charge succeeded but failed to update attempt record in tx (needs reconciliation): %w", err)
 	}
@@ -169,6 +193,54 @@ func (s *Service) ChargePaymentMethod(
 	}
 
 	return result, nil
+}
+
+// LookupCharge returns a previously recorded charge result for idempotent API replays
+// without creating a new attempt or calling the payment provider.
+func (s *Service) LookupCharge(
+	ctx context.Context,
+	providerCode string,
+	invoiceID int64,
+	idempotencyKey string,
+) (ppi.ChargeResult, bool, error) {
+	attempt, err := s.attemptSvc.GetAttemptByInternalTxID(ctx, s.db, idempotencyKey)
+	if err != nil {
+		if errors.Is(err, attemptrepo.ErrPaymentAttemptNotFound) {
+			return ppi.ChargeResult{}, false, nil
+		}
+		return ppi.ChargeResult{}, false, fmt.Errorf("lookup charge by idempotency key: %w", err)
+	}
+	if err := attemptsrv.ValidateAttemptMatches(attempt, invoiceID, providerCode, attempt.Amount); err != nil {
+		return ppi.ChargeResult{}, false, err
+	}
+	return chargeResultFromAttempt(attempt), true, nil
+}
+
+func (s *Service) resolveConcurrentFinalize(
+	ctx context.Context,
+	updateTx pgx.Tx,
+	idempotencyKey string,
+) (ppi.ChargeResult, error) {
+	_ = updateTx.Rollback(ctx)
+	latest, err := s.attemptSvc.GetAttemptByInternalTxID(ctx, s.db, idempotencyKey)
+	if err != nil {
+		return ppi.ChargeResult{}, fmt.Errorf("fetch already-finalized payment attempt: %w", err)
+	}
+	return chargeResultFromAttempt(latest), nil
+}
+
+func chargeResultFromAttempt(attempt attemptmodel.PaymentAttempt) ppi.ChargeResult {
+	var provRef string
+	if attempt.ProviderTxID != nil {
+		provRef = *attempt.ProviderTxID
+	}
+
+	return ppi.ChargeResult{
+		Status:            ppi.ChargeStatus(attempt.Status),
+		IdempotencyKey:    attempt.InternalTxID,
+		ProviderReference: provRef,
+		RawResponse:       attempt.RawResponse,
+	}
 }
 
 func (s *Service) ProcessWebhook(ctx context.Context, payload ppi.ProviderWebhookPayload) (bool, error) {

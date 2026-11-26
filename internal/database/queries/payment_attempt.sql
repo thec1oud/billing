@@ -40,14 +40,14 @@ SELECT
 FROM payment_attempts
 WHERE invoice_id = $1 AND status = 'PENDING';
 
--- name: UpdatePaymentAttemptResult :exec
+-- name: UpdatePaymentAttemptResult :execrows
 UPDATE payment_attempts
 SET
     status = $2,
     provider_tx_id = COALESCE($3, provider_tx_id),
     raw_response = COALESCE($4, raw_response),
     updated_at = NOW()
-WHERE attempt_id = $1;
+WHERE attempt_id = $1 AND status = 'PENDING';
 
 -- name: ListPaymentAttemptsByInvoiceID :many
 SELECT

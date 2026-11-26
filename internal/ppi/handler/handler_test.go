@@ -16,8 +16,6 @@ import (
 	"github.com/thec1oud/billing/internal/shared/money"
 )
 
-
-
 type mockService struct {
 	adapters       map[string]ppi.Provider
 	processed      []ppi.ProviderWebhookPayload
@@ -104,11 +102,7 @@ func TestWebhookHandler_SuccessFlow(t *testing.T) {
 	if resp["status"] != "processed" {
 		t.Errorf("expected status 'processed', got %q", resp["status"])
 	}
-
-
 }
-
-
 
 func TestWebhookHandler_DuplicatePublishedEventIgnored(t *testing.T) {
 	svc := newMockService()

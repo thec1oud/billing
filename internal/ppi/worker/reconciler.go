@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -193,6 +194,10 @@ func (r *Reconciler) reconcileAttempt(ctx context.Context, attempt attemptmodel.
 	})
 
 	if err != nil {
+		if errors.Is(err, attemptrepo.ErrAttemptAlreadyFinalized) {
+			r.log.Info("Stale attempt was finalized concurrently", slog.Int64("attempt_id", attempt.AttemptID))
+			return
+		}
 		r.log.Error("Failed to update stale payment attempt", slog.Int64("attempt_id", attempt.AttemptID), logger.Err(err))
 	} else {
 		r.log.Info(

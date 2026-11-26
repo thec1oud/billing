@@ -101,7 +101,7 @@ type Querier interface {
 	UpdateAccountStatus(ctx context.Context, arg UpdateAccountStatusParams) error
 	UpdateAccountStatusFrom(ctx context.Context, arg UpdateAccountStatusFromParams) (int64, error)
 	UpdateInstanceState(ctx context.Context, arg UpdateInstanceStateParams) (int64, error)
-	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) error
+	UpdatePaymentAttemptResult(ctx context.Context, arg UpdatePaymentAttemptResultParams) (int64, error)
 	// Updates balance details (partial payments, dunning adjustments) without touching status code.
 	UpdatePaymentBalances(ctx context.Context, arg UpdatePaymentBalancesParams) (int64, error)
 	UpdatePlanDurationTariff(ctx context.Context, arg UpdatePlanDurationTariffParams) (PlanDuration, error)

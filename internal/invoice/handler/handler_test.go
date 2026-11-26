@@ -54,11 +54,41 @@ func (m *mockInvoiceService) FinalizeInvoice(ctx context.Context, actor eventmod
 }
 
 type mockPPIService struct {
-	charge func(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error)
+	charge func(
+		ctx context.Context,
+		providerCode string,
+		invoiceID int64,
+		amount money.Money,
+		idempotencyKey string,
+	) (ppi.ChargeResult, error)
+	lookup func(
+		ctx context.Context,
+		providerCode string,
+		invoiceID int64,
+		idempotencyKey string,
+	) (ppi.ChargeResult, bool, error)
 }
 
-func (m *mockPPIService) ChargePaymentMethod(ctx context.Context, providerCode string, invoiceID int64, amount money.Money, idempotencyKey string) (ppi.ChargeResult, error) {
+func (m *mockPPIService) ChargePaymentMethod(
+	ctx context.Context,
+	providerCode string,
+	invoiceID int64,
+	amount money.Money,
+	idempotencyKey string,
+) (ppi.ChargeResult, error) {
 	return m.charge(ctx, providerCode, invoiceID, amount, idempotencyKey)
+}
+
+func (m *mockPPIService) LookupCharge(
+	ctx context.Context,
+	providerCode string,
+	invoiceID int64,
+	idempotencyKey string,
+) (ppi.ChargeResult, bool, error) {
+	if m.lookup != nil {
+		return m.lookup(ctx, providerCode, invoiceID, idempotencyKey)
+	}
+	return ppi.ChargeResult{}, false, nil
 }
 
 type mockItemService struct {
@@ -168,4 +198,71 @@ func TestHandleGenerateDevInvoice(t *testing.T) {
 	h.HandleGenerateDevInvoice(rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+func TestHandlePayInvoice_ReplayOnPaidInvoice(t *testing.T) {
+	svc := &mockInvoiceService{
+		getFn: func(ctx context.Context, invoiceID int64) (model.Invoice, error) {
+			return model.Invoice{InvoiceID: invoiceID, Status: model.StatusPaid}, nil
+		},
+	}
+
+	chargeCalled := false
+	ppiSvc := &mockPPIService{
+		charge: func(
+			ctx context.Context,
+			providerCode string,
+			invoiceID int64,
+			amount money.Money,
+			idempotencyKey string,
+		) (ppi.ChargeResult, error) {
+			chargeCalled = true
+			return ppi.ChargeResult{}, nil
+		},
+		lookup: func(
+			ctx context.Context,
+			providerCode string,
+			invoiceID int64,
+			idempotencyKey string,
+		) (ppi.ChargeResult, bool, error) {
+			if idempotencyKey == "paid-replay-key" && invoiceID == 10 {
+				return ppi.ChargeResult{
+					Status:            ppi.ChargeStatusSuccess,
+					IdempotencyKey:    "paid-replay-key",
+					ProviderReference: "prov-paid-123",
+				}, true, nil
+			}
+			return ppi.ChargeResult{}, false, nil
+		},
+	}
+
+	h := NewInvoiceHandler(svc, ppiSvc)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/invoices/{id}/pay", h.HandlePayInvoice)
+
+	// Replay with original key succeeds with 200 and stored result without calling ChargePaymentMethod.
+	replayBody, _ := json.Marshal(PayInvoiceInput{ProviderCode: "fake", IdempotencyKey: "paid-replay-key"})
+	reqReplay := httptest.NewRequest(http.MethodPost, "/api/v1/invoices/10/pay", bytes.NewReader(replayBody))
+	recReplay := httptest.NewRecorder()
+	mux.ServeHTTP(recReplay, reqReplay)
+
+	assert.Equal(t, http.StatusOK, recReplay.Code)
+	assert.False(t, chargeCalled)
+
+	var envelope struct {
+		Data PayInvoiceResponse `json:"data"`
+	}
+	err := json.NewDecoder(recReplay.Body).Decode(&envelope)
+	assert.NoError(t, err)
+	assert.Equal(t, "SUCCESS", envelope.Data.Status)
+	assert.Equal(t, "prov-paid-123", envelope.Data.ProviderReference)
+
+	// New key on an already-PAID invoice is still rejected with 400 INVALID_STATUS.
+	newBody, _ := json.Marshal(PayInvoiceInput{ProviderCode: "fake", IdempotencyKey: "brand-new-key"})
+	reqNew := httptest.NewRequest(http.MethodPost, "/api/v1/invoices/10/pay", bytes.NewReader(newBody))
+	recNew := httptest.NewRecorder()
+	mux.ServeHTTP(recNew, reqNew)
+
+	assert.Equal(t, http.StatusBadRequest, recNew.Code)
+	assert.False(t, chargeCalled)
 }

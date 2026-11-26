@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/thec1oud/billing/internal/payment_attempt/model"
 	"github.com/thec1oud/billing/internal/payment_attempt/repository"
+	"github.com/thec1oud/billing/internal/shared/money"
 )
 
 var (
@@ -49,17 +51,70 @@ func (s *Service) GetAttemptByInternalTxID(
 	return s.repo.GetByInternalTxID(ctx, db, internalTxID)
 }
 
+// ValidateAttemptMatches ensures a replayed idempotency key uses the same invoice, provider, and amount.
+func ValidateAttemptMatches(
+	existing model.PaymentAttempt,
+	invoiceID int64,
+	providerCode string,
+	amount money.Money,
+) error {
+	if existing.InvoiceID != invoiceID ||
+		existing.Amount.AmountMinor != amount.AmountMinor ||
+		existing.Amount.Currency != amount.Currency ||
+		!strings.EqualFold(existing.ProviderCode, providerCode) {
+		return fmt.Errorf(
+			"%w: attempt invoice=%d provider=%s amount=%d %s",
+			repository.ErrIdempotencyKeyMismatch,
+			existing.InvoiceID,
+			existing.ProviderCode,
+			existing.Amount.AmountMinor,
+			existing.Amount.Currency,
+		)
+	}
+	return nil
+}
+
+// GetMatchingAttemptByInternalTxID loads an existing attempt by key and verifies its invoice, provider, and amount match.
+func (s *Service) GetMatchingAttemptByInternalTxID(
+	ctx context.Context,
+	db repository.DBTX,
+	invoiceID int64,
+	providerCode string,
+	amount money.Money,
+	internalTxID string,
+) (model.PaymentAttempt, error) {
+	existing, err := s.repo.GetByInternalTxID(ctx, db, internalTxID)
+	if err != nil {
+		return model.PaymentAttempt{}, err
+	}
+	if err := ValidateAttemptMatches(existing, invoiceID, providerCode, amount); err != nil {
+		return model.PaymentAttempt{}, err
+	}
+	return existing, nil
+}
+
 func (s *Service) CreatePaymentAttempt(
 	ctx context.Context,
 	db repository.DBTX,
 	input model.CreatePaymentAttemptInput,
-) (model.PaymentAttempt, error) {
+) (model.PaymentAttempt, bool, error) {
 	existing, err := s.repo.GetByInternalTxID(ctx, db, input.InternalTxID)
 	if err == nil {
-		return existing, nil
+		if matchErr := ValidateAttemptMatches(existing, input.InvoiceID, input.ProviderCode, input.Amount); matchErr != nil {
+			return model.PaymentAttempt{}, false, matchErr
+		}
+		return existing, false, nil
 	}
 	if !errors.Is(err, repository.ErrPaymentAttemptNotFound) {
-		return model.PaymentAttempt{}, fmt.Errorf("check internal tx id idempotency: %w", err)
+		return model.PaymentAttempt{}, false, fmt.Errorf("check internal tx id idempotency: %w", err)
+	}
+
+	pending, err := s.repo.GetPendingByInvoiceID(ctx, db, input.InvoiceID)
+	if err == nil {
+		return pending, false, repository.ErrPendingAttemptExists
+	}
+	if !errors.Is(err, repository.ErrPaymentAttemptNotFound) {
+		return model.PaymentAttempt{}, false, fmt.Errorf("check pending attempt: %w", err)
 	}
 
 	attempt := model.PaymentAttempt{
@@ -73,10 +128,10 @@ func (s *Service) CreatePaymentAttempt(
 
 	created, err := s.repo.Create(ctx, db, attempt)
 	if err != nil {
-		return model.PaymentAttempt{}, err
+		return model.PaymentAttempt{}, false, err
 	}
 
-	return created, nil
+	return created, true, nil
 }
 
 func (s *Service) UpdatePaymentAttemptResult(
