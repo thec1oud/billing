@@ -5,279 +5,212 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 
+	accountrepo "github.com/thec1oud/billing/internal/account/repository"
+	accountsvc "github.com/thec1oud/billing/internal/account/service"
+	"github.com/thec1oud/billing/internal/config"
+	"github.com/thec1oud/billing/internal/infra/api"
 	invoicehandler "github.com/thec1oud/billing/internal/invoice/handler"
-	invoicemodel "github.com/thec1oud/billing/internal/invoice/model"
-	attemptmodel "github.com/thec1oud/billing/internal/payment_attempt/model"
+	invoicerepo "github.com/thec1oud/billing/internal/invoice/repository"
+	invoicesvc "github.com/thec1oud/billing/internal/invoice/service"
 	attemptrepo "github.com/thec1oud/billing/internal/payment_attempt/repository"
-	attemptservice "github.com/thec1oud/billing/internal/payment_attempt/service"
-	"github.com/thec1oud/billing/internal/ppi"
+	attemptsvc "github.com/thec1oud/billing/internal/payment_attempt/service"
 	"github.com/thec1oud/billing/internal/ppi/adapters/fake"
-	ppihandler "github.com/thec1oud/billing/internal/ppi/handler"
-	ppiservice "github.com/thec1oud/billing/internal/ppi/service"
-	eventmodel "github.com/thec1oud/billing/internal/shared/eventstore/model"
-	"github.com/thec1oud/billing/internal/shared/money"
+	ppirepo "github.com/thec1oud/billing/internal/ppi/repository"
+	ppisvc "github.com/thec1oud/billing/internal/ppi/service"
+	eventrepo "github.com/thec1oud/billing/internal/shared/eventstore/repository"
+	eventsvc "github.com/thec1oud/billing/internal/shared/eventstore/service"
+	sm_engine "github.com/thec1oud/billing/internal/shared/statemachine/engine"
+	sm_repo "github.com/thec1oud/billing/internal/shared/statemachine/repository"
+	"github.com/thec1oud/billing/internal/shared/testutil"
 )
 
-type threadSafeTx struct {
-	pgx.Tx
-}
-
-func (t *threadSafeTx) Commit(ctx context.Context) error {
-	return nil
-}
-
-func (t *threadSafeTx) Rollback(ctx context.Context) error {
-	return nil
-}
-
-type threadSafeDB struct {
-	ppi.DBTX
-	mu  sync.Mutex
-	txs []*threadSafeTx
-}
-
-func (m *threadSafeDB) Begin(ctx context.Context) (pgx.Tx, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	tx := &threadSafeTx{}
-	m.txs = append(m.txs, tx)
-	return tx, nil
-}
-
-type threadSafePaymentRepo struct {
-	mu               sync.Mutex
-	attemptsByTxID   map[string]attemptmodel.PaymentAttempt
-	pendingByInvoice map[int64]attemptmodel.PaymentAttempt
-	createdAttempts  []attemptmodel.PaymentAttempt
-}
-
-func newThreadSafePaymentRepo() *threadSafePaymentRepo {
-	return &threadSafePaymentRepo{
-		attemptsByTxID:   make(map[string]attemptmodel.PaymentAttempt),
-		pendingByInvoice: make(map[int64]attemptmodel.PaymentAttempt),
-	}
-}
-
-func (r *threadSafePaymentRepo) Create(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	attempt attemptmodel.PaymentAttempt,
-) (attemptmodel.PaymentAttempt, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if _, exists := r.pendingByInvoice[attempt.InvoiceID]; exists {
-		return attemptmodel.PaymentAttempt{}, attemptrepo.ErrPendingAttemptExists
-	}
-
-	attempt.AttemptID = int64(len(r.createdAttempts) + 1)
-	attempt.CreatedAt = time.Now()
-	attempt.UpdatedAt = time.Now()
-	r.createdAttempts = append(r.createdAttempts, attempt)
-	r.attemptsByTxID[attempt.InternalTxID] = attempt
-	if attempt.Status == attemptmodel.StatusPending {
-		r.pendingByInvoice[attempt.InvoiceID] = attempt
-	}
-	return attempt, nil
-}
-
-func (r *threadSafePaymentRepo) GetByID(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	attemptID int64,
-) (attemptmodel.PaymentAttempt, error) {
-	return attemptmodel.PaymentAttempt{}, attemptrepo.ErrPaymentAttemptNotFound
-}
-
-func (r *threadSafePaymentRepo) GetByInternalTxID(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	internalTxID string,
-) (attemptmodel.PaymentAttempt, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	att, exists := r.attemptsByTxID[internalTxID]
-	if !exists {
-		return attemptmodel.PaymentAttempt{}, attemptrepo.ErrPaymentAttemptNotFound
-	}
-	return att, nil
-}
-
-func (r *threadSafePaymentRepo) GetByProviderTxID(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	providerTxID string,
-) (attemptmodel.PaymentAttempt, error) {
-	return attemptmodel.PaymentAttempt{}, attemptrepo.ErrPaymentAttemptNotFound
-}
-
-func (r *threadSafePaymentRepo) GetPendingByInvoiceID(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	invoiceID int64,
-) (attemptmodel.PaymentAttempt, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	att, exists := r.pendingByInvoice[invoiceID]
-	if !exists {
-		return attemptmodel.PaymentAttempt{}, attemptrepo.ErrPaymentAttemptNotFound
-	}
-	return att, nil
-}
-
-func (r *threadSafePaymentRepo) UpdateResult(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	attemptID int64,
-	status attemptmodel.Status,
-	providerTxID *string,
-	rawResponse json.RawMessage,
-) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for k, att := range r.attemptsByTxID {
-		if att.AttemptID == attemptID {
-			att.Status = status
-			att.ProviderTxID = providerTxID
-			att.RawResponse = rawResponse
-			r.attemptsByTxID[k] = att
-			if status != attemptmodel.StatusPending {
-				delete(r.pendingByInvoice, att.InvoiceID)
-			}
-			break
-		}
-	}
-	return nil
-}
-
-func (r *threadSafePaymentRepo) ListByInvoiceID(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	invoiceID int64,
-) ([]attemptmodel.PaymentAttempt, error) {
-	return nil, nil
-}
-
-func (r *threadSafePaymentRepo) DeleteByAttemptID(
-	ctx context.Context,
-	db attemptrepo.DBTX,
-	attemptID int64,
-) error {
-	return nil
-}
-
-type mockInvoiceService struct{}
-
-func (m *mockInvoiceService) Get(
-	ctx context.Context,
-	invoiceID int64,
-) (invoicemodel.Invoice, error) {
-	return invoicemodel.Invoice{
-		InvoiceID: invoiceID,
-		Status:    invoicemodel.StatusOpen,
-		AmountDue: money.Money{AmountMinor: 1000, Currency: "USD"},
-	}, nil
-}
-
-func (m *mockInvoiceService) CreateDraftInvoice(
-	ctx context.Context,
-	actor eventmodel.Actor,
-	accountID int64,
-	currency money.Currency,
-	items []invoicemodel.LineItem,
-) (invoicemodel.Invoice, error) {
-	return invoicemodel.Invoice{}, nil
-}
-
-func (m *mockInvoiceService) FinalizeInvoice(
-	ctx context.Context,
-	actor eventmodel.Actor,
-	invoiceID int64,
-	paymentTermsDays int,
-) (invoicemodel.Invoice, error) {
-	return invoicemodel.Invoice{}, nil
-}
-
 func TestConcurrentWebhooksAndInvoicePayRequests(t *testing.T) {
-	db := &threadSafeDB{}
-	paymentRepo := newThreadSafePaymentRepo()
-	attemptSvc := attemptservice.NewService(paymentRepo)
+	ctx := context.Background()
+	pool := testutil.NewPostgresContainer(t)
 
-	ppiSvc := ppiservice.NewService(db, nil, attemptSvc, nil)
-	ppiSvc.RegisterAdapter(fake.NewFakeAdapter())
+	const workers = 20
 
-	invSvc := &mockInvoiceService{}
+	// Seed payment_provider, account, and OPEN invoices directly in Postgres.
+	_, err := pool.Exec(ctx, `
+		INSERT INTO payment_provider (payment_provider_code)
+		VALUES ('fake')
+		ON CONFLICT (payment_provider_code) DO NOTHING;
+	`)
+	require.NoError(t, err)
 
-	invoiceH := invoicehandler.NewInvoiceHandler(invSvc, ppiSvc)
-	ppiH := ppihandler.NewPPIHandler(ppiSvc)
+	var accountID int64
+	err = pool.QueryRow(ctx, `
+		INSERT INTO accounts (currency, timezone)
+		VALUES ('ETB', 'Africa/Addis_Ababa')
+		RETURNING account_id;
+	`).Scan(&accountID)
+	require.NoError(t, err)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/invoices/{invoiceID}/pay", invoiceH.HandlePayInvoice)
-	mux.HandleFunc("POST /api/v1/webhooks/{provider}", ppiH.HandleWebhook)
+	invoiceIDs := make([]int64, workers)
+	for i := range workers {
+		err = pool.QueryRow(ctx, `
+			INSERT INTO invoices (account_id, invoice_status_code, currency, total_amount, amount_due)
+			VALUES ($1, 'OPEN', 'ETB', 1000, 1000)
+			RETURNING invoice_id;
+		`, accountID).Scan(&invoiceIDs[i])
+		require.NoError(t, err)
+	}
 
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
+	// Wire real repositories, services, and HTTP server backed by pgxpool.Pool.
+	eventStore := eventrepo.NewPostgresEventStore(pool)
+	eventService := eventsvc.NewService(eventStore)
+	smRepo := sm_repo.NewPostgresRepository(pool)
+	smEngine := sm_engine.NewEngine(pool, smRepo, nil)
 
-	const concurrency = 20
+	accountRepo := accountrepo.New(pool)
+	accountService := accountsvc.NewWithEvents(accountRepo, eventService, smEngine)
+
+	attemptRepo := attemptrepo.NewPostgresRepository(pool)
+	attemptService := attemptsvc.NewService(attemptRepo)
+
+	ppiRepo := ppirepo.NewPostgresRepository()
+	ppiService := ppisvc.NewService(pool, ppiRepo, attemptService, nil)
+	ppiService.RegisterAdapter(fake.NewFakeAdapter())
+
+	invoiceRepo := invoicerepo.NewPostgresRepository(pool)
+	invoiceService := invoicesvc.NewService(pool, eventService, ppiService, invoiceRepo, smEngine)
+
+	srv := api.NewServer(&config.Config{AppPort: "0"}, api.Deps{
+		Pool:           pool,
+		AccountService: accountService,
+		InvoiceService: invoiceService,
+		PPIService:     ppiService,
+	})
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	start := make(chan struct{})
+	errs := make(chan error, workers*3)
 	var wg sync.WaitGroup
-	wg.Add(concurrency * 2)
+	wg.Add(workers * 3)
 
-	// Fire concurrent /invoices/{id}/pay requests
-	for i := 0; i < concurrency; i++ {
-		go func(workerID int) {
+	// 1. Fire concurrent POST /api/v1/invoices/{id}/pay requests.
+	for i := range workers {
+		go func(workerID int, invID int64) {
 			defer wg.Done()
-			body, _ := json.Marshal(invoicehandler.PayInvoiceInput{
+			<-start
+
+			body, marshalErr := json.Marshal(invoicehandler.PayInvoiceInput{
 				ProviderCode:   "fake",
 				IdempotencyKey: fmt.Sprintf("tx_worker_%d", workerID),
 			})
-			resp, err := ts.Client().Post(
-				fmt.Sprintf("%s/api/v1/invoices/%d/pay", ts.URL, workerID+1),
+			if marshalErr != nil {
+				errs <- fmt.Errorf("pay worker %d marshal: %w", workerID, marshalErr)
+				return
+			}
+
+			resp, postErr := ts.Client().Post(
+				fmt.Sprintf("%s/api/v1/invoices/%d/pay", ts.URL, invID),
 				"application/json",
 				bytes.NewReader(body),
 			)
-			if err != nil {
-				t.Errorf("worker %d pay error: %v", workerID, err)
+			if postErr != nil {
+				errs <- fmt.Errorf("pay worker %d post: %w", workerID, postErr)
 				return
 			}
-			_ = resp.Body.Close()
-		}(i)
+			respBody, _ := io.ReadAll(resp.Body)
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				errs <- fmt.Errorf("pay worker %d close body: %w", workerID, closeErr)
+				return
+			}
+			if resp.StatusCode != http.StatusOK {
+				errs <- fmt.Errorf("pay worker %d status=%d body=%s", workerID, resp.StatusCode, string(respBody))
+			}
+		}(i, invoiceIDs[i])
 	}
 
-	// Fire concurrent /webhooks/{provider} requests
-	for i := 0; i < concurrency; i++ {
+	// 2. Fire concurrent POST /api/v1/webhooks/fake requests persisting via real ppiRepo.
+	for i := range workers {
 		go func(workerID int) {
 			defer wg.Done()
+			<-start
+
 			payload := map[string]any{
-				"event_id":  fmt.Sprintf("evt_concurrent_%d", workerID),
-				"event":     "charge.success",
-				"tx_ref":    fmt.Sprintf("tx_ref_%d", workerID),
-				"reference": fmt.Sprintf("ref_%d", workerID),
-				"status":    "success",
+				"event_id":     fmt.Sprintf("evt_concurrent_%d", workerID),
+				"event":        "charge.success",
+				"tx_ref":       fmt.Sprintf("tx_ref_%d", workerID),
+				"reference":    fmt.Sprintf("ref_%d", workerID),
+				"status":       "success",
+				"amount_minor": 1000,
+				"currency":     "ETB",
 			}
-			body, _ := json.Marshal(payload)
-			resp, err := ts.Client().Post(
+			body, marshalErr := json.Marshal(payload)
+			if marshalErr != nil {
+				errs <- fmt.Errorf("webhook worker %d marshal: %w", workerID, marshalErr)
+				return
+			}
+
+			resp, postErr := ts.Client().Post(
 				fmt.Sprintf("%s/api/v1/webhooks/fake", ts.URL),
 				"application/json",
 				bytes.NewReader(body),
 			)
-			if err != nil {
-				t.Errorf("worker %d webhook error: %v", workerID, err)
+			if postErr != nil {
+				errs <- fmt.Errorf("webhook worker %d post: %w", workerID, postErr)
 				return
 			}
-			_ = resp.Body.Close()
+			respBody, _ := io.ReadAll(resp.Body)
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				errs <- fmt.Errorf("webhook worker %d close body: %w", workerID, closeErr)
+				return
+			}
+			if resp.StatusCode != http.StatusOK {
+				errs <- fmt.Errorf("webhook worker %d status=%d body=%s", workerID, resp.StatusCode, string(respBody))
+			}
 		}(i)
 	}
 
+	// 3. Fire concurrent GET /api/v1/invoices/{id} reads on the same pool.
+	for i := range workers {
+		go func(workerID int, invID int64) {
+			defer wg.Done()
+			<-start
+
+			resp, getErr := ts.Client().Get(fmt.Sprintf("%s/api/v1/invoices/%d", ts.URL, invID))
+			if getErr != nil {
+				errs <- fmt.Errorf("get invoice worker %d: %w", workerID, getErr)
+				return
+			}
+			respBody, _ := io.ReadAll(resp.Body)
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				errs <- fmt.Errorf("get invoice worker %d close body: %w", workerID, closeErr)
+				return
+			}
+			if resp.StatusCode != http.StatusOK {
+				errs <- fmt.Errorf("get invoice worker %d status=%d body=%s", workerID, resp.StatusCode, string(respBody))
+			}
+		}(i, invoiceIDs[i])
+	}
+
+	close(start)
 	wg.Wait()
+	close(errs)
+
+	for callErr := range errs {
+		require.NoError(t, callErr)
+	}
+
+	var attemptCount int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM payment_attempts`).Scan(&attemptCount)
+	require.NoError(t, err)
+	require.Equal(t, workers, attemptCount)
+
+	var webhookCount int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM ppi_webhooks`).Scan(&webhookCount)
+	require.NoError(t, err)
+	require.Equal(t, workers, webhookCount)
 }
